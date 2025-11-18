@@ -1,0 +1,38 @@
+PROJECT_NAME            = "VideoStream User Manual"
+PROJECT_BRIEF           = "DeepView VideoStream Library"
+
+INPUT                   = ../include/videostream.h
+
+GENERATE_XML            = YES
+GENERATE_HTML           = NO
+GENERATE_LATEX          = NO
+
+EXTRACT_PRIVATE         = YES
+EXTRACT_STATIC          = YES
+REFERENCED_BY_RELATION  = YES
+REFERENCES_RELATION     = YES
+TYPEDEF_HIDES_STRUCT    = YES
+JAVADOC_AUTOBRIEF       = YES
+OPTIMIZE_OUTPUT_FOR_C   = YES
+BUILTIN_STL_SUPPORT     = YES
+MARKDOWN_SUPPORT        = YES
+
+FULL_PATH_NAMES         = NO
+
+WARNINGS                = YES
+WARN_IF_UNDOCUMENTED    = YES
+WARN_IF_DOC_ERROR       = YES
+
+ENABLE_PREPROCESSING    = YES
+MACRO_EXPANSION         = YES
+EXPAND_ONLY_PREDEF      = YES
+PREDEFINED              = "VSL_API" \
+                          "VSL_WARN_UNUSED_RESULT" \
+                          "VSL_AVAILABLE_SINCE_1_0" \
+                          "VSL_DEPRECATED_SINCE_1_0" \
+                          "VSL_AVAILABLE_SINCE_1_1" \
+                          "VSL_DEPRECATED_SINCE_1_1" \
+                          "VSL_AVAILABLE_SINCE_1_2" \
+                          "VSL_DEPRECATED_SINCE_1_2" \
+                          "VSL_AVAILABLE_SINCE_1_3" \
+                          "VSL_DEPRECATED_SINCE_1_3"

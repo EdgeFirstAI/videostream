@@ -1,0 +1,597 @@
+# GitHub Actions workflow for building and publishing VideoStream packages
+# 
+# Action Versions (verified November 2025):
+# - actions/checkout@v4 (latest)
+# - actions/setup-python@v5 (latest)
+# - actions/upload-artifact@v4 (latest)
+# - actions/download-artifact@v4 (latest)
+# - docker/setup-qemu-action@v3 (latest)
+# - docker/setup-buildx-action@v3 (latest)
+# - docker/login-action@v3 (latest)
+# - softprops/action-gh-release@v2 (latest)
+# - pypa/gh-action-pypi-publish@release/v1 (stable release tag)
+# - aws-actions/configure-aws-credentials@v4 (latest)
+# - EnricoMi/publish-unit-test-result-action@v2 (latest)
+# - sonarsource/sonarcloud-github-action@v3.0.0 (pinned stable version)
+#
+# Runner Notes:
+# - ubuntu-20.04: Standard GitHub-hosted runner (x86_64)
+# - ubuntu-20.04-arm64: REQUIRES GitHub Team/Enterprise plan or self-hosted runner
+#   If not available, fall back to Docker buildx with QEMU emulation
+
+name: Build Packages
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      publish_docker:
+        description: 'Publish Docker images'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOCKER_REGISTRY: deepview
+
+jobs:
+  # Build documentation first (needed for packages with INSTALL_MANUAL=ON)
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-20.04  # Use oldest supported Ubuntu for maximum portability
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git describe
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'  # Match Ubuntu 20.04 default
+
+      - name: Install Sphinx dependencies
+        run: |
+          pip install -r doc/requirements.txt
+
+      - name: Build HTML documentation
+        run: |
+          make -C doc html
+
+      - name: Build PDF documentation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-xetex texlive-fonts-recommended texlive-latex-extra
+          make -C doc latexpdf
+          cp doc/_build/latex/VideoStream.pdf doc/
+
+      - name: Clean documentation artifacts
+        run: |
+          mv doc/_build/html doc/html
+          rm -rf doc/html/_sources doc/html/.buildinfo
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: |
+            doc/VideoStream.pdf
+            doc/html/
+          retention-days: 30
+
+      - name: Archive HTML documentation
+        run: |
+          cd doc/html && zip -r ../VideoStream-HTML.zip .
+
+      - name: Upload HTML archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-html-archive
+          path: doc/VideoStream-HTML.zip
+          retention-days: 30
+
+  # Build ZIP packages (relocatable archives) - Native builds
+  build-zip:
+    name: Build ZIP (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    needs: build-docs
+    strategy:
+      matrix:
+        platform:
+          - name: x86_64
+            runner: ubuntu-20.04
+            arch: amd64
+            cmake_arch: x86_64
+          - name: aarch64
+            runner: ubuntu-20.04-arm64
+            arch: arm64
+            cmake_arch: aarch64
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: doc/
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad
+
+      - name: Build library and create ZIP package
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/opt/videostream \
+                -DINSTALL_MANUAL=ON \
+                -DSYSTEM_INSTALL=OFF \
+                -DENABLE_G2D=OFF \
+                -DENABLE_VPU=OFF \
+                -DBUILD_NUMBER=${{ github.run_number }} \
+                ..
+          make -j$(nproc)
+          cpack -G ZIP
+
+      - name: Rename ZIP for tagged releases
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd build
+          mv videostream-linux-${{ matrix.platform.cmake_arch }}.zip \
+             videostream-${{ github.ref_name }}-linux-${{ matrix.platform.name }}.zip
+
+      - name: Rename ZIP for latest builds
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        run: |
+          cd build
+          mv videostream-linux-${{ matrix.platform.cmake_arch }}.zip \
+             videostream-latest-linux-${{ matrix.platform.name }}.zip
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zip-package-${{ matrix.platform.name }}
+          path: build/videostream-*.zip
+          retention-days: 90
+
+  # Build DEB packages - Native builds
+  build-deb:
+    name: Build DEB (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    needs: build-docs
+    strategy:
+      matrix:
+        platform:
+          - name: x86_64
+            runner: ubuntu-20.04
+            arch: amd64
+            debian_arch: amd64
+          - name: aarch64
+            runner: ubuntu-20.04-arm64
+            arch: arm64
+            debian_arch: arm64
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: doc/
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            debhelper \
+            devscripts \
+            cmake \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad
+
+      - name: Generate Debian changelog
+        run: |
+          TAG=$(git describe --tags --always)
+          COMMENT=$(git tag -l -n1 $TAG | head -n1)
+          rm -f debian/changelog
+          dch --create --distribution stable --package videostream \
+              --newversion ${TAG}-${{ github.run_number }} \
+              "${COMMENT:-Build ${{ github.run_number }}}"
+
+      - name: Build Debian packages
+        env:
+          INSTALL_MANUAL: "ON"
+        run: |
+          dpkg-buildpackage -b --no-sign -j$(nproc)
+
+      - name: List generated packages
+        run: |
+          ls -lh ../*.deb
+          mkdir -p debs
+          mv ../*.deb debs/
+
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages-${{ matrix.platform.name }}
+          path: "debs/*.deb"
+          retention-days: 90
+
+  # Build Python wheel
+  build-wheel:
+    name: Build Python Wheel
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel setuptools
+
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/*.whl
+          retention-days: 90
+
+  # Run tests and generate coverage (native builds)
+  test-and-coverage:
+    name: Test and Coverage (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    permissions:
+      checks: write
+      pull-requests: write
+      contents: read
+    strategy:
+      matrix:
+        platform:
+          - name: x86_64
+            runner: ubuntu-20.04
+          - name: aarch64
+            runner: ubuntu-20.04-arm64
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gcovr
+
+      - name: Install Python test dependencies
+        run: |
+          pip install pytest pytest-cov pytest-timeout lxml
+
+      - name: Build library with coverage
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Debug \
+                -DENABLE_COVER=ON \
+                -DENABLE_G2D=OFF \
+                -DENABLE_VPU=OFF \
+                ..
+          make -j$(nproc)
+
+      - name: Run Python tests
+        run: |
+          cd build
+          export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/libvideostream.so
+          python3 -m pytest ../tests -v \
+            --junitxml=pytest_${{ matrix.platform.name }}.xml \
+            --cov --cov-report=xml:pycov_${{ matrix.platform.name }}.xml
+
+      - name: Generate C coverage
+        run: |
+          cd build
+          gcovr --filter ../lib --cobertura --output gcovr_${{ matrix.platform.name }}.xml
+          gcovr --filter ../lib --sonarqube --output sonar_${{ matrix.platform.name }}.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.platform.name }}
+          path: |
+            build/pytest_${{ matrix.platform.name }}.xml
+            build/*cov*_${{ matrix.platform.name }}.xml
+            build/sonar_${{ matrix.platform.name }}.xml
+          retention-days: 30
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: matrix.platform.name == 'x86_64' && always()
+        with:
+          files: build/pytest_${{ matrix.platform.name }}.xml
+          check_name: Test Results (${{ matrix.platform.name }})
+
+  # SonarCloud analysis (branches)
+  sonarcloud-branch:
+    name: SonarCloud Analysis (Branch)
+    runs-on: ubuntu-20.04
+    needs: test-and-coverage
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download test coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+
+      - name: Run SonarCloud scan
+        uses: sonarsource/sonarcloud-github-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # SonarCloud analysis (pull requests)
+  sonarcloud-pr:
+    name: SonarCloud Analysis (PR)
+    runs-on: ubuntu-20.04
+    needs: test-and-coverage
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download test coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+
+      - name: Run SonarCloud scan
+        uses: sonarsource/sonarcloud-github-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # Release to GitHub (tagged releases only)
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-20.04
+    needs: [build-zip, build-deb, build-wheel, build-docs]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Organize release assets
+        run: |
+          mkdir -p release-assets
+          
+          # ZIP packages
+          find artifacts/zip-package-* -name "*.zip" -exec cp {} release-assets/ \;
+          
+          # DEB packages
+          find artifacts/deb-packages-* -name "*.deb" -exec cp {} release-assets/ \;
+          
+          # Python wheel
+          find artifacts/python-wheel -name "*.whl" -exec cp {} release-assets/ \;
+          
+          # Documentation
+          cp artifacts/documentation/VideoStream.pdf release-assets/
+          cp artifacts/documentation-html-archive/VideoStream-HTML.zip release-assets/
+          
+          # Source archive
+          git archive -o release-assets/videostream-${{ github.ref_name }}.zip ${{ github.ref_name }}
+          
+          ls -lh release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          body: |
+            # VideoStream ${{ github.ref_name }}
+            
+            ## Downloads
+            
+            ### Binary Packages
+            - **Linux x86_64 (ZIP)**: `videostream-${{ github.ref_name }}-linux-x86_64.zip`
+            - **Linux ARM64 (ZIP)**: `videostream-${{ github.ref_name }}-linux-aarch64.zip`
+            - **Debian Packages**: `*.deb` files
+            
+            ### Python Package
+            - **Python Wheel**: `videostream-*.whl`
+            - Also available on PyPI: `pip install videostream`
+            
+            ### Documentation
+            - **User Manual (PDF)**: `VideoStream.pdf`
+            - **API Documentation (HTML)**: `VideoStream-HTML.zip`
+            
+            ### Source Code
+            - **Source Archive**: `videostream-${{ github.ref_name }}.zip`
+            
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+
+  # Publish to PyPI (tagged releases only)
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-20.04
+    needs: [build-wheel, test-and-coverage]
+    if: startsWith(github.ref, 'refs/tags/')
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+
+  # Publish Docker images (tagged releases or manual trigger)
+  # Note: Docker images still use Docker buildx for multi-arch support
+  publish-docker:
+    name: Publish Docker Images
+    runs-on: ubuntu-20.04
+    needs: [build-zip, test-and-coverage]
+    if: |
+      startsWith(github.ref, 'refs/tags/') || 
+      (github.event_name == 'workflow_dispatch' && inputs.publish_docker)
+    permissions:
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine Docker tags
+        id: tags
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${{ github.ref_name }}"
+            echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION} -t ${{ env.DOCKER_REGISTRY }}/videostream:latest" >> $GITHUB_OUTPUT
+            echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION}-slim -t ${{ env.DOCKER_REGISTRY }}/videostream:latest-slim" >> $GITHUB_OUTPUT
+          else
+            echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge" >> $GITHUB_OUTPUT
+            echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge-slim" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push standard image
+        run: |
+          docker buildx build . \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            ${{ steps.tags.outputs.image_tags }}
+
+      - name: Build and push slim image (musl)
+        run: |
+          docker buildx build . \
+            -f Dockerfile.musl \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            ${{ steps.tags.outputs.slim_tags }}
+
+  # Publish documentation to S3 (tagged releases only)
+  publish-docs:
+    name: Publish Documentation
+    runs-on: ubuntu-20.04
+    needs: build-docs
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: doc/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Upload to S3
+        run: |
+          aws s3 sync doc/html/ \
+            s3://deepviewmldocs/videostream/${{ github.ref_name }}/ \
+            --delete \
+            --cache-control "public, max-age=3600"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/videostream/${{ github.ref_name }}/*"

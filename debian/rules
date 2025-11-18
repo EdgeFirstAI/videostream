@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+TAG := $(shell git describe)
+COMMENT := $(shell git tag -l -n1 $(TAG))
+BUILD_NUMBER ?= 0
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	  dh_auto_configure -- \
+			-DCMAKE_LIBRARY_ARCHITECTURE="$(DEB_TARGET_MULTIARCH)" \
+			-DCMAKE_BUILD_TYPE=Release \
+			-DCMAKE_INSTALL_PREFIX=/usr \
+			-DINSTALL_MANUAL=$(INSTALL_MANUAL) \
+			-DSYSTEM_INSTALL=ON
+
+override_dh_shlibdeps:
+
+version:
+	$(RM) debian/changelog
+	dch --create --distribution stable --package videostream \
+    	--newversion $(TAG)-$(BUILD_NUMBER) "$(COMMENT)"

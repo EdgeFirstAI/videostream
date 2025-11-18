@@ -1,0 +1,22 @@
+[package]
+name = "videostream-sys"
+description = "Low-level FFI bindings for VideoStream Library - unsafe bindings to libvideostream"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords = ["video", "ffi", "bindings", "videostream", "libvideostream"]
+categories = ["computer-vision", "multimedia::video", "external-ffi-bindings"]
+
+[features]
+default = []
+
+[dependencies]
+libloading = "0.8"
+
+[build-dependencies]
+# Build dependencies will be added when implementing bindgen
+bindgen = "0.70"

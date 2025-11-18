@@ -1,0 +1,17 @@
+# Cargo configuration for VideoStream workspace
+
+[build]
+# Use all available cores for parallel compilation
+jobs = -1
+
+[target.x86_64-unknown-linux-gnu]
+# Optional: specify linker flags
+rustflags = ["-C", "link-arg=-Wl,--as-needed"]
+
+[target.aarch64-unknown-linux-gnu]
+# Cross-compilation linker (when using cross toolchain)
+linker = "aarch64-linux-gnu-gcc"
+
+[alias]
+# Convenient aliases for common tasks
+xtask = "run --package xtask --"

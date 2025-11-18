@@ -1,0 +1,13 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: VideoStream
+Description: Zero-copy video frame sharing library for embedded edge AI applications
+URL: https://github.com/au-zone/videostream
+Version: @PROJECT_VERSION@
+Requires: glib-2.0
+Libs: -L${libdir} -lvideostream
+Libs.private: -lpthread -lrt -ldl
+Cflags: -I${includedir}

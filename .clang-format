@@ -1,0 +1,38 @@
+---
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+IndentWidth: 4
+---
+Language: Cpp
+UseTab: Never
+AccessModifierOffset: -4
+BreakBeforeBraces: Linux
+IndentCaseLabels: false
+PointerAlignment: Left
+DerivePointerAlignment: false
+ColumnLimit: 80
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: true
+# AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AlwaysBreakAfterReturnType: TopLevel
+AlwaysBreakBeforeMultilineStrings: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+# IncludeBlocksStyle: Preserve
+IndentWrappedFunctionNames: false
+SpaceAfterCStyleCast: true
+PenaltyBreakBeforeFirstCallParameter: 100000
+ExperimentalAutoDetectBinPacking: false
+...

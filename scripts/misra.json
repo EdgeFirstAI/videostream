@@ -1,0 +1,4 @@
+{
+    "script": "misra.py",
+    "args": ["--rule-texts=doc/misra-c-2012.txt"]
+}

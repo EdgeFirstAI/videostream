@@ -1,0 +1,8 @@
+docutils~=0.19.0
+sphinx
+breathe
+graphviz
+sphinxcontrib-tikz
+sphinxcontrib-mermaid
+pydata-sphinx-theme
+sphinx_autodoc_typehints
