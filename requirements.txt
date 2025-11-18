@@ -1,0 +1,8 @@
+# Note: Dockerfile installs from a hardcoded list of packages copied from here.
+# If you change this list make sure you change the list in Dockerfile too!
+gcovr
+numpy
+pytest
+pytest-cov
+pytest-benchmark
+typeguard

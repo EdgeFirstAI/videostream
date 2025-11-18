@@ -1,0 +1,1 @@
+cppcheck -j 8 --xml --xml-version=2 --project=build\VideoStream.sln --project-configuration="Release|x64" --platform=win64 --enable=warning,information,portability,performance --addon=cert --addon=threadsafety --addon=scripts\misra.json --suppressions-list=scripts\cppcheck.txt 2> cppcheck.xml

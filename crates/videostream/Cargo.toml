@@ -1,0 +1,24 @@
+[package]
+name = "videostream"
+description = "Safe Rust bindings for VideoStream Library - zero-copy video frame management and distribution"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords = ["video", "zero-copy", "edge-ai", "computer-vision", "embedded"]
+categories = ["computer-vision", "multimedia::video", "api-bindings", "hardware-support"]
+
+[features]
+default = []
+
+[dependencies]
+dma-buf.workspace = true
+unix-ts.workspace = true
+videostream-sys.workspace = true
+
+[dev-dependencies]
+rand = "0.9.0"
+serial_test = "3.2.0"
