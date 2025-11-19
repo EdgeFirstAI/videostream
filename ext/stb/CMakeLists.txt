@@ -1,7 +1,12 @@
 file(GLOB STB_HEADERS include/*.h)
 file(GLOB STB_SOURCES *.c)
-include_directories(include)
+
 add_library(stb STATIC ${STB_HEADERS} ${STB_SOURCES})
+
+target_include_directories(stb PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 
 target_compile_definitions(stb PRIVATE
     STBI_FAILURE_USERMSG
