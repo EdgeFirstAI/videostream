@@ -195,14 +195,6 @@ jobs:
           path: ${{ env.BUILD_WRAPPER_OUT_DIR }}
           retention-days: 30
 
-      - name: Upload compile commands
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: compile-commands-${{ matrix.platform.name }}
-          path: build/compile_commands.json
-          retention-days: 30
-
   sonarcloud:
     name: SonarCloud Analysis
     needs: test
@@ -230,12 +222,6 @@ jobs:
           pattern: build-wrapper-output-*
           path: build-wrapper/
 
-      - name: Download all compile commands
-        uses: actions/download-artifact@v4
-        with:
-          pattern: compile-commands-*
-          path: compile-commands/
-
       - name: Organize coverage files for SonarCloud
         run: |
           # List all downloaded artifacts for debugging
@@ -243,8 +229,6 @@ jobs:
           find coverage/ -type f
           echo "Downloaded build wrapper outputs:"
           find build-wrapper/ -type f | head -20
-          echo "Downloaded compile commands:"
-          find compile-commands/ -type f
           
           # Create consolidated directory structure
           mkdir -p merged-coverage/gcov
@@ -257,11 +241,6 @@ jobs:
           # SonarCloud only needs one for C/C++ compilation database
           if [ -d "build-wrapper/build-wrapper-output-x86_64" ]; then
             cp -r build-wrapper/build-wrapper-output-x86_64/* build/sonar/
-          fi
-          
-          # Use x86_64 compile commands (reference for analysis)
-          if [ -f "compile-commands/compile-commands-x86_64/compile_commands.json" ]; then
-            cp compile-commands/compile-commands-x86_64/compile_commands.json build/
           fi
           
           # Create comma-separated lists for coverage report paths
@@ -287,4 +266,3 @@ jobs:
             -Dsonar.rust.cobertura.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
             -Dsonar.cfamily.gcov.reportsPath=merged-coverage/gcov
             -Dsonar.cfamily.build-wrapper-output=build/sonar
-            -Dsonar.cfamily.compile-commands=build/compile_commands.json
