@@ -118,18 +118,6 @@ jobs:
           python3 -m pip install pytest pytest-cov pytest-timeout
           python3 -m pip install -r requirements.txt
 
-      - name: Run Python tests with coverage
-        run: |
-          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
-          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          python3 -m pytest tests -v \
-            --junitxml=build/pytest_results.xml \
-            --cov --cov-report=xml:build/coverage_python.xml
-
-      - name: Generate C/C++ coverage report
-        run: |
-          gcovr -r . --cobertura -o build/coverage_c.xml build/
-
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -150,11 +138,31 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Run Python tests with coverage
+        run: |
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
+          python3 -m pytest tests -v \
+            --junitxml=build/pytest_results.xml \
+            --cov --cov-report=xml:build/coverage_python.xml
+
       - name: Run Rust tests with coverage
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
           cargo llvm-cov --workspace --lib --cobertura --output-path build/coverage_rust.xml
+
+      - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
+        run: |
+          # Generate native .gcov files in build/gcov directory
+          # This captures coverage from Python tests, Rust tests, and any C tests
+          mkdir -p build/gcov
+          cd build
+          find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true
+          mv *.gcov gcov/ 2>/dev/null || true
+          cd ..
+          # Also generate Cobertura XML for artifacts/alternative analysis
+          gcovr -r . --cobertura -o build/coverage_c.xml build/
 
       - name: Run SonarCloud scan
         if: matrix.platform.name == 'x86_64'
