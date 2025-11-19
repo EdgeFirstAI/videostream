@@ -9,62 +9,143 @@ echo "Generating Complete SBOM for VideoStream"
 echo "=================================================="
 echo
 
-# Step 1: Generate source code SBOM with scancode (~15-30 seconds)
+# Step 1: Generate source code SBOM with scancode (scan directories separately)
 echo "[1/5] Generating source code SBOM with scancode..."
 if [ ! -f "venv/bin/scancode" ]; then
     echo "Error: scancode not found. Please install: python3 -m venv venv && venv/bin/pip install scancode-toolkit"
     exit 1
 fi
 
-# Scan source directories for licenses, copyrights, and dependencies
+# Scan each source directory separately to avoid scancode bugs with large directory trees
+# This is MUCH faster than scanning everything at once
+echo "  Scanning src/..."
 venv/bin/scancode -clpieu \
-    --cyclonedx source-sbom-raw.json \
+    --cyclonedx source-sbom-src.json \
     --only-findings \
     --timeout 300 \
-    src/ lib/ include/ gst/ deepview/ CMakeLists.txt LICENSE
+    src/
 
-echo "✓ Generated source-sbom-raw.json (source code audit)"
+echo "  Scanning lib/..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-lib.json \
+    --only-findings \
+    --timeout 300 \
+    lib/
+
+echo "  Scanning include/..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-include.json \
+    --only-findings \
+    --timeout 300 \
+    include/
+
+echo "  Scanning gst/..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-gst.json \
+    --only-findings \
+    --timeout 300 \
+    gst/
+
+echo "  Scanning deepview/..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-deepview.json \
+    --only-findings \
+    --timeout 300 \
+    deepview/
+
+echo "  Scanning project root files..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-root.json \
+    --only-findings \
+    --timeout 300 \
+    ./CMakeLists.txt ./LICENSE ./README.md
+
+echo "✓ Generated individual SBOM files for each directory"
 echo
 
-# Step 2: Clean scancode output for CycloneDX compatibility
-echo "[2/5] Cleaning scancode output..."
+# Step 2: Merge individual source SBOMs and clean for CycloneDX compatibility
+echo "[2/5] Merging and cleaning source SBOMs..."
 python3 << 'EOF'
 import json
 import sys
+import os
 
-# Load scancode output
-with open('source-sbom-raw.json', 'r') as f:
-    sbom = json.load(f)
+def load_sbom(filename):
+    """Load an SBOM file if it exists"""
+    if not os.path.exists(filename):
+        return None
+    with open(filename, 'r') as f:
+        return json.load(f)
 
-# Remove problematic metadata (non-string properties violate CycloneDX spec)
-if 'metadata' in sbom and 'properties' in sbom['metadata']:
-    sbom['metadata']['properties'] = [
-        p for p in sbom['metadata']['properties']
-        if isinstance(p.get('value'), str)
-    ]
-
-# Add project metadata
-if 'metadata' not in sbom:
-    sbom['metadata'] = {}
-
-if 'component' not in sbom['metadata']:
-    sbom['metadata']['component'] = {
-        'type': 'library',
-        'name': 'videostream',
-        'version': '1.0.0',
-        'description': 'Video utility library for embedded Linux',
-        'licenses': [
-            {'license': {'id': 'Apache-2.0'}}
+def clean_sbom_properties(sbom):
+    """Remove problematic metadata that violates CycloneDX spec"""
+    if 'metadata' in sbom and 'properties' in sbom['metadata']:
+        sbom['metadata']['properties'] = [
+            p for p in sbom['metadata']['properties']
+            if isinstance(p.get('value'), str)
         ]
-    }
+    return sbom
 
-# Save cleaned version
+# Load all individual SBOMs
+sbom_files = [
+    'source-sbom-src.json',
+    'source-sbom-lib.json',
+    'source-sbom-include.json',
+    'source-sbom-gst.json',
+    'source-sbom-deepview.json',
+    'source-sbom-root.json'
+]
+
+# Merge components from all SBOMs
+all_components = []
+all_licenses = set()
+
+for filename in sbom_files:
+    sbom = load_sbom(filename)
+    if not sbom:
+        continue
+    
+    # Clean the SBOM
+    sbom = clean_sbom_properties(sbom)
+    
+    # Extract components
+    if 'components' in sbom:
+        all_components.extend(sbom['components'])
+    
+    # Extract licenses
+    if 'metadata' in sbom and 'licenses' in sbom['metadata']:
+        for lic in sbom['metadata']['licenses']:
+            if 'license' in lic and 'id' in lic['license']:
+                all_licenses.add(lic['license']['id'])
+
+# Create merged source SBOM
+merged_sbom = {
+    'bomFormat': 'CycloneDX',
+    'specVersion': '1.3',
+    'version': 1,
+    'metadata': {
+        'component': {
+            'type': 'library',
+            'name': 'videostream',
+            'version': '1.4.0-rc0',
+            'description': 'Video utility library for embedded Linux',
+            'licenses': [
+                {'license': {'id': 'Apache-2.0'}}
+            ]
+        }
+    },
+    'components': all_components
+}
+
+# Save merged version
 with open('source-sbom.json', 'w') as f:
-    json.dump(sbom, f, indent=2)
+    json.dump(merged_sbom, f, indent=2)
 
+print(f"Merged {len(sbom_files)} source SBOMs into source-sbom.json")
+print(f"Total components: {len(all_components)}")
 sys.exit(0)
 EOF
-echo "✓ Generated source-sbom.json (cleaned)"
+echo "✓ Generated source-sbom.json (merged and cleaned)"
 echo
 
 # Step 3: Generate system dependencies manifest
@@ -120,7 +201,7 @@ deps_sbom = {
         'component': {
             'type': 'library',
             'name': 'videostream',
-            'version': '1.0.0'
+            'version': '1.4.0-rc0'
         }
     },
     'components': components
@@ -171,7 +252,9 @@ fi
 echo
 
 # Cleanup temporary files
-rm -f source-sbom-raw.json source-sbom.json deps-sbom.json
+rm -f source-sbom-src.json source-sbom-lib.json source-sbom-include.json \
+      source-sbom-gst.json source-sbom-deepview.json source-sbom-root.json \
+      source-sbom.json deps-sbom.json
 
 echo "=================================================="
 echo "SBOM Generation Complete"

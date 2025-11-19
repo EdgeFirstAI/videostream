@@ -4,7 +4,6 @@
 # - actions/checkout@v4 (latest)
 # - actions/setup-python@v5 (latest)
 # - actions/upload-artifact@v4 (latest)
-# - codecov/codecov-action@v5 (latest)
 #
 # Runner Notes:
 # - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
@@ -94,15 +93,6 @@ jobs:
             build/coverage.xml
             build/coverage_c.xml
           retention-days: 30
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./build/coverage.xml,./build/coverage_c.xml
-          flags: unittests
-          name: codecov-${{ matrix.platform.name }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
 
   build-packages:
     name: Build Debian Package (${{ matrix.platform.name }})
