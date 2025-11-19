@@ -19,8 +19,11 @@ unsafe impl Sync for Client {}
 impl Client {
     pub fn new(path: &str, reconnect: bool) -> Result<Self, Error> {
         let path_str_c = CString::new(path)?;
-        let ptr =
-            vsl!(vsl_client_init(path_str_c.as_ptr(), std::ptr::null_mut(), reconnect));
+        let ptr = vsl!(vsl_client_init(
+            path_str_c.as_ptr(),
+            std::ptr::null_mut(),
+            reconnect
+        ));
         if ptr.is_null() {
             let err = io::Error::last_os_error();
             return Err(err.into());
@@ -50,7 +53,7 @@ impl Client {
         }
         unsafe {
             let path_ref = CStr::from_ptr(path_ptr).to_str()?;
-            return Ok(PathBuf::from(path_ref));
+            Ok(PathBuf::from(path_ref))
         }
     }
 

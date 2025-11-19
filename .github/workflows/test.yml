@@ -1,13 +1,15 @@
 # GitHub Actions workflow for testing and code quality
 #
 # This workflow builds the Debug configuration with coverage enabled,
-# runs unit tests, collects coverage data, and performs static analysis
-# including SonarCloud scanning.
+# runs unit tests (C, Python, and Rust), collects coverage data, and 
+# performs static analysis including SonarCloud scanning.
 #
 # Action Versions (verified November 2025):
 # - actions/checkout@v4 (latest)
 # - actions/setup-python@v5 (latest)
 # - actions/upload-artifact@v4 (latest)
+# - dtolnay/rust-toolchain@stable (latest)
+# - Swatinem/rust-cache@v2 (latest)
 # - SonarSource/sonarcloud-github-action@master
 #
 # Runner Notes:
@@ -122,11 +124,37 @@ jobs:
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
           python3 -m pytest tests -v \
             --junitxml=build/pytest_results.xml \
-            --cov --cov-report=xml:build/coverage.xml
+            --cov --cov-report=xml:build/coverage_python.xml
 
       - name: Generate C/C++ coverage report
         run: |
-          gcovr -r . --sonarqube -o build/coverage_c.xml build/
+          gcovr -r . --cobertura -o build/coverage_c.xml build/
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview, clippy, rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-${{ matrix.platform.name }}
+          cache-on-failure: true
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.6.16
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run Rust tests with coverage
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          cargo llvm-cov --workspace --lib --cobertura --output-path build/coverage_rust.xml
 
       - name: Run SonarCloud scan
         if: matrix.platform.name == 'x86_64'
@@ -142,7 +170,8 @@ jobs:
           name: test-results-${{ matrix.platform.name }}
           path: |
             build/pytest_results.xml
-            build/coverage.xml
+            build/coverage_python.xml
             build/coverage_c.xml
+            build/coverage_rust.xml
             build/compile_commands.json
           retention-days: 30

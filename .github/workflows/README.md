@@ -38,18 +38,21 @@ This directory contains CI/CD workflows for the VideoStream library. These workf
 - Runner: `ubuntu-22.04` / `ubuntu-22.04-arm`
 - Build Type: Debug with coverage enabled
 - Python: 3.8
+- Rust: Stable (MSRV 1.70)
 - GStreamer: 1.4+
 - CMake: 3.14+
 
 **Artifacts:**
 - Test results (JUnit XML)
-- Coverage reports (Python and C/C++)
+- Coverage reports (Python, C/C++, and Rust)
 - SonarCloud analysis (x86_64 only)
 
 **Key Features:**
 - Debug build with ENABLE_COVER=ON
 - SonarCloud build wrapper integration
-- Python and C coverage collection
+- Python, C, and Rust coverage collection
+- Rust clippy linting and formatting checks
+- cargo-llvm-cov for Rust coverage
 - Native multi-architecture testing
 
 ### 2. Build Workflow (`build.yml`)

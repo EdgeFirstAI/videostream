@@ -71,7 +71,9 @@ impl Encoder {
         pts: i64,
         dts: i64,
     ) -> Result<frame::Frame, Error> {
-        let frame_ptr = vsl!(vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts));
+        let frame_ptr = vsl!(vsl_encoder_new_output_frame(
+            self.ptr, width, height, duration, pts, dts
+        ));
         if frame_ptr.is_null() {
             return Err(Error::NullPointer);
         }
@@ -104,7 +106,9 @@ impl Encoder {
 impl Drop for Encoder {
     fn drop(&mut self) {
         if let Ok(lib) = ffi::init() {
-            unsafe { lib.vsl_encoder_release(self.ptr); }
+            unsafe {
+                lib.vsl_encoder_release(self.ptr);
+            }
         }
     }
 }

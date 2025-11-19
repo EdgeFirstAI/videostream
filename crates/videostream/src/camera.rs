@@ -187,8 +187,13 @@ impl CameraReader {
         let mut num_buffers: c_int = camera.num_buffers;
         let mut format: u32 = camera.format.into();
 
-        if vsl!(vsl_camera_init_device(ptr, &mut width, &mut height, &mut num_buffers, &mut format))
-            != 0
+        if vsl!(vsl_camera_init_device(
+            ptr,
+            &mut width,
+            &mut height,
+            &mut num_buffers,
+            &mut format
+        )) != 0
         {
             let err = io::Error::last_os_error();
             return Err(err.into());
@@ -473,10 +478,12 @@ mod tests {
 
             let now = Instant::now();
             let dma = buf.dmabuf();
-            let mem = dma.memory_map()
-                .map_err(|e| Error::Io(io::Error::other(format!("DMA map error: {}", e))))?;
-            let stats = mem.read(pixel_metrics_boxed, Some((buf.width(), buf.height())))
-                .map_err(|e| Error::Io(io::Error::other(format!("DMA read error: {}", e))))?;
+            let mem = dma
+                .memory_map()
+                .map_err(|e| Error::Io(io::Error::new(io::ErrorKind::Other, format!("DMA map error: {}", e))))?;
+            let stats = mem
+                .read(pixel_metrics_boxed, Some((buf.width(), buf.height())))
+                .map_err(|e| Error::Io(io::Error::new(io::ErrorKind::Other, format!("DMA read error: {}", e))))?;
             let elapsed = now.elapsed();
 
             println!(
@@ -488,7 +495,10 @@ mod tests {
         Ok(())
     }
 
-    fn pixel_metrics_boxed(img: &[u8], dim: Option<(i32, i32)>) -> Result<(u8, u8, u8), Box<dyn std::error::Error>> {
+    fn pixel_metrics_boxed(
+        img: &[u8],
+        dim: Option<(i32, i32)>,
+    ) -> Result<(u8, u8, u8), Box<dyn std::error::Error>> {
         pixel_metrics(img, dim).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
