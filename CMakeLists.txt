@@ -282,6 +282,27 @@ install(FILES LICENSE NOTICE
     COMPONENT development
 )
 
+# Install user manual if available and requested
+if(INSTALL_MANUAL)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/doc/VideoStream.pdf")
+        install(FILES doc/VideoStream.pdf
+            DESTINATION ${CMAKE_INSTALL_DOCDIR}
+            COMPONENT documentation
+        )
+    else()
+        message(WARNING "INSTALL_MANUAL=ON but doc/VideoStream.pdf not found. Run 'make -C doc latexpdf' first.")
+    endif()
+    
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/doc/html")
+        install(DIRECTORY doc/html
+            DESTINATION ${CMAKE_INSTALL_DOCDIR}
+            COMPONENT documentation
+        )
+    else()
+        message(WARNING "INSTALL_MANUAL=ON but doc/html not found. Run 'make -C doc html' first.")
+    endif()
+endif()
+
 # GStreamer plugins and tools
 if(ENABLE_GSTREAMER)
     find_package(PkgConfig QUIET)
