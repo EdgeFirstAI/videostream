@@ -62,15 +62,12 @@ jobs:
             NOTICE.generated
           retention-days: 90
 
-      - name: Upload SBOM to Release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+      - name: Release SBOM
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            sbom.json
-            NOTICE.generated
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            sbom/*.json
 
       - name: Generate SBOM Summary
         run: |
