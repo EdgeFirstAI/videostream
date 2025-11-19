@@ -95,6 +95,7 @@ jobs:
             build/pytest_results.xml
             build/coverage.xml
             build/coverage_c.xml
+            build/compile_commands.json
           retention-days: 30
 
   build-packages:
