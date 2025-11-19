@@ -25,12 +25,7 @@ pub struct Frame {
 unsafe impl Send for Frame {}
 
 impl Frame {
-    pub fn new(
-        width: u32,
-        height: u32,
-        stride: u32,
-        fourcc_str: &str,
-    ) -> Result<Self, Error> {
+    pub fn new(width: u32, height: u32, stride: u32, fourcc_str: &str) -> Result<Self, Error> {
         let buf = fourcc_str.as_bytes();
         if buf.len() != 4 {
             return Err(Error::NullPointer); // Invalid fourcc is a library error
@@ -40,7 +35,14 @@ impl Frame {
             fourcc += (byte as u32) << (i * 8);
         }
 
-        let ptr = vsl!(vsl_frame_init(width, height, stride, fourcc, std::ptr::null_mut(), None));
+        let ptr = vsl!(vsl_frame_init(
+            width,
+            height,
+            stride,
+            fourcc,
+            std::ptr::null_mut(),
+            None
+        ));
 
         if ptr.is_null() {
             let err = io::Error::last_os_error();
@@ -176,7 +178,7 @@ impl Frame {
         Ok(Some(c_str.to_str().unwrap_or("unknown")))
     }
 
-    #[allow(clippy::result_unit_err)]  
+    #[allow(clippy::result_unit_err)]
     pub fn mmap(&self) -> Result<&[u8], Error> {
         let ptr = vsl!(vsl_frame_mmap(self.ptr, std::ptr::null_mut::<usize>()));
         let size = self.size()?;
@@ -193,6 +195,7 @@ impl Frame {
     /// follow proper synchronization patterns when accessing the mmap'd
     /// memory from multiple threads.
     #[allow(clippy::result_unit_err)]
+    #[allow(clippy::mut_from_ref)]
     pub fn mmap_mut(&self) -> Result<&mut [u8], Error> {
         let mut size: usize = 0;
         let ptr = vsl!(vsl_frame_mmap(self.ptr, &mut size as *mut usize));
@@ -253,7 +256,9 @@ impl Drop for Frame {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             if let Ok(lib) = ffi::init() {
-                unsafe { lib.vsl_frame_release(self.ptr); }
+                unsafe {
+                    lib.vsl_frame_release(self.ptr);
+                }
             }
         }
     }

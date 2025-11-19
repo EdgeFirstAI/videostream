@@ -50,7 +50,13 @@
 //! - Repository: <https://github.com/DeepViewML/videostream-rs>
 //! - Professional support: support@au-zone.com
 
-use std::{error, ffi::{CStr, NulError}, fmt, io, num::TryFromIntError, str};
+use std::{
+    error,
+    ffi::{CStr, NulError},
+    fmt, io,
+    num::TryFromIntError,
+    str,
+};
 use videostream_sys as ffi;
 
 /// Error type for VideoStream library operations
@@ -58,19 +64,19 @@ use videostream_sys as ffi;
 pub enum Error {
     /// The VideoStream library (libvideostream.so) could not be loaded at runtime
     LibraryNotLoaded(ffi::libloading::Error),
-    
+
     /// I/O error from underlying system calls (errno-based errors from C library)
     Io(io::Error),
-    
+
     /// UTF-8 conversion error when converting C strings to Rust strings
     Utf8(str::Utf8Error),
-    
+
     /// CString creation error (null byte found in string)
     CString(NulError),
-    
+
     /// Integer conversion error (try_from failed)
     TryFromInt(TryFromIntError),
-    
+
     /// Null pointer returned from C library where valid pointer expected
     NullPointer,
 }
@@ -139,8 +145,12 @@ impl From<TryFromIntError> for Error {
 macro_rules! vsl {
     ($fn_name:ident($($args:expr),*)) => {
         {
-            let lib = videostream_sys::init()?;
-            unsafe { lib.$fn_name($($args),*) }
+            #[allow(clippy::macro_metavars_in_unsafe)]
+            let result = {
+                let lib = videostream_sys::init()?;
+                unsafe { lib.$fn_name($($args),*) }
+            };
+            result
         }
     };
 }
@@ -167,7 +177,7 @@ pub mod camera;
 pub mod fourcc;
 
 /// Get the VideoStream library version string
-/// 
+///
 /// Returns an error if the library is not loaded.
 pub fn version() -> Result<String, Error> {
     let lib = ffi::init()?;
@@ -176,7 +186,7 @@ pub fn version() -> Result<String, Error> {
 }
 
 /// Get the current timestamp in nanoseconds
-/// 
+///
 /// Returns an error if the library is not loaded.
 pub fn timestamp() -> Result<i64, Error> {
     let lib = ffi::init()?;

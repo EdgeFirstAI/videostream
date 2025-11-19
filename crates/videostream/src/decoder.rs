@@ -66,7 +66,7 @@ impl Decoder {
         ));
         let output_frame = Frame::wrap(output_frame).ok();
         if ret_code & VSLDecoderRetCode_VSL_DEC_ERR > 0 {
-            return Err(Error::Io(io::Error::other("Decoder Error")));
+            return Err(Error::Io(io::Error::new(io::ErrorKind::Other, "Decoder Error")));
         }
         let mut return_msg = DecodeReturnCode::Success;
         if ret_code & VSLDecoderRetCode_VSL_DEC_FRAME_DEC > 0 {
@@ -84,7 +84,9 @@ impl Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         if let Ok(lib) = ffi::init() {
-            unsafe { lib.vsl_decoder_release(self.ptr); }
+            unsafe {
+                lib.vsl_decoder_release(self.ptr);
+            }
         }
     }
 }

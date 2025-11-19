@@ -54,7 +54,9 @@ impl Host {
 impl Drop for Host {
     fn drop(&mut self) {
         if let Ok(lib) = ffi::init() {
-            unsafe { lib.vsl_host_release(self.ptr); }
+            unsafe {
+                lib.vsl_host_release(self.ptr);
+            }
         }
     }
 }
