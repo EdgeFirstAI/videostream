@@ -47,7 +47,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get remove libunwind-*
+          sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
@@ -113,7 +114,8 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get remove libunwind-*
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             debhelper \
             devscripts \
