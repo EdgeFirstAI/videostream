@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videostream"
+version = "1.4.0-rc0"
+description = "Video utility library for embedded Linux with DMA buffer support"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "Apache-2.0"
+authors = [
+    {name = "Au-Zone Technologies", email = "support@au-zone.com"}
+]
+maintainers = [
+    {name = "Au-Zone Technologies", email = "support@au-zone.com"}
+]
+keywords = [
+    "video",
+    "gstreamer",
+    "dma-buf",
+    "embedded",
+    "computer-vision",
+    "edge-ai"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/EdgeFirstAI/videostream"
+Documentation = "https://github.com/EdgeFirstAI/videostream#readme"
+Repository = "https://github.com/EdgeFirstAI/videostream.git"
+Issues = "https://github.com/EdgeFirstAI/videostream/issues"
+Changelog = "https://github.com/EdgeFirstAI/videostream/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["deepview.videostream"]
+
+[tool.setuptools.package-dir]
+"deepview.videostream" = "deepview/videostream"

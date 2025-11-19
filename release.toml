@@ -1,0 +1,30 @@
+# cargo-release configuration
+# Manages version bumping across Cargo.toml, pyproject.toml, and VERSION files
+
+# Allow non-Git crates (useful during development)
+allow-branch = ["main", "develop"]
+
+# Pre-release replacements
+pre-release-replacements = [
+  # Update Cargo workspace version
+  {file="Cargo.toml", search="version = \".*\"", replace="version = \"{{version}}\"", exactly=1},
+  
+  # Update Python package version
+  {file="pyproject.toml", search="version = \".*\"", replace="version = \"{{version}}\"", exactly=1},
+  
+  # Update VERSION file
+  {file="VERSION", search=".*", replace="{{version}}", exactly=1},
+  
+  # Update CHANGELOG.md unreleased section
+  {file="CHANGELOG.md", search="## \\[Unreleased\\]", replace="## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly=1},
+]
+
+# Tag format
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"
+
+# Push changes
+push = false  # We'll push manually after review
+
+# Don't publish to crates.io (library is not published there)
+publish = false
