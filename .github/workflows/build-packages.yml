@@ -272,17 +272,10 @@ jobs:
   test-and-coverage:
     name: Run Tests with Coverage
     runs-on: ubuntu-22.04
-    needs: build-zip
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: zip-package-x86_64
-          path: build/
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -294,35 +287,52 @@ jobs:
           sudo apt-get update
           sudo apt-get remove libunwind-*
           sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad \
+            python3 python3-pip python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev \
             lcov gcovr
 
-      - name: Extract build artifacts
+      - name: Build library with coverage
         run: |
+          mkdir build
           cd build
-          unzip videostream-latest-linux-x86_64.zip
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DENABLE_COVER=ON \
+                -DENABLE_VPU=OFF \
+                -DENABLE_G2D=OFF \
+                ..
+          make -j$(nproc)
 
       - name: Run tests with coverage
         run: |
-          export LD_LIBRARY_PATH=$PWD/build/lib:$LD_LIBRARY_PATH
-          export VIDEOSTREAM_LIBRARY=$PWD/build/lib/libvideostream.so
+          cd build
+          export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/libvideostream.so
+          python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install pytest pytest-cov pytest-timeout
-          python3 -m pip install -r requirements.txt
-          python3 -m pytest tests -v \
+          python3 -m pip install -r ../requirements.txt
+          python3 -m pytest ../tests -v \
             --junitxml=pytest_results.xml \
             --cov --cov-report=xml:coverage.xml
+
+      - name: Generate C/C++ coverage report
+        run: |
+          cd build
+          gcovr -r .. --xml -o coverage_c.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: test-results-x86_64
           path: |
-            pytest_results.xml
-            coverage.xml
+            build/pytest_results.xml
+            build/coverage.xml
+            build/coverage_c.xml
           retention-days: 30
 
   # SonarCloud analysis (branches)
