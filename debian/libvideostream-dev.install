@@ -1,1 +1,4 @@
 usr/include/videostream.h
+usr/lib/*/libvideostream.so
+usr/lib/*/cmake/VideoStream
+usr/lib/*/pkgconfig/videostream.pc
