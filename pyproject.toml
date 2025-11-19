@@ -8,7 +8,7 @@ version = "1.4.0-rc0"
 description = "Video utility library for embedded Linux with DMA buffer support"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Au-Zone Technologies", email = "support@au-zone.com"}
 ]
