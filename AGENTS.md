@@ -496,38 +496,69 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed threading diagrams and inter
 
 **VideoStream Build Commands:**
 
+**IMPORTANT: Use Modern CMake Workflow** - Always use `cmake -S <source> -B <build>` and `cmake --build <build>` instead of changing directories. This prevents getting lost in the filesystem and works consistently across all environments.
+
 ```bash
-# Standard build (Debug)
-mkdir build && cd build
+# Standard build (Debug) - PREFERRED METHOD
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(nproc)
+
+# Alternative (legacy, avoid if possible)
+mkdir -p build && cd build
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 make -j$(nproc)
+cd ..  # Don't forget to return!
 
 # Release build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 
-# Run Python tests
-pytest ../tests/
+# Release with coverage enabled (for CI/testing)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_COVER=ON
+cmake --build build -j$(nproc)
+
+# Run Python tests (from project root)
+pytest tests/
 
 # Cross-compile for ARM64 (NXP Yocto SDK)
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
-mkdir build-arm64 && cd build-arm64
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+cmake -S . -B build-arm64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build-arm64 -j$(nproc)
 
-# Docker build
+# Docker build (note: uses modern CMake workflow)
 docker pull deepview/yocto-sdk-imx8mp
 docker run -v $PWD:/src deepview/yocto-sdk-imx8mp \
     cmake -S/src -B/src/build -DCMAKE_BUILD_TYPE=Release
 docker run -v $PWD:/src deepview/yocto-sdk-imx8mp \
     cmake --build /src/build -j16
 
-# Install
-sudo make install
+# Install (from project root)
+cmake --install build
+
+# Clean build directory
+rm -rf build
+
+# Reconfigure existing build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_COVER=ON
 
 # Format code
 find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
 ```
+
+**CMake Workflow Best Practices:**
+- **Always use `-S <source> -B <build>`**: Explicitly specify source and build directories
+- **Never `cd` into build directories**: Use `cmake --build <path>` instead of `make`
+- **Stay in project root**: All commands should be run from the workspace root
+- **Use `cmake --install`**: Instead of `cd build && make install`
+- **Parallel builds**: Use `-j$(nproc)` or `-j<N>` with `cmake --build`
+- **Multiple configurations**: Use different build directories (e.g., `build-debug`, `build-release`, `build-arm64`)
+
+**Why Modern Workflow Matters:**
+1. **No directory confusion**: Your shell always stays in the project root
+2. **IDE compatibility**: Modern IDEs expect this pattern
+3. **CI/CD friendly**: Works in containers and automation without state tracking
+4. **Cross-platform**: Same commands work on Linux, macOS, Windows
+5. **Generator agnostic**: Works with Make, Ninja, Visual Studio, Xcode, etc.
 
 **CMake Options:**
 - `-DENABLE_GSTREAMER=ON/OFF` - Build GStreamer plugins (default: ON)
@@ -637,6 +668,9 @@ When working with conversational AI:
 - **Over-engineering**: Prefer simple solutions over complex ones
 - **Missing edge cases**: Explicitly test boundary conditions
 - **License violations**: AI may suggest code with incompatible licenses
+- **Directory confusion with CMake**: NEVER use `cd build && cmake .. && make`. Always use modern workflow: `cmake -S . -B build && cmake --build build`
+- **Forgetting to return from directories**: If you must `cd` somewhere, immediately return to project root after
+- **Using `make` directly**: Use `cmake --build <dir>` instead - it works with all generators (Make, Ninja, etc.)
 
 ---
 
