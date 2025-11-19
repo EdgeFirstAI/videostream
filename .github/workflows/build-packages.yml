@@ -333,15 +333,6 @@ jobs:
             coverage.xml
           retention-days: 30
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./coverage.xml
-          flags: unittests
-          name: codecov-x86_64
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
   # SonarCloud analysis (branches)
   sonarcloud-branch:
     name: SonarCloud Analysis (Branch)
