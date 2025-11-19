@@ -85,7 +85,7 @@ jobs:
       - name: Generate coverage report
         run: |
           cd build
-          gcovr -r .. --xml -o coverage_c.xml
+          gcovr -r .. --sonarqube -o coverage_c.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4

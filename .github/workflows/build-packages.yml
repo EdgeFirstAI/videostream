@@ -323,7 +323,7 @@ jobs:
       - name: Generate C/C++ coverage report
         run: |
           cd build
-          gcovr -r .. --xml -o coverage_c.xml
+          gcovr -r .. --sonarqube -o coverage_c.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -354,6 +354,22 @@ jobs:
           pattern: test-results-*
           merge-multiple: true
 
+      - name: Verify coverage files
+        run: |
+          echo "Checking for coverage files..."
+          find . -name "*.xml" -type f
+          ls -la build/ || echo "No build directory"
+          # Move coverage files to root if they're in build/
+          if [ -f build/coverage_c.xml ]; then
+            mv build/coverage_c.xml .
+            echo "Moved coverage_c.xml to root"
+          fi
+          if [ -f build/coverage.xml ]; then
+            mv build/coverage.xml .
+            echo "Moved coverage.xml to root"
+          fi
+          ls -la *.xml
+
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
         env:
@@ -378,6 +394,22 @@ jobs:
         with:
           pattern: test-results-*
           merge-multiple: true
+
+      - name: Verify coverage files
+        run: |
+          echo "Checking for coverage files..."
+          find . -name "*.xml" -type f
+          ls -la build/ || echo "No build directory"
+          # Move coverage files to root if they're in build/
+          if [ -f build/coverage_c.xml ]; then
+            mv build/coverage_c.xml .
+            echo "Moved coverage_c.xml to root"
+          fi
+          if [ -f build/coverage.xml ]; then
+            mv build/coverage.xml .
+            echo "Moved coverage.xml to root"
+          fi
+          ls -la *.xml
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
