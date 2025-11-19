@@ -26,6 +26,13 @@ attribution under their respective licenses:
     - https://www.gtk.org/
     - Dynamically linked - LGPL compliance maintained
 
+  * NXP VPU Wrapper (NXP proprietary - platform-specific)
+    - Hantro VPU encoder/decoder wrapper
+    - Copyright 2016-2020 Freescale Semiconductor/NXP
+    - Only used on NXP i.MX8 platforms with Hantro VPU hardware
+    - License: https://raw.githubusercontent.com/nxp-imx/imx-vpuwrap/refs/heads/MM_04.10.01_2508_L6.12.34/LICENSE.txt
+    - Note: VPU functionality is optional and disabled on non-NXP platforms
+
 ================================================================================
 
 SOFTWARE BILL OF MATERIALS (SBOM)
@@ -45,8 +52,8 @@ CycloneDX 1.3 specification. It provides comprehensive information about:
   - Security vulnerability tracking
 
 To access the SBOM:
-  - Download from GitHub Releases: https://github.com/au-zone/videostream/releases
-  - View in GitHub Actions artifacts: https://github.com/au-zone/videostream/actions
+  - Download from GitHub Releases: https://github.com/EdgeFirstAI/videostream/releases
+  - View in GitHub Actions artifacts: https://github.com/EdgeFirstAI/videostream/actions
   - Generate locally: .github/scripts/generate_sbom.sh (requires scancode-toolkit)
 
 ================================================================================
@@ -75,6 +82,17 @@ stb libraries are dual-licensed under Public Domain (Unlicense) or MIT-0,
 allowing use in any project without restrictions. The libraries are included
 in source form. License text available at:
 https://github.com/nothings/stb/blob/master/LICENSE
+
+NXP VPU Wrapper
+---------------
+The NXP VPU wrapper is proprietary software provided by NXP Semiconductors for
+use with their i.MX8 platforms containing Hantro VPU hardware. This component
+is only used when building for and running on NXP silicon with VPU support.
+The wrapper is disabled by default and optional. License information:
+https://raw.githubusercontent.com/nxp-imx/imx-vpuwrap/refs/heads/MM_04.10.01_2508_L6.12.34/LICENSE.txt
+
+Copyright 2016-2020 Freescale Semiconductor, Inc.
+Copyright 2018-2020 NXP
 
 ================================================================================
 

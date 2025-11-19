@@ -5,7 +5,7 @@ includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
 
 Name: VideoStream
 Description: Zero-copy video frame sharing library for embedded edge AI applications
-URL: https://github.com/au-zone/videostream
+URL: https://github.com/EdgeFirstAI/videostream
 Version: @PROJECT_VERSION@
 Requires: glib-2.0
 Libs: -L${libdir} -lvideostream

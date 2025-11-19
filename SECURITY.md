@@ -128,7 +128,7 @@ We value the contributions of security researchers who help keep VideoStream and
 Security updates are distributed through:
 
 1. **GitHub Security Advisories**
-   - Published at: https://github.com/au-zone/videostream/security/advisories
+   - Published at: https://github.com/EdgeFirstAI/videostream/security/advisories
    - Subscribe to repository notifications to receive alerts
 
 2. **EdgeFirst Studio Notifications** (for integrated deployments)

@@ -7,7 +7,7 @@ version = "1.4.0-rc0"
 authors = ["Au-Zone Technologies"]
 license = "Apache-2.0"
 edition = "2021"
-repository = "https://github.com/au-zone/videostream"
+repository = "https://github.com/EdgeFirstAI/videostream"
 homepage = "https://edgefirst.ai"
 rust-version = "1.70"  # MSRV
 

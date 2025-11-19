@@ -59,8 +59,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
 ## Before You Start
 
 1. **Check existing issues and pull requests**
-   - Browse [open issues](https://github.com/au-zone/videostream/issues) to see if your idea is already being discussed
-   - Check [pull requests](https://github.com/au-zone/videostream/pulls) to avoid duplicate work
+   - Browse [open issues](https://github.com/EdgeFirstAI/videostream/issues) to see if your idea is already being discussed
+   - Check [pull requests](https://github.com/EdgeFirstAI/videostream/pulls) to avoid duplicate work
 
 2. **Discuss significant changes first**
    - For major features or breaking changes, open an issue for discussion before coding
@@ -149,10 +149,10 @@ brew install cmake gstreamer glib pkg-config python3
 - Install [CMake](https://cmake.org/download/)
 - Install [Python 3](https://www.python.org/downloads/)
 
-### Cloning the Repository
+#### Clone the Repository
 
 ```bash
-git clone https://github.com/au-zone/videostream.git
+git clone https://github.com/EdgeFirstAI/videostream.git
 cd videostream
 ```
 
@@ -330,80 +330,13 @@ valgrind --leak-check=full \
 
 ---
 
-## Contribution Process
-
 ### 1. Fork and Clone
 
-```bash
-# Fork the repository on GitHub (click "Fork" button)
+#### 1. Fork the Repository
 
-# Clone your fork
-git clone https://github.com/YOUR-USERNAME/videostream.git
-cd videostream
-
-# Add upstream remote
-git remote add upstream https://github.com/au-zone/videostream.git
-```
-
-### 2. Create a Feature Branch
-
-Use descriptive branch names:
-
-```bash
-# For new features
-git checkout -b feature/add-rtsp-support
-
-# For bug fixes
-git checkout -b bugfix/fix-memory-leak-in-client
-
-# For documentation
-git checkout -b docs/improve-api-examples
-```
-
-**Branch naming convention:**
-- `feature/<description>` - New features
-- `bugfix/<description>` - Bug fixes
-- `docs/<description>` - Documentation improvements
-- `test/<description>` - Test additions/improvements
-- `refactor/<description>` - Code refactoring
-
-### 3. Make Changes
-
-- Write clean, readable code following our [code style](#code-style)
-- Add tests for new functionality
-- Update documentation as needed
-- Ensure builds succeed without warnings
-- Run existing tests to avoid regressions
-
-### 4. Commit Your Changes
-
-Follow our [commit message guidelines](#commit-messages):
-
-```bash
-git add .
-git commit -m "Add RTSP support for remote video sources
-
-- Implemented RTSP client using GStreamer rtspsrc
-- Added connection timeout and retry logic
-- Updated documentation with RTSP examples
-- Added integration tests for RTSP pipelines"
-```
-
-### 5. Push to Your Fork
-
-```bash
-git push origin feature/add-rtsp-support
-```
-
-### 6. Submit a Pull Request
-
-1. Go to https://github.com/au-zone/videostream
-2. Click "New Pull Request"
-3. Select your fork and branch
-4. Fill out the PR template (see below)
-5. Submit the PR
-
----
+1. Go to https://github.com/EdgeFirstAI/videostream
+2. Click the "Fork" button in the top-right corner
+3. This creates a copy under your GitHub account
 
 ## Code Style
 
@@ -412,7 +345,9 @@ git push origin feature/add-rtsp-support
 VideoStream follows **C11 standard** with the following conventions:
 
 #### Formatting
-
+# Add upstream remote
+git remote add upstream https://github.com/EdgeFirstAI/videostream.git
+git fetch upstream
 We use **clang-format** with the included [.clang-format](.clang-format) configuration.
 
 **Format your code before committing:**
@@ -731,8 +666,8 @@ gst-inspect-1.0 vslsink  # Should list the plugin
 
 **For development questions:**
 - Check existing [documentation](https://doc.edgefirst.ai/test/perception/videostream/)
-- Search [GitHub Issues](https://github.com/au-zone/videostream/issues)
-- Ask in [GitHub Discussions](https://github.com/au-zone/videostream/discussions)
+- Search [GitHub Issues](https://github.com/EdgeFirstAI/videostream/issues)
+- Ask in [GitHub Discussions](https://github.com/EdgeFirstAI/videostream/discussions)
 - Review [ARCHITECTURE.md](ARCHITECTURE.md) for internal details
 
 **For contribution process questions:**
@@ -741,7 +676,7 @@ gst-inspect-1.0 vslsink  # Should list the plugin
 - Ask in GitHub Discussions under "Contributing" category
 
 **For bugs or security issues:**
-- **Bugs**: [Open an issue](https://github.com/au-zone/videostream/issues/new)
+- **Bugs**: [Open an issue](https://github.com/EdgeFirstAI/videostream/issues/new)
 - **Security**: Email support@au-zone.com with subject "Security Vulnerability"
 
 ---
@@ -761,4 +696,4 @@ Your contributions help make edge AI more accessible and efficient for developer
 
 ---
 
-*For questions or clarifications about contributing, please email [support@au-zone.com](mailto:support@au-zone.com) or ask in [GitHub Discussions](https://github.com/au-zone/videostream/discussions).*
+*For questions or clarifications about contributing, please email [support@au-zone.com](mailto:support@au-zone.com) or ask in [GitHub Discussions](https://github.com/EdgeFirstAI/videostream/discussions).*
