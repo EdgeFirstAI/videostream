@@ -7,9 +7,9 @@
 # - codecov/codecov-action@v5 (latest)
 #
 # Runner Notes:
-# - ubuntu-20.04: Standard GitHub-hosted runner (x86_64)
-# - ubuntu-20.04-arm64: REQUIRES GitHub Team/Enterprise plan or self-hosted runner
-#   If not available, use ubuntu-latest with QEMU cross-compilation instead
+# - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
+# - ubuntu-22.04-arm: Custom larger runner (ARM64) configured in organization settings
+#   Available for GitHub Team/Enterprise with larger runners enabled
 
 name: CI
 
@@ -31,9 +31,9 @@ jobs:
       matrix:
         platform:
           - name: x86_64
-            runner: ubuntu-20.04
+            runner: ubuntu-22.04
           - name: aarch64
-            runner: ubuntu-20.04-arm64
+            runner: ubuntu-22.04-arm
       fail-fast: false
 
     steps:
@@ -111,9 +111,9 @@ jobs:
       matrix:
         platform:
           - name: x86_64
-            runner: ubuntu-20.04
+            runner: ubuntu-22.04
           - name: aarch64
-            runner: ubuntu-20.04-arm64
+            runner: ubuntu-22.04-arm
       fail-fast: false
 
     steps:
