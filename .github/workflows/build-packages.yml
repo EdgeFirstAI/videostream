@@ -142,10 +142,8 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/opt/videostream \
                 -DINSTALL_MANUAL=ON \
-                -DSYSTEM_INSTALL=OFF \
                 -DENABLE_G2D=OFF \
                 -DENABLE_VPU=OFF \
-                -DBUILD_NUMBER=${{ github.run_number }} \
                 ..
           make -j$(nproc)
           cpack -G ZIP
@@ -274,7 +272,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: videostream-linux-x86_64
+          name: zip-package-x86_64
           path: build/
 
       - name: Set up Python
@@ -297,7 +295,7 @@ jobs:
       - name: Extract and install library
         run: |
           cd build
-          unzip videostream-linux-x86_64.zip
+          unzip videostream-latest-linux-x86_64.zip
           sudo cp lib/libvideostream.so* /usr/local/lib/
           sudo cp lib/gstreamer-1.0/*.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
           sudo ldconfig
@@ -463,90 +461,56 @@ jobs:
 
   # Publish Docker images (tagged releases or manual trigger)
   # Note: Docker images still use Docker buildx for multi-arch support
-  publish-docker:
-    name: Publish Docker Images
-    runs-on: ubuntu-22.04
-    needs: [build-zip, test-and-coverage]
-    if: |
-      startsWith(github.ref, 'refs/tags/') || 
-      (github.event_name == 'workflow_dispatch' && inputs.publish_docker)
-    permissions:
-      packages: write
+  # TODO: Disabled until Dockerfile and Dockerfile.musl are created
+  # publish-docker:
+  #   name: Publish Docker Images
+  #   runs-on: ubuntu-22.04
+  #   needs: [build-zip, test-and-coverage]
+  #   if: |
+  #     startsWith(github.ref, 'refs/tags/') || 
+  #     (github.event_name == 'workflow_dispatch' && inputs.publish_docker)
+  #   permissions:
+  #     packages: writete
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+  #     - name: Set up QEMU
+  #       uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #     - name: Login to Docker Hub
+  #       uses: docker/login-action@v3
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Determine Docker tags
-        id: tags
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${{ github.ref_name }}"
-            echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION} -t ${{ env.DOCKER_REGISTRY }}/videostream:latest" >> $GITHUB_OUTPUT
-            echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION}-slim -t ${{ env.DOCKER_REGISTRY }}/videostream:latest-slim" >> $GITHUB_OUTPUT
-          else
-            echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge" >> $GITHUB_OUTPUT
-            echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge-slim" >> $GITHUB_OUTPUT
-          fi
+  #     - name: Determine Docker tags
+  #       id: tags
+  #       run: |
+  #         if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+  #           VERSION="${{ github.ref_name }}"
+  #           echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION} -t ${{ env.DOCKER_REGISTRY }}/videostream:latest" >> $GITHUB_OUTPUT
+  #           echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:${VERSION}-slim -t ${{ env.DOCKER_REGISTRY }}/videostream:latest-slim" >> $GITHUB_OUTPUT
+  #         else
+  #           echo "image_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge" >> $GITHUB_OUTPUT
+  #           echo "slim_tags=-t ${{ env.DOCKER_REGISTRY }}/videostream:edge-slim" >> $GITHUB_OUTPUT
+  #         fi
 
-      - name: Build and push standard image
-        run: |
-          docker buildx build . \
-            --platform linux/amd64,linux/arm64 \
-            --push \
-            ${{ steps.tags.outputs.image_tags }}
+  #     - name: Build and push standard image
+  #       run: |
+  #         docker buildx build . \
+  #           --platform linux/amd64,linux/arm64 \
+  #           --push \
+  #           ${{ steps.tags.outputs.image_tags }}
 
-      - name: Build and push slim image (musl)
-        run: |
-          docker buildx build . \
-            -f Dockerfile.musl \
-            --platform linux/amd64,linux/arm64 \
-            --push \
-            ${{ steps.tags.outputs.slim_tags }}
-
-  # Publish documentation to S3 (tagged releases only)
-  publish-docs:
-    name: Publish Documentation
-    runs-on: ubuntu-22.04
-    needs: build-docs
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Download documentation
-        uses: actions/download-artifact@v4
-        with:
-          name: documentation
-          path: doc/
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-west-2
-
-      - name: Upload to S3
-        run: |
-          aws s3 sync doc/html/ \
-            s3://deepviewmldocs/videostream/${{ github.ref_name }}/ \
-            --delete \
-            --cache-control "public, max-age=3600"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/videostream/${{ github.ref_name }}/*"
+  #     - name: Build and push slim image (musl)
+  #       run: |
+  #         docker buildx build . \
+  #           -f Dockerfile.musl \
+  #           --platform linux/amd64,linux/arm64 \
+  #           --push \
+  #           ${{ steps.tags.outputs.slim_tags }}
