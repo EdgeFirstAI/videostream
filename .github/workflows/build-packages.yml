@@ -372,6 +372,7 @@ jobs:
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
+                -DSONAR_ANALYSIS=ON \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build -j$(nproc)
 
@@ -434,6 +435,7 @@ jobs:
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
+                -DSONAR_ANALYSIS=ON \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build -j$(nproc)
 

@@ -35,6 +35,7 @@ option(ENABLE_GSTREAMER "Enable building the VideoStream GStreamer plugin" ON)
 option(INSTALL_MANUAL "Install User Manual" OFF)
 option(ENABLE_COVER "Enable code coverage for the library" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(SONAR_ANALYSIS "Disable compiler flags incompatible with SonarCloud" OFF)
 
 if (UNIX AND NOT APPLE)
     option(ENABLE_G2D "Enable G2D for frame conversion acceleration" ON)
@@ -119,15 +120,21 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
     set(MAX_STACK 4096 CACHE STRING "Maximum stack usage allowed by the library")
     
     add_compile_options(
-        -fstack-usage
-        -Wstack-usage=${MAX_STACK}
-        -fdump-rtl-expand
         -Wall
         -Wextra
         -Werror=implicit-function-declaration
         -Werror=shadow
         -Wno-multichar
     )
+    
+    # Flags that may confuse SonarCloud analyzer - skip when SONAR_ANALYSIS=ON
+    if(NOT SONAR_ANALYSIS)
+        add_compile_options(
+            -fstack-usage
+            -Wstack-usage=${MAX_STACK}
+            -fdump-rtl-expand
+        )
+    endif()
     
     add_compile_options("$<$<CONFIG:RelWithDebInfo>:-fno-inline;-fno-omit-frame-pointer;-g3>")
     add_link_options("$<$<CONFIG:Release>:-s>")
