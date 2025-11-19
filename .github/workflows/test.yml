@@ -238,9 +238,16 @@ jobs:
           find coverage/ -name "*.gcov" -exec cp {} merged-coverage/gcov/ \;
           
           # Use x86_64 build wrapper output (all platforms produce similar data)
-          # SonarCloud only needs one for C/C++ compilation database
+          # Build wrapper generates compile_commands.json in its output directory
           if [ -d "build-wrapper/build-wrapper-output-x86_64" ]; then
             cp -r build-wrapper/build-wrapper-output-x86_64/* build/sonar/
+          fi
+          
+          # Verify compile_commands.json was generated
+          if [ -f "build/sonar/compile_commands.json" ]; then
+            echo "Found compile_commands.json from build wrapper"
+          else
+            echo "WARNING: compile_commands.json not found in build wrapper output"
           fi
           
           # Create comma-separated lists for coverage report paths
@@ -265,4 +272,4 @@ jobs:
             -Dsonar.python.coverage.reportPaths=${{ env.PYTHON_COVERAGE_PATHS }}
             -Dsonar.rust.cobertura.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
             -Dsonar.cfamily.gcov.reportsPath=merged-coverage/gcov
-            -Dsonar.cfamily.build-wrapper-output=build/sonar
+            -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
