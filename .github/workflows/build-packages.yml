@@ -299,31 +299,28 @@ jobs:
 
       - name: Build library with coverage
         run: |
-          mkdir build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
-                ..
-          make -j$(nproc)
+                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build -j$(nproc)
 
       - name: Run tests with coverage
         run: |
-          cd build
-          export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
-          export VIDEOSTREAM_LIBRARY=$(pwd)/libvideostream.so
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
           python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install pytest pytest-cov pytest-timeout
-          python3 -m pip install -r ../requirements.txt
-          python3 -m pytest ../tests -v \
-            --junitxml=pytest_results.xml \
-            --cov --cov-report=xml:coverage.xml
+          python3 -m pip install -r requirements.txt
+          python3 -m pytest tests -v \
+            --junitxml=build/pytest_results.xml \
+            --cov --cov-report=xml:build/coverage.xml
 
       - name: Generate C/C++ coverage report
         run: |
-          cd build
-          gcovr -r .. --sonarqube -o coverage_c.xml
+          gcovr -r . --sonarqube -o build/coverage_c.xml build/
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -349,37 +346,38 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install dependencies for build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
+      - name: Configure build for compile database
+        run: |
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DENABLE_COVER=ON \
+                -DENABLE_VPU=OFF \
+                -DENABLE_G2D=OFF \
+                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
       - name: Download test coverage
         uses: actions/download-artifact@v4
         with:
           pattern: test-results-*
           merge-multiple: true
+          path: build/
 
-      - name: Verify coverage files
+      - name: Verify coverage files and compile database
         run: |
           echo "Checking for coverage files..."
-          find . -name "*.xml" -type f
-          ls -la build/ || echo "No build directory"
-          # Create build directory if it doesn't exist
-          mkdir -p build
-          # Move coverage files to root if they're in build/
-          if [ -f build/coverage_c.xml ]; then
-            mv build/coverage_c.xml .
-            echo "Moved coverage_c.xml to root"
-          fi
-          if [ -f build/coverage.xml ]; then
-            mv build/coverage.xml .
-            echo "Moved coverage.xml to root"
-          fi
-          # Ensure compile_commands.json stays in build/
-          if [ ! -f build/compile_commands.json ] && [ -f compile_commands.json ]; then
-            mv compile_commands.json build/
-            echo "Moved compile_commands.json to build/"
-          fi
-          echo "Coverage files at root:"
-          ls -la *.xml
-          echo "Compile database in build:"
+          find build/ -name "*.xml" -type f
+          echo "Checking compile_commands.json:"
           ls -la build/compile_commands.json
+          echo "First entry in compile_commands.json:"
+          head -20 build/compile_commands.json
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
@@ -400,37 +398,38 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install dependencies for build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
+      - name: Configure build for compile database
+        run: |
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DENABLE_COVER=ON \
+                -DENABLE_VPU=OFF \
+                -DENABLE_G2D=OFF \
+                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
       - name: Download test coverage
         uses: actions/download-artifact@v4
         with:
           pattern: test-results-*
           merge-multiple: true
+          path: build/
 
-      - name: Verify coverage files
+      - name: Verify coverage files and compile database
         run: |
           echo "Checking for coverage files..."
-          find . -name "*.xml" -type f
-          ls -la build/ || echo "No build directory"
-          # Create build directory if it doesn't exist
-          mkdir -p build
-          # Move coverage files to root if they're in build/
-          if [ -f build/coverage_c.xml ]; then
-            mv build/coverage_c.xml .
-            echo "Moved coverage_c.xml to root"
-          fi
-          if [ -f build/coverage.xml ]; then
-            mv build/coverage.xml .
-            echo "Moved coverage.xml to root"
-          fi
-          # Ensure compile_commands.json stays in build/
-          if [ ! -f build/compile_commands.json ] && [ -f compile_commands.json ]; then
-            mv compile_commands.json build/
-            echo "Moved compile_commands.json to build/"
-          fi
-          echo "Coverage files at root:"
-          ls -la *.xml
-          echo "Compile database in build:"
+          find build/ -name "*.xml" -type f
+          echo "Checking compile_commands.json:"
           ls -la build/compile_commands.json
+          echo "First entry in compile_commands.json:"
+          head -20 build/compile_commands.json
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
