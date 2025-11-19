@@ -53,6 +53,13 @@ venv/bin/scancode -clpieu \
     --timeout 300 \
     deepview/
 
+echo "  Scanning ext/ (third-party dependencies)..."
+venv/bin/scancode -clpieu \
+    --cyclonedx source-sbom-ext.json \
+    --only-findings \
+    --timeout 300 \
+    ext/
+
 echo "  Scanning project root files..."
 venv/bin/scancode -clpieu \
     --cyclonedx source-sbom-root.json \
@@ -93,6 +100,7 @@ sbom_files = [
     'source-sbom-include.json',
     'source-sbom-gst.json',
     'source-sbom-deepview.json',
+    'source-sbom-ext.json',
     'source-sbom-root.json'
 ]
 
@@ -253,8 +261,8 @@ echo
 
 # Cleanup temporary files
 rm -f source-sbom-src.json source-sbom-lib.json source-sbom-include.json \
-      source-sbom-gst.json source-sbom-deepview.json source-sbom-root.json \
-      source-sbom.json deps-sbom.json
+      source-sbom-gst.json source-sbom-deepview.json source-sbom-ext.json \
+      source-sbom-root.json source-sbom.json deps-sbom.json
 
 echo "=================================================="
 echo "SBOM Generation Complete"

@@ -18,21 +18,6 @@ import sys
 sys.path.insert(0, os.path.abspath('../python'))
 
 
-def get_version():
-    """
-    Returns project version from videostream.h header file.
-    """
-    import re
-    header_path = '../include/videostream.h'
-    with open(header_path, 'r') as f:
-        content = f.read()
-        pattern = r'#define VSL_VERSION "([0-9]+\.[0-9]+\.[0-9]+)"'
-        match = re.search(pattern, content)
-        if match:
-            return match.group(1)
-    return '0.0.0'
-
-
 # -- Project information -----------------------------------------------------
 
 project = 'VideoStream'
@@ -40,7 +25,7 @@ copyright = '2025 Au-Zone Technologies'
 author = 'Au-Zone Technologies'
 
 # The short X.Y version
-version = get_version()
+version = '1.4.0-rc0'
 # The full version, including alpha/beta/rc tags
 release = version
 

@@ -30,6 +30,8 @@ jobs:
       contents: read
       checks: write
       pull-requests: write
+    env:
+      BUILD_WRAPPER_OUT_DIR: build/sonar
     strategy:
       matrix:
         platform:
@@ -73,14 +75,11 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
-      - name: Download and setup SonarCloud build wrapper
+      - name: Install Build Wrapper
         if: matrix.platform.name == 'x86_64'
-        run: |
-          wget -q https://sonarcloud.io/static/cpp/build-wrapper-linux-x86.zip
-          unzip -q build-wrapper-linux-x86.zip
-          echo "$PWD/build-wrapper-linux-x86" >> $GITHUB_PATH
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v6
 
-      - name: Configure CMake (with SonarCloud build wrapper)
+      - name: Configure CMake
         if: matrix.platform.name == 'x86_64'
         run: |
           cmake -S . -B build \
@@ -88,8 +87,7 @@ jobs:
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
-                -DSONAR_ANALYSIS=ON \
-                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+                -DSONAR_ANALYSIS=ON
 
       - name: Configure CMake (without SonarCloud)
         if: matrix.platform.name != 'x86_64'
@@ -104,7 +102,7 @@ jobs:
       - name: Build with SonarCloud build wrapper
         if: matrix.platform.name == 'x86_64'
         run: |
-          build-wrapper-linux-x86-64 --out-dir bw-output \
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} \
             cmake --build build -j$(nproc)
 
       - name: Build without build wrapper
@@ -132,18 +130,10 @@ jobs:
 
       - name: Run SonarCloud scan
         if: matrix.platform.name == 'x86_64'
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          sonar-scanner \
-            -Dsonar.organization=edgefirstai \
-            -Dsonar.projectKey=EdgeFirstAI_videostream \
-            -Dsonar.sources=. \
-            -Dsonar.cfamily.build-wrapper-output=bw-output \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.python.coverage.reportPaths=build/coverage.xml \
-            -Dsonar.coverageReportPaths=build/coverage_c.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
