@@ -292,16 +292,15 @@ jobs:
             gstreamer1.0-plugins-bad \
             lcov gcovr
 
-      - name: Extract and install library
+      - name: Extract build artifacts
         run: |
           cd build
           unzip videostream-latest-linux-x86_64.zip
-          sudo cp lib/libvideostream.so* /usr/local/lib/
-          sudo cp lib/gstreamer-1.0/*.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
-          sudo ldconfig
 
       - name: Run tests with coverage
         run: |
+          export LD_LIBRARY_PATH=$PWD/build/lib:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$PWD/build/lib/libvideostream.so
           python3 -m pip install pytest pytest-cov pytest-timeout
           python3 -m pip install -r requirements.txt
           python3 -m pytest tests -v \
