@@ -67,7 +67,7 @@ jobs:
       - name: Build PDF documentation
         run: |
           sudo apt-get update
-          sudo apt-get install -y texlive-xetex texlive-fonts-recommended texlive-latex-extra latexmk
+          sudo apt-get install -y texlive-xetex texlive-fonts-recommended texlive-fonts-extra texlive-latex-extra latexmk
           make -C doc latexpdf
           cp doc/_build/latex/VideoStream.pdf doc/
 
