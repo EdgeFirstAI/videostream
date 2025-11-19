@@ -79,3 +79,23 @@ GTAGS
 /pycov*.xml
 /sonar*.xml
 /.scannerwork/
+
+# Debian packaging artifacts
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/files
+/debian/*.debhelper.log
+/debian/*.substvars
+/debian/tmp/
+/debian/libvideostream/
+/debian/libvideostream-dev/
+/debian/libvideostream-gstreamer/
+/debian/videostream-python/
+/obj-*/
+/*.build
+/*.buildinfo
+/*.changes
+/*.deb
+/*.dsc
+/*.tar.*
+/*.ddeb
