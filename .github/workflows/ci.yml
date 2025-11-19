@@ -55,7 +55,8 @@ jobs:
             gstreamer1.0-tools \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad \
-            python3 python3-pip \
+            python3 python3-pip python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev \
             lcov gcovr
 
       - name: Build library
@@ -74,6 +75,7 @@ jobs:
           cd build
           export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/libvideostream.so
+          python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install pytest pytest-cov pytest-timeout
           python3 -m pip install -r ../requirements.txt
           python3 -m pytest ../tests -v \
@@ -122,7 +124,9 @@ jobs:
             cmake \
             pkg-config \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev
 
       - name: Build Debian package
         run: |
