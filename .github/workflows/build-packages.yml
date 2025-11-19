@@ -337,7 +337,6 @@ jobs:
   sonarcloud-branch:
     name: SonarCloud Analysis (Branch)
     runs-on: ubuntu-22.04
-    needs: test-and-coverage
     if: github.event_name != 'pull_request'
 
     steps:
@@ -346,39 +345,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install dependencies for build
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get remove libunwind-*
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            python3 python3-pip python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev \
+            gcovr
 
-      - name: Configure build for compile database
+      - name: Build library with coverage (Debug)
         run: |
           cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_BUILD_TYPE=Debug \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build -j$(nproc)
 
-      - name: Download test coverage
-        uses: actions/download-artifact@v4
-        with:
-          pattern: test-results-*
-          merge-multiple: true
-          path: build/
-
-      - name: Verify coverage files and compile database
+      - name: Run tests with coverage
         run: |
-          echo "Checking for coverage files..."
-          find build/ -name "*.xml" -type f
-          echo "Checking compile_commands.json:"
-          ls -la build/compile_commands.json
-          echo "First entry in compile_commands.json:"
-          head -20 build/compile_commands.json
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install pytest pytest-cov pytest-timeout
+          python3 -m pip install -r requirements.txt
+          python3 -m pytest tests -v \
+            --cov --cov-report=xml:build/coverage.xml
+
+      - name: Generate C/C++ coverage report
+        run: |
+          gcovr -r . --sonarqube -o build/coverage_c.xml build/
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
@@ -390,7 +399,6 @@ jobs:
   sonarcloud-pr:
     name: SonarCloud Analysis (PR)
     runs-on: ubuntu-22.04
-    needs: test-and-coverage
     if: github.event_name == 'pull_request'
 
     steps:
@@ -399,39 +407,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install dependencies for build
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get remove libunwind-*
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            python3 python3-pip python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev \
+            gcovr
 
-      - name: Configure build for compile database
+      - name: Build library with coverage (Debug)
         run: |
           cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_BUILD_TYPE=Debug \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build -j$(nproc)
 
-      - name: Download test coverage
-        uses: actions/download-artifact@v4
-        with:
-          pattern: test-results-*
-          merge-multiple: true
-          path: build/
-
-      - name: Verify coverage files and compile database
+      - name: Run tests with coverage
         run: |
-          echo "Checking for coverage files..."
-          find build/ -name "*.xml" -type f
-          echo "Checking compile_commands.json:"
-          ls -la build/compile_commands.json
-          echo "First entry in compile_commands.json:"
-          head -20 build/compile_commands.json
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install pytest pytest-cov pytest-timeout
+          python3 -m pip install -r requirements.txt
+          python3 -m pytest tests -v \
+            --cov --cov-report=xml:build/coverage.xml
+
+      - name: Generate C/C++ coverage report
+        run: |
+          gcovr -r . --sonarqube -o build/coverage_c.xml build/
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
