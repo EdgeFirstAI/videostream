@@ -405,7 +405,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-22.04
-    needs: [build-python-wheel, test-and-coverage]
+    needs: [build-wheel, test-and-coverage]
     if: startsWith(github.ref, 'refs/tags/')
     environment: pypi
     permissions:
