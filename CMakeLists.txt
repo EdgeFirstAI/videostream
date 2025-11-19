@@ -2,8 +2,11 @@ cmake_minimum_required(VERSION 3.14)
 
 # Parse version from videostream.h (single source of truth)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/videostream.h" HEADER_CONTENT)
-string(REGEX MATCH "#define VSL_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _ "${HEADER_CONTENT}")
-set(PROJECT_VERSION ${CMAKE_MATCH_1})
+string(REGEX MATCH "#define VSL_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9]+)?)\"" _ "${HEADER_CONTENT}")
+set(PROJECT_VERSION_FULL ${CMAKE_MATCH_1})
+
+# Extract numeric version for CMake project() command (major.minor.patch only)
+string(REGEX MATCH "([0-9]+\\.[0-9]+\\.[0-9]+)" PROJECT_VERSION "${PROJECT_VERSION_FULL}")
 
 # Project declaration with version
 project(VideoStream 
@@ -24,7 +27,7 @@ else()
     set(PACKAGE_NAME "videostream")
 endif()
 
-message(STATUS "VideoStream version: ${PROJECT_VERSION}")
+message(STATUS "VideoStream version: ${PROJECT_VERSION_FULL}")
 
 # Build options
 option(ENABLE_OPENMP "Enable OpenMP threading acceleration" ON)
