@@ -1,2 +1,4 @@
 .debhelper/
-changelog
+*.substvars
+files
+*-stamp

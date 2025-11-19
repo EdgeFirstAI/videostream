@@ -1,8 +1,7 @@
 #!/usr/bin/make -f
 
-TAG := $(shell git describe)
-COMMENT := $(shell git tag -l -n1 $(TAG))
-BUILD_NUMBER ?= 0
+# Debian packaging rules for VideoStream library
+# See debian/changelog for version management
 
 %:
 	dh $@ --buildsystem=cmake
@@ -17,7 +16,8 @@ override_dh_auto_configure:
 
 override_dh_shlibdeps:
 
-version:
-	$(RM) debian/changelog
-	dch --create --distribution stable --package videostream \
-    	--newversion $(TAG)-$(BUILD_NUMBER) "$(COMMENT)"
+override_dh_installdocs:
+	# Install LICENSE and NOTICE to all packages
+	dh_installdocs LICENSE NOTICE
+	# Install README to -dev package
+	dh_installdocs -plibvideostream-dev README.md

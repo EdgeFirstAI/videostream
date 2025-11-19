@@ -46,8 +46,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Full history for git describe
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -117,8 +115,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Download documentation
         uses: actions/download-artifact@v4
@@ -196,8 +192,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Download documentation
         uses: actions/download-artifact@v4
@@ -221,18 +215,7 @@ jobs:
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad
 
-      - name: Generate Debian changelog
-        run: |
-          TAG=$(git describe --tags --always)
-          COMMENT=$(git tag -l -n1 $TAG | head -n1)
-          rm -f debian/changelog
-          dch --create --distribution stable --package videostream \
-              --newversion ${TAG}-${{ github.run_number }} \
-              "${COMMENT:-Build ${{ github.run_number }}}"
-
-      - name: Build Debian packages
-        env:
-          INSTALL_MANUAL: "ON"
+      - name: Build Debian package
         run: |
           dpkg-buildpackage -b --no-sign -j$(nproc)
 
@@ -256,8 +239,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

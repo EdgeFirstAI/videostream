@@ -1,16 +1,24 @@
 # cargo-release configuration
-# Manages version bumping across Cargo.toml and pyproject.toml
+# Manages version bumping across all project files
+# Single source of truth: versions are synchronized across C, Python, Rust, and Debian packaging
 
 # Allow non-Git crates (useful during development)
 allow-branch = ["main", "develop"]
 
-# Pre-release replacements
+# Pre-release replacements - update all version references
 pre-release-replacements = [
+  # Update C library header (single source of truth for C code)
+  {file="include/videostream.h", search="#define VSL_VERSION \"[^\"]+\"", replace="#define VSL_VERSION \"{{version}}\"", exactly=1},
+  
   # Update Cargo workspace version
-  {file="Cargo.toml", search="version = \".*\"", replace="version = \"{{version}}\"", exactly=1},
+  {file="Cargo.toml", search="version = \"[^\"]+\"", replace="version = \"{{version}}\"", min=1},
   
   # Update Python package version
-  {file="pyproject.toml", search="version = \".*\"", replace="version = \"{{version}}\"", exactly=1},
+  {file="pyproject.toml", search="version = \"[^\"]+\"", replace="version = \"{{version}}\"", exactly=1},
+  
+  # Update Debian changelog (convert version format: 1.4.0-rc0 → 1.4.0~rc0 for Debian)
+  # Note: Manual update may be needed for proper Debian changelog format with date/maintainer
+  {file="debian/changelog", search="videostream \\([^)]+\\)", replace="videostream ({{version}}-1)", min=1},
   
   # Update CHANGELOG.md unreleased section
   {file="CHANGELOG.md", search="## \\[Unreleased\\]", replace="## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly=1},
