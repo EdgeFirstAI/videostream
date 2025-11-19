@@ -338,6 +338,8 @@ jobs:
     name: SonarCloud Analysis (Branch)
     runs-on: ubuntu-22.04
     if: github.event_name != 'pull_request'
+    env:
+      BUILD_WRAPPER_OUT_DIR: build/sonar
 
     steps:
       - name: Checkout code
@@ -365,16 +367,22 @@ jobs:
             libxml2-dev libxslt1-dev zlib1g-dev \
             gcovr
 
-      - name: Build library with coverage (Debug)
+      - name: Install SonarCloud Build Wrapper
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v6
+
+      - name: Configure build
         run: |
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
-                -DSONAR_ANALYSIS=ON \
-                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          cmake --build build -j$(nproc)
+                -DSONAR_ANALYSIS=ON
+
+      - name: Build with Build Wrapper
+        run: |
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} \
+            cmake --build build -j$(nproc)
 
       - name: Run tests with coverage
         run: |
@@ -391,7 +399,7 @@ jobs:
           gcovr -r . --sonarqube -o build/coverage_c.xml build/
 
       - name: Run SonarCloud scan
-        uses: sonarsource/sonarcloud-github-action@v3.0.0
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -401,6 +409,8 @@ jobs:
     name: SonarCloud Analysis (PR)
     runs-on: ubuntu-22.04
     if: github.event_name == 'pull_request'
+    env:
+      BUILD_WRAPPER_OUT_DIR: build/sonar
 
     steps:
       - name: Checkout code
@@ -428,16 +438,22 @@ jobs:
             libxml2-dev libxslt1-dev zlib1g-dev \
             gcovr
 
-      - name: Build library with coverage (Debug)
+      - name: Install SonarCloud Build Wrapper
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v6
+
+      - name: Configure build
         run: |
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
-                -DSONAR_ANALYSIS=ON \
-                -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          cmake --build build -j$(nproc)
+                -DSONAR_ANALYSIS=ON
+
+      - name: Build with Build Wrapper
+        run: |
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} \
+            cmake --build build -j$(nproc)
 
       - name: Run tests with coverage
         run: |
@@ -454,7 +470,7 @@ jobs:
           gcovr -r . --sonarqube -o build/coverage_c.xml build/
 
       - name: Run SonarCloud scan
-        uses: sonarsource/sonarcloud-github-action@v3.0.0
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
