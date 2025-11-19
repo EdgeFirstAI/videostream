@@ -7,6 +7,7 @@
 /out/
 /dist/
 /target/
+/install/
 
 .vscode-ctags
 .coverage
@@ -79,6 +80,7 @@ GTAGS
 /pycov*.xml
 /sonar*.xml
 /.scannerwork/
+lcov.info
 
 # Debian packaging artifacts
 /debian/.debhelper/
@@ -91,6 +93,8 @@ GTAGS
 /debian/libvideostream-dev/
 /debian/libvideostream-gstreamer/
 /debian/videostream-python/
+/debian/videostream-samples/
+/debian/videostream-tools/
 /obj-*/
 /*.build
 /*.buildinfo
@@ -99,3 +103,6 @@ GTAGS
 /*.dsc
 /*.tar.*
 /*.ddeb
+
+
+/SPS/
