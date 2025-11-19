@@ -85,6 +85,21 @@ jobs:
       - name: Install Build Wrapper
         uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v6
 
+      - name: Detect build wrapper binary
+        id: build-wrapper
+        run: |
+          # Detect architecture and set the correct build wrapper binary
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "x86_64" ]; then
+            echo "binary=build-wrapper-linux-x86-64" >> $GITHUB_OUTPUT
+          elif [ "$ARCH" = "aarch64" ]; then
+            echo "binary=build-wrapper-linux-aarch64" >> $GITHUB_OUTPUT
+          else
+            echo "Unsupported architecture: $ARCH"
+            exit 1
+          fi
+          echo "Detected architecture: $ARCH"
+
       - name: Configure CMake
         run: |
           cmake -S . -B build \
@@ -96,7 +111,7 @@ jobs:
 
       - name: Build with SonarCloud build wrapper
         run: |
-          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} \
+          ${{ steps.build-wrapper.outputs.binary }} --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} \
             cmake --build build -j$(nproc)
 
       - name: Install Python test dependencies
