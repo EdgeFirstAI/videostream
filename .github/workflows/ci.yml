@@ -130,17 +130,26 @@ jobs:
 
       - name: Build Debian package
         run: |
-          dpkg-buildpackage -b --no-sign -j$(nproc)
+          dpkg-buildpackage --no-sign -j$(nproc)
 
       - name: List generated packages
         run: |
-          ls -lh ../*.deb
+          ls -lh ../*.deb ../*.dsc ../*.tar.* 2>/dev/null || true
           mkdir -p debs
           mv ../*.deb debs/
+          mkdir -p source
+          mv ../*.dsc ../*.tar.* ../*.buildinfo ../*.changes source/ 2>/dev/null || true
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
         with:
           name: debian-package-${{ matrix.platform.name }}
           path: "debs/*.deb"
+          retention-days: 90
+
+      - name: Upload Debian source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-source-${{ matrix.platform.name }}
+          path: "source/*"
           retention-days: 90
