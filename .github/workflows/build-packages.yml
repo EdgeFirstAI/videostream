@@ -333,6 +333,7 @@ jobs:
             build/pytest_results.xml
             build/coverage.xml
             build/coverage_c.xml
+            build/compile_commands.json
           retention-days: 30
 
   # SonarCloud analysis (branches)
@@ -359,6 +360,8 @@ jobs:
           echo "Checking for coverage files..."
           find . -name "*.xml" -type f
           ls -la build/ || echo "No build directory"
+          # Create build directory if it doesn't exist
+          mkdir -p build
           # Move coverage files to root if they're in build/
           if [ -f build/coverage_c.xml ]; then
             mv build/coverage_c.xml .
@@ -368,7 +371,15 @@ jobs:
             mv build/coverage.xml .
             echo "Moved coverage.xml to root"
           fi
+          # Ensure compile_commands.json stays in build/
+          if [ ! -f build/compile_commands.json ] && [ -f compile_commands.json ]; then
+            mv compile_commands.json build/
+            echo "Moved compile_commands.json to build/"
+          fi
+          echo "Coverage files at root:"
           ls -la *.xml
+          echo "Compile database in build:"
+          ls -la build/compile_commands.json
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
@@ -400,6 +411,8 @@ jobs:
           echo "Checking for coverage files..."
           find . -name "*.xml" -type f
           ls -la build/ || echo "No build directory"
+          # Create build directory if it doesn't exist
+          mkdir -p build
           # Move coverage files to root if they're in build/
           if [ -f build/coverage_c.xml ]; then
             mv build/coverage_c.xml .
@@ -409,7 +422,15 @@ jobs:
             mv build/coverage.xml .
             echo "Moved coverage.xml to root"
           fi
+          # Ensure compile_commands.json stays in build/
+          if [ ! -f build/compile_commands.json ] && [ -f compile_commands.json ]; then
+            mv compile_commands.json build/
+            echo "Moved compile_commands.json to build/"
+          fi
+          echo "Coverage files at root:"
           ls -la *.xml
+          echo "Compile database in build:"
+          ls -la build/compile_commands.json
 
       - name: Run SonarCloud scan
         uses: sonarsource/sonarcloud-github-action@v3.0.0
