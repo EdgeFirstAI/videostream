@@ -1,12 +1,11 @@
 add_executable(vsl-monitor monitor.c)
-target_link_libraries(vsl-monitor stb videostream)
+target_link_libraries(vsl-monitor PRIVATE stb videostream)
 
 add_executable(vsl-test-shm test_shm.c)
-target_link_libraries(vsl-test-shm videostream m)
+target_link_libraries(vsl-test-shm PRIVATE videostream m)
 
 add_executable(vsl-camhost camhost.c)
-target_link_libraries(vsl-camhost videostream)
-target_include_directories(vsl-camhost PRIVATE)
+target_link_libraries(vsl-camhost PRIVATE videostream)
 
 if(GSTREAMER_FOUND)
     add_executable(vsl-display display.c)

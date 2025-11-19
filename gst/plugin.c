@@ -4,7 +4,7 @@
 #include <gst/gst.h>
 #include <stdio.h>
 
-#include "version.h"
+#include "videostream.h"
 #include "vslsink.h"
 #include "vslsrc.h"
 
@@ -28,7 +28,7 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR,
                   videostream,
                   "VideoStream GStreamer Plugin",
                   plugin_init,
-                  VIDEOSTREAM_VERSION,
+                  VSL_VERSION,
                   "Proprietary",
                   "videostream",
                   "embeddedml.com")
