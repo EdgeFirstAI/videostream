@@ -77,98 +77,9 @@ This directory contains CI/CD workflows for the VideoStream library. These workf
 - ZIP packages: `videostream-linux-{arch}.zip`
 - Debian packages: multiple .deb files
 
-### 3. Build Packages Workflow (`build-packages.yml`)
-
-**Purpose:** Build release artifacts and publish to distribution channels using native runners
-
-**Triggers:**
-- Push to `main` or `develop` branches
-- Tags matching `v*.*.*` (e.g., v1.4.0)
-- Pull requests to `main` or `develop`
-- Manual dispatch with optional Docker publishing
-
-**Build Strategy:**
-All package builds run on **native GitHub runners** without Docker:
-- `ubuntu-20.04` for x86_64 (glibc 2.31, maximum portability)
-- `ubuntu-20.04-arm64` for aarch64 (native ARM64 execution)
-
-**Jobs:**
-
-1. **build-docs** (ubuntu-20.04): Generate HTML and PDF documentation using Sphinx
-   - Python 3.8 + Sphinx + LaTeX
-   - Outputs: VideoStream.pdf, HTML archive
-   
-2. **build-zip** (native per arch): Create relocatable ZIP archives
-   - CMake with CMAKE_INSTALL_PREFIX=/opt/videostream
-   - CPack ZIP generator
-   - Includes documentation when INSTALL_MANUAL=ON
-   - Outputs: `videostream-{version}-linux-{arch}.zip`
-
-3. **build-deb** (native per arch): Build Debian packages
-   - Uses dpkg-buildpackage natively (no Docker)
-   - Creates multiple .deb packages:
-     - `libvideostream` - Runtime library
-     - `libvideostream-dev` - Development headers
-     - `libvideostream-gstreamer` - GStreamer plugins
-     - `videostream-python` - Python bindings
-   - Debian tools: debhelper, devscripts, dch
-   
-4. **build-wheel** (ubuntu-20.04): Build Python wheel
-   - Python 3.8 + build module
-   - Outputs: `videostream-{version}-py3-none-any.whl`
-
-5. **test-and-coverage** (native per arch): Run tests and generate coverage
-   - Native pytest execution
-   - gcovr for C coverage
-   - Outputs: JUnit XML, Cobertura XML, SonarQube XML
-
-6. **sonarcloud-branch/pr**: Code quality analysis
-   - Uses SonarCloud GitHub Action (no Docker)
-   - Consumes coverage artifacts from test job
-   - Enforces quality gate (70% coverage, no blockers)
-
-7. **github-release** (tags only): Create GitHub release
-   - Aggregates all build artifacts
-   - Auto-generates release notes
-   - Uploads ZIP, DEB, wheel, docs, source archive
-
-8. **publish-pypi** (tags only): Publish wheel to PyPI
-   - Uses trusted publishing (OIDC, no credentials)
-   - Only runs on tagged releases
-
-9. **publish-docker** (tags or manual): Build Docker images
-   - **Only job using Docker** (for container images)
-   - Uses Docker buildx for multi-arch (amd64, arm64)
-   - Standard: `deepview/videostream:latest`, `deepview/videostream:v1.4.0`
-   - Slim (musl): `deepview/videostream:latest-slim`
-
-10. **publish-docs** (tags only): Upload documentation to S3
-    - AWS CLI with OIDC authentication
-    - S3 sync + CloudFront invalidation
-    - Path: `s3://deepviewmldocs/videostream/{version}/`
-
-**Performance Comparison (Docker vs Native):**
-
-| Task                  | Docker (old) | Native (new) | Speedup |
-|-----------------------|--------------|--------------|---------|
-| x86_64 ZIP build      | 15-20 min    | 3-5 min      | 4x      |
-| ARM64 ZIP build       | 25-30 min    | 4-6 min      | 5x      |
-| x86_64 DEB build      | 20-25 min    | 5-7 min      | 4x      |
-| ARM64 DEB build       | 30-35 min    | 6-8 min      | 5x      |
-| Test execution        | 10-15 min    | 3-5 min      | 3x      |
-| **Total pipeline**    | **60-90 min**| **15-25 min**| **4x**  |
-
-**Native Runner Advantages:**
-- ✅ No QEMU emulation (ARM64 runs on real ARM hardware)
-- ✅ Direct package manager access (apt install is instant)
-- ✅ Simpler logs (no Docker layer abstractions)
-- ✅ Better caching (GitHub Actions cache vs Docker layers)
-- ✅ Easier debugging (can SSH to runner with tmate)
-- ✅ Lower resource usage (no Docker daemon overhead)
-
 ### 3. SBOM Workflow (`sbom.yml`)
 
-**Purpose:** Software Bill of Materials generation and license compliance
+**Purpose:** Software Bill of Materials generation and license compliance checking
 
 **Triggers:**
 - Push to `main` or `develop` branches
@@ -189,6 +100,20 @@ All package builds run on **native GitHub runners** without Docker:
 - ✅ Approved: MIT, Apache-2.0, BSD-2/3-Clause, ISC
 - ⚠️ Review Required: MPL-2.0, LGPL (dynamic linking)
 - ❌ Blocked: GPL, AGPL, restrictive licenses
+
+### Future: Release Workflow (`release.yml`)
+
+**Purpose:** Publishing releases to PyPI and GitHub Releases (planned)
+
+**Triggers:**
+- Tags matching `v*.*.*`
+- Manual workflow dispatch
+
+**Planned Jobs:**
+- **publish-pypi**: Publish Python wheel to PyPI using trusted publishing
+- **github-release**: Create GitHub release with artifacts and release notes
+
+**Note:** Docker and AWS publishing are not planned for this project.
 
 ## Migration from Jenkins
 
@@ -247,17 +172,51 @@ git push origin develop              # Triggers test.yml and build.yml
 git push origin --tags v1.4.0        # Triggers all jobs including publishing
 ```
 
+## Workflow Usage
+
+### Running Workflows
+
+**Automatic (on push/PR):**
+```bash
+git commit -m "EDGEAI-123: Add feature"
+git push origin develop              # Triggers test.yml and build.yml
+```
+
 **Manual dispatch:**
 ```bash
-# Trigger Docker publishing without creating a tag
-gh workflow run build-packages.yml -f publish_docker=true
-
-# View workflow runs
-gh run list --workflow=build-packages.yml
-
-# Download artifacts
-gh run download <run-id> --name zip-package-x86_64
+# Future: Run release workflow when implemented
+gh workflow run release.yml
 ```
+
+**View workflow runs:**
+```bash
+gh run list --workflow=test.yml
+gh run list --workflow=build.yml
+```
+
+## Required Secrets
+
+Configure these in repository settings (Settings → Secrets and variables → Actions):
+
+### Required for All Workflows
+
+- `SONAR_TOKEN` - SonarCloud authentication token
+  - Generate at: https://sonarcloud.io/account/security
+  - Scope: Analyze projects
+
+### Future: Required for Release Workflow
+
+When `release.yml` is implemented, these will be needed:
+
+- PyPI trusted publishing (OIDC) - configured at https://pypi.org
+- GitHub token (automatic) - for creating releases
+
+### Not Required
+
+The following are NOT used in this project:
+- ❌ Docker Hub credentials (no Docker publishing)
+- ❌ AWS credentials (no AWS deployment)
+- ❌ Codecov token (optional for private repos)
 
 ### Viewing Results
 
@@ -338,10 +297,13 @@ Configure these in repository settings (Settings → Secrets and variables → A
 
 - ✅ Require pull request reviews (2 approvals)
 - ✅ Require status checks to pass:
-  - `build-and-test (x86_64)`
-  - `build-and-test (aarch64)`
-  - `sonarcloud-branch` or `sonarcloud-pr`
-  - `sbom-generation`
+  - `test (x86_64)`
+  - `test (aarch64)`
+  - `documentation`
+  - `build-zip (x86_64)`
+  - `build-zip (aarch64)`
+  - `build-deb (x86_64)`
+  - `build-deb (aarch64)`
 - ✅ Require conversation resolution
 - ✅ Require linear history (squash or rebase merges)
 - ✅ Do not allow bypassing required checks

@@ -47,7 +47,8 @@ jobs:
             texlive-fonts-recommended \
             texlive-fonts-extra \
             texlive-xetex \
-            latexmk
+            latexmk \
+            tex-gyre
           python3 -m pip install --upgrade pip
           python3 -m pip install -r doc/requirements.txt
 
