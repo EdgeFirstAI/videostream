@@ -1,6 +1,6 @@
 # EdgeFirst VideoStream Library
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/au-zone/videostream/ci.yml?branch=main)](https://github.com/au-zone/videostream/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/ci.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/au-zone/videostream)](https://codecov.io/gh/au-zone/videostream)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![EdgeFirst Perception](https://img.shields.io/badge/EdgeFirst-Perception-green)](https://doc.edgefirst.ai/test/perception/)
@@ -97,7 +97,7 @@ sudo dnf install -y \
 
 #### Build from Source
 ```bash
-git clone https://github.com/au-zone/videostream.git
+git clone https://github.com/EdgeFirstAI/videostream.git
 cd videostream
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
@@ -552,8 +552,8 @@ We welcome contributions, especially for:
 - Performance optimizations for 4K/8K capture and encoding
 
 **Get Started:**
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
-2. Check [GitHub Issues](https://github.com/au-zone/videostream/issues) for tasks
+1. Check [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
+2. Check [GitHub Issues](https://github.com/EdgeFirstAI/videostream/issues) for tasks
 3. Review [ARCHITECTURE.md](ARCHITECTURE.md) to understand internals
 4. Follow [Code of Conduct](CODE_OF_CONDUCT.md)
 
@@ -562,9 +562,9 @@ We welcome contributions, especially for:
 ## Support
 
 ### Community Resources
-- 📚 **[Documentation](https://doc.edgefirst.ai/test/perception/videostream/)**
-- 💬 **[GitHub Discussions](https://github.com/au-zone/videostream/discussions)**
-- 🐛 **[Issue Tracker](https://github.com/au-zone/videostream/issues)**
+- 📒 **[Documentation](https://doc.edgefirst.ai/test/perception/videostream/)**
+- 💬 **[GitHub Discussions](https://github.com/EdgeFirstAI/videostream/discussions)**
+- 🐛 **[Issue Tracker](https://github.com/EdgeFirstAI/videostream/issues)**
 
 ### EdgeFirst Ecosystem
 - **[EdgeFirst Perception](https://doc.edgefirst.ai/test/perception/)** - Complete perception middleware

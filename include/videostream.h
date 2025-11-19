@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
 
-/**
- * Copyright 2020 by Au-Zone Technologies.  All Rights Reserved.
- */
 #ifndef VIDEOSTREAM_H
 #define VIDEOSTREAM_H
 

@@ -140,7 +140,7 @@ Rust bindings were introduced in version 1.4.0.
 ## Support
 
 **For latest releases:**
-- GitHub Releases: https://github.com/au-zone/videostream/releases
+- GitHub Releases: https://github.com/EdgeFirstAI/videostream/releases
 - Documentation: https://doc.edgefirst.ai/
 
 **For security updates:**
