@@ -130,11 +130,6 @@ jobs:
 
       - name: Build Debian package
         run: |
-          TAG=$(git describe --tags --always)
-          rm -f debian/changelog
-          dch --create --distribution stable --package videostream \
-              --newversion ${TAG}-${{ github.run_number }} \
-              "CI Build ${{ github.run_number }}"
           dpkg-buildpackage -b --no-sign -j$(nproc)
 
       - name: List generated packages

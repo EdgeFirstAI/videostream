@@ -14,23 +14,29 @@
 #
 import os
 import sys
-from subprocess import Popen, PIPE
 
 sys.path.insert(0, os.path.abspath('../python'))
 
 
 def get_version():
     """
-    Returns project version as string from 'git describe' command.
+    Returns project version from videostream.h header file.
     """
-    pipe = Popen('git describe --tags --always', stdout=PIPE, shell=True)
-    return pipe.stdout.read().rstrip().decode('utf-8')
+    import re
+    header_path = '../include/videostream.h'
+    with open(header_path, 'r') as f:
+        content = f.read()
+        pattern = r'#define VSL_VERSION "([0-9]+\.[0-9]+\.[0-9]+)"'
+        match = re.search(pattern, content)
+        if match:
+            return match.group(1)
+    return '0.0.0'
 
 
 # -- Project information -----------------------------------------------------
 
 project = 'VideoStream'
-copyright = '2022 Au-Zone Technologies'
+copyright = '2025 Au-Zone Technologies'
 author = 'Au-Zone Technologies'
 
 # The short X.Y version

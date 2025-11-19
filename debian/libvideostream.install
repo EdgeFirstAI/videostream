@@ -1,2 +1,4 @@
 usr/lib/*/libvideostream.so
 usr/lib/*/cmake/VideoStream
+usr/share/doc/libvideostream/LICENSE
+usr/share/doc/libvideostream/NOTICE

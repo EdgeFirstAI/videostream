@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "1.0.0"
+#define VSL_VERSION "1.4.0-rc0"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))

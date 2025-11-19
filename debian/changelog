@@ -1,0 +1,20 @@
+videostream (1.4.0~rc0-1) stable; urgency=medium
+
+  * Release candidate 0 for version 1.4.0
+  * Rust bindings with dynamic library loading
+  * BREAKING: Error type renamed VSLError → Error
+  * BREAKING: All Rust APIs now return Result types
+  * Zero-copy IPC frame sharing library for embedded vision
+  * GStreamer plugins: vslsink and vslsrc
+  * Python bindings via deepview.videostream package
+  * Support for DmaBuf, G2D acceleration, and Hantro VPU
+  * Complete documentation and samples
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Mon, 18 Nov 2025 00:00:00 +0000
+
+videostream (1.3.14-1) stable; urgency=medium
+
+  * Legacy C library release
+  * See git commit history for detailed changes
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Wed, 01 Jan 2024 00:00:00 +0000
