@@ -23,36 +23,61 @@ This directory contains CI/CD workflows for the VideoStream library. These workf
 
 ## Workflow Overview
 
-### 1. CI Workflow (`ci.yml`)
+### 1. Test Workflow (`test.yml`)
 
-**Purpose:** Continuous integration for code quality, testing, and validation
+**Purpose:** Testing, code coverage, and static analysis
 
 **Triggers:**
 - Push to `main` or `develop` branches
 - Pull requests to `main` or `develop`
 
 **Jobs:**
-- **build-and-test** (x86_64, aarch64): Build library natively, run Python tests, generate coverage
-- **build-packages** (x86_64, aarch64): Build Debian packages natively using dpkg-buildpackage
+- **test** (x86_64, aarch64): Build Debug configuration with coverage, run tests, SonarCloud analysis
 
 **Build Environment:**
-- Runner: `ubuntu-20.04` / `ubuntu-20.04-arm64`
-- Python: 3.8 (matches Ubuntu 20.04 LTS)
-- GStreamer: 1.16.x (Ubuntu 20.04 default)
-- CMake: 3.16+ (from apt)
+- Runner: `ubuntu-22.04` / `ubuntu-22.04-arm`
+- Build Type: Debug with coverage enabled
+- Python: 3.8
+- GStreamer: 1.4+
+- CMake: 3.14+
 
 **Artifacts:**
 - Test results (JUnit XML)
-- Coverage reports (XML for Codecov)
-- Debian packages (.deb files)
+- Coverage reports (Python and C/C++)
+- SonarCloud analysis (x86_64 only)
 
 **Key Features:**
-- Native multi-architecture builds (no emulation)
-- Python test suite with pytest
-- Coverage reporting to Codecov
-- Real ARM64 hardware execution
+- Debug build with ENABLE_COVER=ON
+- SonarCloud build wrapper integration
+- Python and C coverage collection
+- Native multi-architecture testing
 
-### 2. Build Packages Workflow (`build-packages.yml`)
+### 2. Build Workflow (`build.yml`)
+
+**Purpose:** Build release artifacts including documentation, ZIP packages, and Debian packages
+
+**Triggers:**
+- Push to `main` or `develop` branches
+- Tags matching `v*` (e.g., v1.4.0)
+- Pull requests to `main` or `develop`
+
+**Jobs:**
+1. **documentation**: Build HTML and PDF documentation
+2. **build-zip** (x86_64, aarch64): Create relocatable ZIP archives
+3. **build-deb** (x86_64, aarch64): Build Debian packages
+
+**Build Environment:**
+- Runner: `ubuntu-22.04` / `ubuntu-22.04-arm`
+- Build Type: Release
+- Python: 3.10 (documentation)
+- GStreamer: 1.4+
+
+**Artifacts:**
+- Documentation (HTML + PDF)
+- ZIP packages: `videostream-linux-{arch}.zip`
+- Debian packages: multiple .deb files
+
+### 3. Build Packages Workflow (`build-packages.yml`)
 
 **Purpose:** Build release artifacts and publish to distribution channels using native runners
 
@@ -214,7 +239,11 @@ This GitHub Actions setup replicates the previous Jenkins pipeline with signific
 
 **Automatic (on push/PR):**
 ```bash
-git push origin develop              # Triggers ci.yml and build-packages.yml
+**Automatic (on push/PR):**
+```bash
+git commit -m "EDGEAI-123: Add feature"
+git push origin develop              # Triggers test.yml and build.yml
+```
 git push origin --tags v1.4.0        # Triggers all jobs including publishing
 ```
 

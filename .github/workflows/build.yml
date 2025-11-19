@@ -1,0 +1,193 @@
+# GitHub Actions workflow for building release artifacts
+#
+# This workflow builds documentation, creates release ZIP packages,
+# and builds Debian packages for distribution.
+#
+# Action Versions (verified November 2025):
+# - actions/checkout@v4 (latest)
+# - actions/setup-python@v5 (latest)
+# - actions/upload-artifact@v4 (latest)
+#
+# Runner Notes:
+# - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
+# - ubuntu-22.04-arm: Custom larger runner (ARM64)
+
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  documentation:
+    name: Build Documentation
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install documentation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            doxygen \
+            graphviz \
+            texlive-latex-base \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-fonts-extra \
+            texlive-xetex \
+            latexmk
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r doc/requirements.txt
+
+      - name: Build HTML documentation
+        run: |
+          make -C doc html
+
+      - name: Build PDF documentation
+        run: |
+          make -C doc latexpdf
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: |
+            doc/_build/html/
+            doc/_build/latex/VideoStream.pdf
+          retention-days: 90
+
+  build-zip:
+    name: Build Release ZIP (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - name: x86_64
+            runner: ubuntu-22.04
+          - name: aarch64
+            runner: ubuntu-22.04-arm
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get remove libunwind-*
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/usr \
+                -DENABLE_VPU=OFF \
+                -DENABLE_G2D=OFF
+
+      - name: Build
+        run: |
+          cmake --build build -j$(nproc)
+
+      - name: Create ZIP package
+        run: |
+          cd build
+          cpack
+
+      - name: List package contents
+        run: |
+          unzip -l build/videostream-linux-${{ matrix.platform.name }}.zip | head -50
+
+      - name: Upload ZIP package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zip-package-${{ matrix.platform.name }}
+          path: build/videostream-*.zip
+          retention-days: 90
+
+  build-deb:
+    name: Build Debian Packages (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - name: x86_64
+            runner: ubuntu-22.04
+          - name: aarch64
+            runner: ubuntu-22.04-arm
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get remove libunwind-*
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            debhelper \
+            devscripts \
+            cmake \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            python3-dev \
+            libxml2-dev libxslt1-dev zlib1g-dev
+
+      - name: Build Debian packages
+        run: |
+          dpkg-buildpackage --no-sign -j$(nproc)
+
+      - name: Organize build artifacts
+        run: |
+          mkdir -p debs source
+          mv ../*.deb debs/ || true
+          mv ../*.dsc ../*.tar.* ../*.buildinfo ../*.changes source/ || true
+
+      - name: List generated packages
+        run: |
+          echo "=== Debian Packages ==="
+          ls -lh debs/*.deb
+          echo ""
+          echo "=== Package Contents ==="
+          for deb in debs/*.deb; do
+            echo "--- $(basename $deb) ---"
+            dpkg -c "$deb" | grep -v "/$" | awk '{print $6}' | sort
+            echo ""
+          done
+
+      - name: Upload Debian packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-packages-${{ matrix.platform.name }}
+          path: "debs/*.deb"
+          retention-days: 90
+
+      - name: Upload Debian source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-source-${{ matrix.platform.name }}
+          path: "source/*"
+          retention-days: 90
