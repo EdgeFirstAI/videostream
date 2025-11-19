@@ -282,6 +282,66 @@ jobs:
     runs-on: ubuntu-22.04
     needs: build-zip
 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: videostream-linux-x86_64
+          path: build/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            lcov gcovr
+
+      - name: Extract and install library
+        run: |
+          cd build
+          unzip videostream-linux-x86_64.zip
+          sudo cp lib/libvideostream.so* /usr/local/lib/
+          sudo cp lib/gstreamer-1.0/*.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
+          sudo ldconfig
+
+      - name: Run tests with coverage
+        run: |
+          python3 -m pip install pytest pytest-cov pytest-timeout
+          python3 -m pip install -r requirements.txt
+          python3 -m pytest tests -v \
+            --junitxml=pytest_results.xml \
+            --cov --cov-report=xml:coverage.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-x86_64
+          path: |
+            pytest_results.xml
+            coverage.xml
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-x86_64
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   # SonarCloud analysis (branches)
   sonarcloud-branch:
     name: SonarCloud Analysis (Branch)
