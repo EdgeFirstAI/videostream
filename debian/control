@@ -33,9 +33,22 @@ Multi-Arch: same
 Depends: libvideostream
 Description: VideoStream Library GStreamer plug-ins
 
-# Package: deepview-rt-samples
-# Section: devel
-# Priority: optional
-# Architecture: any
-# Multi-Arch: same
-# Depends: libdeepview-rt (= ${binary:Version})
+Package: videostream-tools
+Section: utils
+Priority: optional
+Architecture: any
+Multi-Arch: same
+Depends: libvideostream (= ${binary:Version})
+Description: VideoStream Library command-line utilities
+ Provides command-line tools for working with VideoStream library.
+ .
+ This package contains:
+  - vsl-camhost: Camera host utility for frame publishing
+
+Package: videostream-samples
+Section: devel
+Priority: optional
+Architecture: all
+Multi-Arch: foreign
+Description: VideoStream Library sample programs and source code
+ Sample source code demonstrating VideoStream library usage.

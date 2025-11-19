@@ -1,6 +1,6 @@
 # EdgeFirst VideoStream Library
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/ci.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/test.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/au-zone/videostream)](https://codecov.io/gh/au-zone/videostream)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![EdgeFirst Perception](https://img.shields.io/badge/EdgeFirst-Perception-green)](https://doc.edgefirst.ai/test/perception/)
