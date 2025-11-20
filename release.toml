@@ -5,6 +5,10 @@
 # Allow non-Git crates (useful during development)
 allow-branch = ["main", "develop"]
 
+# Shared changelog for workspace (disable per-crate changelogs)
+shared-version = true
+consolidate-commits = true
+
 # Pre-release replacements - update all version references
 pre-release-replacements = [
   # Update C library header (single source of truth for C code)
