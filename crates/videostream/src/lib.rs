@@ -16,22 +16,26 @@
 //! ## Publishing Frames (Host)
 //!
 //! ```no_run
-//! use videostream::Host;
+//! use videostream::host::Host;
+//! use videostream::frame::Frame;
 //!
 //! let host = Host::new("/tmp/video.sock")?;
-//! let frame = host.allocate_frame(1920, 1080, fourcc)?;
-//! host.publish(frame)?;
+//! let frame = Frame::new(1920, 1080, 1920 * 2, "YUYV")?;
+//! frame.alloc(None)?;
+//! // Register and publish frame to clients
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! ## Subscribing to Frames (Client)
 //!
 //! ```no_run
-//! use videostream::Client;
+//! use videostream::client::Client;
+//! use videostream::frame::Frame;
 //!
 //! let client = Client::new("/tmp/video.sock", true)?;
-//! let frame = client.wait()?;
-//! process_frame(&frame);
+//! let frame = Frame::wait(&client, 1000)?;
+//! // Process the frame here
+//! println!("Received frame: {}x{}", frame.width()?, frame.height()?);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
