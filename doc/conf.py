@@ -25,7 +25,7 @@ copyright = '2025 Au-Zone Technologies'
 author = 'Au-Zone Technologies'
 
 # The short X.Y version
-version = '1.5.2'
+version = '1.5.3'
 # The full version, including alpha/beta/rc tags
 release = version
 

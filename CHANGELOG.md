@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.3] - 2025-11-20
+
+### Added
+- Makefile automation targets for release process
+  - `make format` - Formats C, Rust, and Python code
+  - `make test` - Runs tests with proper environment setup
+  - `make sbom` - Generates SBOM and verifies license compliance
+  - `make verify-version` - Checks all version files are synchronized
+  - `make pre-release` - Runs complete pre-release checklist
+
+### Changed
+- Improved crates.io publishing using official Trusted Publishers via rust-lang/crates-io-auth-action
+- Updated to Rust 1.90+ cargo publish --workspace for simplified multi-crate releases
+- Enhanced release process documentation with common pitfalls and solutions
+- Expanded AI assistant guidelines with concrete examples from 1.5.2 release learnings
+
+### Fixed
+- Release workflow now properly uses crates.io Trusted Publishers (OIDC)
+- Removed manual dependency ordering and wait times in crate publishing
+
+---
+
 ## [1.5.2] - 2025-11-20
 
 ### Fixed
