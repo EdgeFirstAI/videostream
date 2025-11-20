@@ -645,135 +645,219 @@ find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
 
 ## Release Process
 
-**CRITICAL FOR AI ASSISTANTS**: VideoStream uses `cargo-release` to coordinate version numbers across C, Rust, Python, and Debian packages.
+**CRITICAL FOR AI ASSISTANTS**: VideoStream uses a **manual release process** that requires updating version numbers across multiple files. This process MUST be followed exactly to ensure consistency.
 
 ### The Multi-Language Version Problem
 
-VideoStream must keep versions synchronized across **5 different files**:
-1. `Cargo.toml` (Rust workspace)
-2. `include/videostream.h` (C: `#define VSL_VERSION "1.5.0"`)
-3. `pyproject.toml` (Python: `version = "1.5.0"`)
-4. `debian/changelog` (Debian: `videostream (1.5.0-1)`)
-5. `CHANGELOG.md` (Documentation)
+VideoStream must keep versions synchronized across **6 different files**:
+1. `Cargo.toml` (Rust workspace: `version = "X.Y.Z"`)
+2. `include/videostream.h` (C: `#define VSL_VERSION "X.Y.Z"`)
+3. `pyproject.toml` (Python: `version = "X.Y.Z"`)
+4. `doc/conf.py` (Sphinx: `version = 'X.Y.Z'` - note single quotes)
+5. `debian/changelog` (Debian: `videostream (X.Y.Z-1) stable; urgency=medium`)
+6. `CHANGELOG.md` (Release notes: `## [X.Y.Z] - YYYY-MM-DD`)
 
-### How cargo-release Works
+**Note**: `CMakeLists.txt` automatically parses version from `include/videostream.h`, so it does NOT need manual updates.
 
-`cargo-release` has **individual step commands** that run in sequence:
+### Manual Release Process
 
-```bash
-# WRONG: Only bumps Cargo.toml (Rust files only)
-cargo release version minor --execute
+**Step 1: Pre-commit Checks**
 
-# CORRECT: Runs ALL steps including pre-release-replacements
-cargo release minor --execute
-```
-
-**The full process** when you run `cargo release <level> --execute`:
-1. `cargo release version` - Bumps Cargo.toml versions
-2. **`cargo release replace`** - **CRITICAL**: Updates pyproject.toml, include/videostream.h, debian/changelog via regex replacements
-3. `cargo release commit` - Creates git commit
-4. `cargo release tag` - Creates git tag (e.g., v1.5.0)
-5. `cargo release push` - Pushes to remote
-
-### Pre-Release Replacements
-
-The `release.toml` file configures **pre-release-replacements**:
-
-```toml
-[[pre-release-replacements]]
-file = "include/videostream.h"
-search = '#define VSL_VERSION "[^"]*"'
-replace = '#define VSL_VERSION "{{version}}"'
-
-[[pre-release-replacements]]
-file = "pyproject.toml"
-search = 'version = "[^"]*"'
-replace = 'version = "{{version}}"'
-```
-
-**How it works**:
-- `{{version}}` is replaced with the new version (e.g., `1.5.0`)
-- Regex `search` finds the exact line to replace
-- `replace` string updates the file
-
-### Running Individual Steps
-
-You can run steps separately for debugging:
+Before starting release process, ensure all checks pass:
 
 ```bash
-# Step 1: Bump Cargo.toml only
-cargo release version minor --execute
+# Format code
+find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
 
-# Step 2: Run pre-release-replacements (updates other files)
-cargo release replace --execute
+# Build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 
-# Step 3: Commit changes
-cargo release commit --execute
+# Test
+pytest tests/
 
-# Step 4: Create tag
-cargo release tag --execute
-
-# Step 5: Push to remote
-cargo release push --execute
+# SBOM
+make sbom
 ```
 
-### Common Mistakes
+**Step 2: Determine Next Version**
 
-❌ **WRONG**:
+Follow **Semantic Versioning**:
+- **MINOR** (X.Y.0): Breaking changes, new features requiring migration
+  - Include migration details in CHANGELOG.md
+  - Or create separate migration guide if complex
+- **PATCH** (X.Y.Z): Non-breaking changes, bug fixes, docs
+- **MAJOR** (X.0.0): Only on explicit user request
+
+**Step 3: Update CHANGELOG.md**
+
+Follow [Keep a Changelog](https://keepachangelog.com/) rules:
+1. Move items from `## [Unreleased]` to new version section
+2. Add: `## [X.Y.Z] - YYYY-MM-DD`
+3. Categorize changes: Added, Changed, Deprecated, Removed, Fixed, Security
+4. For breaking changes, include migration guide
+
+**Step 4: Update ALL Version Files**
+
+**CRITICAL**: Update these 6 files to the EXACT SAME VERSION:
+
+| File | Format | Location |
+|------|--------|----------|
+| `Cargo.toml` | `version = "X.Y.Z"` | Line ~6, `[workspace.package]` |
+| `include/videostream.h` | `#define VSL_VERSION "X.Y.Z"` | Line ~16 |
+| `pyproject.toml` | `version = "X.Y.Z"` | Line ~7, `[project]` |
+| `doc/conf.py` | `version = 'X.Y.Z'` | Line ~28 (single quotes!) |
+| `debian/changelog` | `videostream (X.Y.Z-1) stable; urgency=medium` | New entry at TOP |
+| `CHANGELOG.md` | `## [X.Y.Z] - YYYY-MM-DD` | After `[Unreleased]` |
+
+**Verification checklist**:
 ```bash
-# Only bumps Rust files, ignores pyproject.toml and include/videostream.h
-cargo release version 1.5.0 --execute
+# After editing, verify all match:
+grep "version = \"1.5.0\"" Cargo.toml
+grep "VSL_VERSION \"1.5.0\"" include/videostream.h
+grep "version = \"1.5.0\"" pyproject.toml
+grep "version = '1.5.0'" doc/conf.py
+grep "videostream (1.5.0-1)" debian/changelog
+grep "## \[1.5.0\]" CHANGELOG.md
 ```
 
-✅ **CORRECT**:
-```bash
-# Runs ALL steps including replace
-cargo release minor --execute
-```
+**Step 5: Create Release Commit**
 
-❌ **WRONG**:
-```bash
-# Manually editing version files - error-prone and inconsistent
-vim pyproject.toml
-vim include/videostream.h
-```
-
-✅ **CORRECT**:
-```bash
-# Let cargo-release handle all replacements
-cargo release minor --execute
-```
-
-### Fixing Version Mismatches
-
-If `cargo release` created a tag but didn't update all files:
+Commit message format: `Prepare Version X.Y.Z`
 
 ```bash
-# Run the replace step that was skipped
-cargo release replace --execute
+git add Cargo.toml include/videostream.h pyproject.toml \
+        doc/conf.py debian/changelog CHANGELOG.md
 
-# Verify all files updated
-grep "^version" pyproject.toml
-grep "VSL_VERSION" include/videostream.h
+git commit -m "Prepare Version 1.5.0
 
-# Amend the release commit
-git add .
-git commit --amend --no-edit
+- Updated all version files to 1.5.0
+- Finalized CHANGELOG.md with release notes
+- See CHANGELOG.md for detailed changes"
 
-# Update the tag
-git tag -f v1.5.0
-git push origin main --force-with-lease
-git push origin v1.5.0 --force
+git push origin main
 ```
+
+**Step 6: Wait for CI/CD to Pass**
+
+**DO NOT TAG until all checks green**:
+- ✅ Build workflow
+- ✅ Test workflow
+- ✅ SBOM workflow
+- ✅ Code quality checks
+
+**Step 7: Create and Push Git Tag**
+
+```bash
+# Create annotated tag (NO 'v' prefix)
+git tag -a -m "Version 1.5.0" 1.5.0
+
+# Push tag
+git push --tags
+```
+
+**Step 8: Monitor Release Workflow**
+
+GitHub Actions automatically:
+1. Builds release artifacts
+2. Creates GitHub Release
+3. Publishes to PyPI
+4. Publishes to crates.io
+
+Watch: `https://github.com/EdgeFirstAI/videostream/actions/workflows/release.yml`
 
 ### AI Assistant Guidelines
 
 When asked to prepare a release:
-1. **NEVER manually edit version numbers** in pyproject.toml, include/videostream.h, etc.
-2. **ALWAYS use** `cargo release <level> --execute` for the full process
-3. **Understand** that `cargo release version` is NOT sufficient - it skips the `replace` step
-4. **Verify** all 5 files after release: Cargo.toml, pyproject.toml, include/videostream.h, debian/changelog, CHANGELOG.md
-5. **Read MAINTAINERS.md** for complete release process details
+
+1. **NEVER skip pre-commit checks** - format, build, test, SBOM must all pass
+2. **ALWAYS update ALL 6 version files** - missing even one will break CI/CD
+3. **VERIFY versions match** - use grep commands to confirm all files have same version
+4. **FOLLOW semantic versioning** - breaking changes = MINOR (or MAJOR on request), non-breaking = PATCH
+5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
+6. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
+7. **Use correct tag format** - `1.5.0` NOT `v1.5.0` (no v prefix)
+8. **Read CONTRIBUTING.md** - has complete detailed release process
+
+### Common Mistakes to Avoid
+
+❌ **WRONG**: Skipping version file updates
+```bash
+# Only updating some files - CI WILL FAIL
+vim Cargo.toml
+git commit -m "Update version"  # Missing 5 other files!
+```
+
+✅ **CORRECT**: Update all 6 files
+```bash
+# Edit all 6 version files, then verify:
+grep "1.5.0" Cargo.toml include/videostream.h pyproject.toml \
+             doc/conf.py debian/changelog CHANGELOG.md
+```
+
+❌ **WRONG**: Tagging before CI passes
+```bash
+git push origin main
+git tag -a -m "Version 1.5.0" 1.5.0  # TOO SOON!
+git push --tags
+# Now CI fails and you have to delete the tag
+```
+
+✅ **CORRECT**: Wait for CI, then tag
+```bash
+git push origin main
+# Wait for GitHub Actions to show all green
+# Then create tag
+git tag -a -m "Version 1.5.0" 1.5.0
+git push --tags
+```
+
+❌ **WRONG**: Forgetting doc/conf.py
+```bash
+# This file is easy to forget!
+# CI will fail with version mismatch
+```
+
+✅ **CORRECT**: Use checklist from CONTRIBUTING.md
+```bash
+# Follow the 6-file checklist every time
+```
+
+### Troubleshooting
+
+**Problem**: Forgot to update a version file
+
+**Solution**:
+```bash
+# 1. Delete the tag
+git tag -d 1.5.0
+git push origin :refs/tags/1.5.0
+
+# 2. Fix missing file
+vim doc/conf.py
+
+# 3. Amend commit
+git add doc/conf.py
+git commit --amend --no-edit
+
+# 4. Force-push
+git push origin main --force-with-lease
+
+# 5. Recreate tag
+git tag -a -m "Version 1.5.0" 1.5.0
+git push origin 1.5.0
+```
+
+**Problem**: Version mismatch between files
+
+**Solution**:
+```bash
+# Verify all versions
+grep -r "1.5.0" Cargo.toml include/videostream.h pyproject.toml \
+               doc/conf.py debian/changelog
+
+# Fix any that don't match, then amend commit
+```
 
 ---
 
