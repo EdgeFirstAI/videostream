@@ -104,19 +104,35 @@ This directory contains CI/CD workflows for the VideoStream library. These workf
 - ⚠️ Review Required: MPL-2.0, LGPL (dynamic linking)
 - ❌ Blocked: GPL, AGPL, restrictive licenses
 
-### Future: Release Workflow (`release.yml`)
+### 4. Release Workflow (`release.yml`)
 
-**Purpose:** Publishing releases to PyPI and GitHub Releases (planned)
+**Purpose:** Publishing releases to PyPI, crates.io, and GitHub Releases
 
 **Triggers:**
-- Tags matching `v*.*.*`
-- Manual workflow dispatch
+- Tags matching `v*` (e.g., v1.4.0, v1.4.0-rc1)
 
-**Planned Jobs:**
-- **publish-pypi**: Publish Python wheel to PyPI using trusted publishing
-- **github-release**: Create GitHub release with artifacts and release notes
+**Jobs:**
+1. **prepare-release**: Extract version and changelog from tag
+2. **build-artifacts**: Reuse build.yml to create ZIP and DEB packages
+3. **build-sbom**: Reuse sbom.yml to generate SBOM
+4. **publish-pypi**: Publish Python wheel to PyPI using trusted publishing (OIDC)
+5. **publish-crates**: Publish Rust crates to crates.io using trusted publishing (OIDC)
+6. **create-github-release**: Create GitHub Release with all artifacts
 
-**Note:** Docker and AWS publishing are not planned for this project.
+**Artifacts Published:**
+- Python wheel to PyPI (`pip install videostream`)
+- Rust crates to crates.io (`videostream-sys` and `videostream`)
+- GitHub Release with:
+  - Documentation PDF
+  - ZIP packages (x86_64, aarch64)
+  - Debian packages (x86_64, aarch64)
+  - SBOM (CycloneDX JSON)
+  - Changelog notes
+
+**Authentication:**
+- **PyPI**: Trusted Publishing (OIDC) - no secrets required
+- **crates.io**: Trusted Publishing (OIDC) - no secrets required
+- **GitHub**: Automatic token - no secrets required
 
 ## Migration from Jenkins
 
@@ -167,34 +183,26 @@ This GitHub Actions setup replicates the previous Jenkins pipeline with signific
 
 **Automatic (on push/PR):**
 ```bash
-**Automatic (on push/PR):**
-```bash
-git commit -m "EDGEAI-123: Add feature"
-git push origin develop              # Triggers test.yml and build.yml
-```
-git push origin --tags v1.4.0        # Triggers all jobs including publishing
-```
-
-## Workflow Usage
-
-### Running Workflows
-
-**Automatic (on push/PR):**
-```bash
 git commit -m "EDGEAI-123: Add feature"
 git push origin develop              # Triggers test.yml and build.yml
 ```
 
-**Manual dispatch:**
+**Create a release (using cargo-release):**
 ```bash
-# Future: Run release workflow when implemented
-gh workflow run release.yml
+# Bump version, update CHANGELOG, create tag
+cargo release patch --execute        # For bug fixes (1.4.0 → 1.4.1)
+cargo release minor --execute        # For new features (1.4.0 → 1.5.0)
+cargo release major --execute        # For breaking changes (1.4.0 → 2.0.0)
+
+# Push tags to trigger release workflow
+git push --tags                      # Triggers release.yml (publish to PyPI, crates.io, GitHub)
 ```
 
 **View workflow runs:**
 ```bash
 gh run list --workflow=test.yml
 gh run list --workflow=build.yml
+gh run list --workflow=release.yml
 ```
 
 ## Required Secrets
@@ -207,16 +215,30 @@ Configure these in repository settings (Settings → Secrets and variables → A
   - Generate at: https://sonarcloud.io/account/security
   - Scope: Analyze projects
 
-### Future: Required for Release Workflow
+### Required for Release Workflow
 
-When `release.yml` is implemented, these will be needed:
+**Trusted Publishing Setup (one-time configuration):**
 
-- PyPI trusted publishing (OIDC) - configured at https://pypi.org
-- GitHub token (automatic) - for creating releases
+1. **PyPI** - Configure at https://pypi.org/manage/account/publishing/
+   - Publisher: GitHub Actions
+   - Owner: EdgeFirstAI
+   - Repository: videostream
+   - Workflow: release.yml
+   - Environment: pypi
+
+2. **crates.io** - Configure at https://crates.io/settings/tokens
+   - Click "New Token" → "Generate new GitHub Actions token"
+   - Repository: EdgeFirstAI/videostream
+   - Select crates: videostream-sys, videostream
+   - Environment: crates-io
+
+No API tokens or secrets required - both use OIDC authentication!
 
 ### Not Required
 
 The following are NOT used in this project:
+- ❌ `PYPI_API_TOKEN` (uses trusted publishing instead)
+- ❌ `CARGO_REGISTRY_TOKEN` (uses trusted publishing instead)
 - ❌ Docker Hub credentials (no Docker publishing)
 - ❌ AWS credentials (no AWS deployment)
 - ❌ Codecov token (optional for private repos)
