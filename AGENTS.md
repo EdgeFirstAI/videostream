@@ -396,6 +396,13 @@ When modifying code, update corresponding documentation:
 3. Review project's SBOM (Software Bill of Materials) if available
 4. Document third-party licenses in NOTICE file
 
+**Local verification (REQUIRED before release):**
+```bash
+make sbom
+# Generates SBOM and checks license policy compliance
+# Catches GPL/AGPL violations before CI/CD
+```
+
 **CI/CD will automatically:**
 - Generate SBOM using scancode-toolkit
 - Validate CycloneDX SBOM schema
@@ -519,7 +526,20 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_COVER=ON
 cmake --build build -j$(nproc)
 
 # Run Python tests (from project root)
+# IMPORTANT: Requires venv activation and library path
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
 pytest tests/
+# Or use: make test
+
+# Generate SBOM and check license compliance (REQUIRED before release)
+make sbom
+
+# Verify all version files are synchronized (REQUIRED before release)
+make verify-version
+
+# Run all pre-release checks (format, build, test, sbom, version check)
+make pre-release
 
 # Cross-compile for ARM64 (NXP Yocto SDK)
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
@@ -623,7 +643,14 @@ find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
   - `tests/test_host.py` - Host-side frame management
   - `tests/test_client.py` - Client-side frame acquisition
   - `tests/test_library.py` - End-to-end library tests
-- Run with: `pytest tests/` or `pytest tests/test_<module>.py`
+- Run with: 
+  ```bash
+  # IMPORTANT: Must activate venv and set library path
+  source venv/bin/activate
+  export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+  pytest tests/
+  # Or use: make test
+  ```
 - Configuration: `pytest.ini` at project root
 
 **C Unit Tests** (planned - see TODO.md):
@@ -680,6 +707,37 @@ pytest tests/
 make sbom
 ```
 
+**Step 1: Pre-commit Checks**
+
+Before starting release process, ensure all checks pass:
+
+```bash
+# Use the unified pre-release target (recommended)
+make pre-release
+
+# This runs: format, verify-version, test, sbom
+# Or run individually:
+
+# Format code
+find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
+
+# Build (ALWAYS use modern CMake workflow)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# Test (with proper environment)
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+pytest tests/
+# Or: make test
+
+# SBOM and license check
+make sbom
+
+# Verify versions
+make verify-version
+```
+
 **Step 2: Determine Next Version**
 
 Follow **Semantic Versioning**:
@@ -712,7 +770,10 @@ Follow [Keep a Changelog](https://keepachangelog.com/) rules:
 
 **Verification checklist**:
 ```bash
-# After editing, verify all match:
+# Use make target (recommended):
+make verify-version
+
+# Or verify manually:
 grep "version = \"1.5.0\"" Cargo.toml
 grep "VSL_VERSION \"1.5.0\"" include/videostream.h
 grep "version = \"1.5.0\"" pyproject.toml
@@ -720,6 +781,11 @@ grep "version = '1.5.0'" doc/conf.py
 grep "videostream (1.5.0-1)" debian/changelog
 grep "## \[1.5.0\]" CHANGELOG.md
 ```
+
+**Important Notes**:
+- `CMakeLists.txt` automatically parses version from `include/videostream.h`, so it does NOT need manual updates
+- `debian/changelog` entry must be added at TOP (new entry), not modify existing
+- `doc/conf.py` uses single quotes `'X.Y.Z'`, all others use double quotes
 
 **Step 5: Create Release Commit**
 
@@ -770,10 +836,131 @@ Watch: `https://github.com/EdgeFirstAI/videostream/actions/workflows/release.yml
 
 When asked to prepare a release:
 
-1. **NEVER skip pre-commit checks** - format, build, test, SBOM must all pass
+1. **RUN pre-release checks FIRST** - use `make pre-release` to verify format, build, test, SBOM, and version sync
 2. **ALWAYS update ALL 6 version files** - missing even one will break CI/CD
-3. **VERIFY versions match** - use grep commands to confirm all files have same version
+3. **VERIFY versions match** - use `make verify-version` to confirm all files have same version
 4. **FOLLOW semantic versioning** - breaking changes = MINOR (or MAJOR on request), non-breaking = PATCH
+5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
+6. **CHECK SBOM locally** - run `make sbom` to catch license violations before CI/CD
+7. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
+8. **Use correct tag format** - `1.5.0` NOT `v1.5.0` (no v prefix)
+9. **ALWAYS use modern CMake workflow** - `cmake -S . -B build && cmake --build build` (stay in project root)
+10. **Test with proper environment** - activate venv and set VIDEOSTREAM_LIBRARY before running pytest
+11. **Read CONTRIBUTING.md** - has complete detailed release process
+
+### Common Mistakes to Avoid
+
+❌ **WRONG**: Using old CMake workflow
+```bash
+cd build && cmake .. && make  # Directory confusion!
+```
+
+✅ **CORRECT**: Modern CMake workflow
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+# Always stay in project root
+```
+
+❌ **WRONG**: Running tests without environment
+```bash
+pytest tests/  # FAILS - library not found
+```
+
+✅ **CORRECT**: Tests with environment
+```bash
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+pytest tests/
+# Or: make test
+```
+
+❌ **WRONG**: Skipping version file updates
+```bash
+# Only updating some files - CI WILL FAIL
+vim Cargo.toml
+git commit -m "Update version"  # Missing 5 other files!
+```
+
+✅ **CORRECT**: Update all 6 files
+```bash
+# Edit all 6 version files, then verify:
+make verify-version
+```
+
+❌ **WRONG**: Tagging before CI passes
+```bash
+git push origin main
+git tag -a -m "Version 1.5.0" 1.5.0  # TOO SOON!
+git push --tags
+# Now CI fails and you have to delete the tag
+```
+
+✅ **CORRECT**: Wait for CI, then tag
+```bash
+git push origin main
+# Wait for GitHub Actions to show all green
+# Then create tag
+git tag -a -m "Version 1.5.0" 1.5.0
+git push origin 1.5.0
+```
+
+❌ **WRONG**: Skipping SBOM check locally
+```bash
+# Skipping make sbom means license violations caught in CI only
+git commit && git push  # Fails in CI!
+```
+
+✅ **CORRECT**: Run SBOM before committing
+```bash
+make sbom  # Catches GPL/AGPL violations early
+```
+
+### Troubleshooting
+
+**Problem**: Forgot to update a version file
+
+**Solution**:
+```bash
+# 1. Fix missing file
+vim debian/changelog
+
+# 2. Verify all files match
+make verify-version
+
+# 3. Amend commit if not pushed yet
+git add debian/changelog
+git commit --amend --no-edit
+
+# 4. If already pushed, create new commit
+git commit -m "Fix missing debian/changelog version update"
+```
+
+**Problem**: Tests fail with "Unable to load VideoStream library"
+
+**Solution**:
+```bash
+# Always activate venv and set library path
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+pytest tests/
+# Or use: make test
+```
+
+**Problem**: SBOM generation fails
+
+**Solution**:
+```bash
+# Ensure scancode-toolkit is installed
+python3 -m venv venv
+venv/bin/pip install scancode-toolkit
+# Then run
+make sbom
+```
+
+---
+
+## Working with AI Assistants
 5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
 6. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
 7. **Use correct tag format** - `1.5.0` NOT `v1.5.0` (no v prefix)
@@ -890,6 +1077,10 @@ When working with conversational AI:
 - **Directory confusion with CMake**: NEVER use `cd build && cmake .. && make`. Always use modern workflow: `cmake -S . -B build && cmake --build build`
 - **Forgetting to return from directories**: If you must `cd` somewhere, immediately return to project root after
 - **Using `make` directly**: Use `cmake --build <dir>` instead - it works with all generators (Make, Ninja, etc.)
+- **Tests without environment**: Python tests REQUIRE `source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1` before running
+- **Skipping SBOM check**: Always run `make sbom` locally before release to catch license violations early
+- **Version file mismatches**: Use `make verify-version` to ensure all 6 files are synchronized
+- **Tagging before CI passes**: Wait for green checkmarks on GitHub Actions before creating release tag
 
 ---
 

@@ -728,19 +728,111 @@ VideoStream uses a **manual release process** that ensures version consistency a
 
 3. **Ensure all pre-commit checks pass**:
    ```bash
+   # Use the unified pre-release target (recommended)
+   make pre-release
+   
+   # Or run checks individually:
+   
    # Format code
    find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
    
-   # Build
+   # Build (ALWAYS use modern CMake workflow - stay in project root)
    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
    cmake --build build -j$(nproc)
    
-   # Run tests
+   # Run tests (requires venv activation and library path)
+   source venv/bin/activate
+   export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
    pytest tests/
+   # Or use: make test
    
-   # Generate SBOM
+   # Generate SBOM and verify license compliance
    make sbom
+   
+   # Verify all version files are synchronized
+   make verify-version
    ```
+
+### Common Pitfalls and Solutions
+
+#### Pitfall 1: Forgot to Activate venv Before Tests
+**Symptom**: `pytest tests/` fails with "Unable to load VideoStream library"
+
+**Solution**:
+```bash
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+pytest tests/
+# Or simply: make test
+```
+
+#### Pitfall 2: Using Old CMake Workflow (Directory Confusion)
+**Wrong**:
+```bash
+cd build
+cmake ..
+make
+cd ..  # Easy to forget!
+```
+
+**Correct** (ALWAYS use this):
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+# You stay in project root - no directory confusion
+```
+
+**Why it matters**:
+- Prevents getting lost in filesystem
+- Works with all generators (Make, Ninja, Visual Studio)
+- Required by modern IDEs and automation
+- Cross-platform compatible
+
+#### Pitfall 3: Missing debian/changelog Update
+**Symptom**: `make verify-version` fails, CI/CD fails
+
+**Solution**: debian/changelog requires NEW entry at TOP with specific format:
+```
+videostream (X.Y.Z-1) stable; urgency=medium
+
+  * Brief description of changes
+
+ -- Your Name <email@domain.com>  Day, DD Mon YYYY HH:MM:SS +0000
+
+[existing entries below...]
+```
+
+#### Pitfall 4: Version Files Out of Sync
+**Symptom**: CI/CD fails with version mismatch
+
+**Solution**: All 6 files MUST have identical version:
+1. `Cargo.toml` - line ~6: `version = "X.Y.Z"`
+2. `include/videostream.h` - line ~16: `#define VSL_VERSION "X.Y.Z"`
+3. `pyproject.toml` - line ~7: `version = "X.Y.Z"`
+4. `doc/conf.py` - line ~28: `version = 'X.Y.Z'` (single quotes!)
+5. `debian/changelog` - line 1: `videostream (X.Y.Z-1) stable;`
+6. `CHANGELOG.md` - `## [X.Y.Z] - YYYY-MM-DD`
+
+Verify with: `make verify-version`
+
+#### Pitfall 5: SBOM License Violations Not Caught Locally
+**Symptom**: PR fails CI/CD with license policy violations
+
+**Solution**: ALWAYS run `make sbom` before committing release:
+```bash
+make sbom
+# Reviews license compliance and catches GPL/AGPL violations
+```
+
+#### Pitfall 6: Wrong Git Tag Format
+**Current convention**: Tags are `X.Y.Z` (no 'v' prefix):
+```bash
+# Correct
+git tag -a -m "Version 1.5.2" 1.5.2
+git push origin 1.5.2
+
+# Note: Workflow uses v* pattern but accepts both formats
+```
 
 ### Release Process Steps
 
