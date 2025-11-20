@@ -35,8 +35,21 @@ pre-release-replacements = [
 tag-name = "v{{version}}"
 tag-message = "Release {{version}}"
 
+# Disable per-crate changelog updates
+enable-all-features = false
+enable-features = []
+
 # Push changes
 push = false  # We'll push manually after review
 
 # Don't publish to crates.io (library is not published there)
 publish = false
+
+# Workspace members configuration
+[[package]]
+name = "videostream-sys"
+pre-release-replacements = []
+
+[[package]]
+name = "videostream"
+pre-release-replacements = []
