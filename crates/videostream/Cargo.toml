@@ -24,5 +24,6 @@ rand = "0.9.0"
 serial_test = "3.2.0"
 
 [package.metadata.release]
-# Disable per-crate CHANGELOG updates (use workspace CHANGELOG.md)
+# Workspace-level files (pyproject.toml, include/videostream.h, debian/changelog)
+# are handled by workspace release config, not by individual crates
 pre-release-replacements = []

@@ -2,25 +2,16 @@
 # Manages version bumping across all project files
 # Single source of truth: versions are synchronized across C, Python, Rust, and Debian packaging
 
-# Only release from main or develop branch
-allow-branch = ["main", "develop"]
-
 # Automatic file updates during release
 pre-release-replacements = [
   # Update C library header (single source of truth for C code)
   {file="include/videostream.h", search="#define VSL_VERSION \"[^\"]+\"", replace="#define VSL_VERSION \"{{version}}\"", exactly=1},
-  
-  # Update Cargo workspace version
-  {file="Cargo.toml", search="version = \"[^\"]+\"", replace="version = \"{{version}}\"", min=1},
-  
+
   # Update Python package version
   {file="pyproject.toml", search="version = \"[^\"]+\"", replace="version = \"{{version}}\"", exactly=1},
   
   # Update Debian changelog
   {file="debian/changelog", search="videostream \\([^)]+\\)", replace="videostream ({{version}}-1)", min=1},
-  
-  # Update CHANGELOG.md unreleased section
-  {file="CHANGELOG.md", search="## \\[Unreleased\\]", replace="## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly=1},
 ]
 
 # Tag format

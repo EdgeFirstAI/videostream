@@ -22,5 +22,6 @@ libloading = "0.8"
 bindgen = "0.70"
 
 [package.metadata.release]
-# Disable per-crate CHANGELOG updates (use workspace CHANGELOG.md)
+# Workspace-level files (pyproject.toml, include/videostream.h, debian/changelog)
+# are handled by workspace release config, not by individual crates
 pre-release-replacements = []
