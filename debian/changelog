@@ -1,3 +1,9 @@
+videostream (1.5.2-1) stable; urgency=medium
+
+  * Documentation: Updated doc/conf.py version to match other version files
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Wed, 20 Nov 2025 00:00:00 +0000
+
 videostream (1.5.1-1) stable; urgency=medium
 
   * Release candidate 0 for version 1.4.0

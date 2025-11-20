@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "1.5.1"
+#define VSL_VERSION "1.5.2"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -1267,7 +1267,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
 VSL_AVAILABLE_SINCE_1_4
 VSL_API
 int
-vsl_decoder_width(const VSLDecoder*  decoder);
+vsl_decoder_width(const VSLDecoder* decoder);
 
 VSL_AVAILABLE_SINCE_1_4
 VSL_API
