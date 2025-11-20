@@ -76,12 +76,11 @@ main(int argc, char** argv)
     // printf("Sleeping 3s\n");
     // struct timespec delay = {3, 0};
     // nanosleep(&delay, NULL);
-    char* vsl_path = "/tmp/camera.vsl";
-    char* file_path = "./frame.jpg";
-    static struct option options[] =
-        {{"help", no_argument, NULL, 'h'},
-         {"camera", required_argument, NULL, 'c'},
-         {"out", required_argument, NULL, 'o'}};
+    char*                vsl_path  = "/tmp/camera.vsl";
+    char*                file_path = "./frame.jpg";
+    static struct option options[] = {{"help", no_argument, NULL, 'h'},
+                                      {"camera", required_argument, NULL, 'c'},
+                                      {"out", required_argument, NULL, 'o'}};
 
     for (int i = 0; i < 100; i++) {
         int opt = getopt_long(argc, argv, "hc:o:", options, NULL);
@@ -153,25 +152,26 @@ main(int argc, char** argv)
             return EXIT_FAILURE;
         }
 
-        printf("Locked frame serial:%ld DMA_fd:%d\n", vsl_frame_serial(frame), vsl_frame_handle(frame));
+        printf("Locked frame serial:%ld DMA_fd:%d\n",
+               vsl_frame_serial(frame),
+               vsl_frame_handle(frame));
 
         printf("Getting 150 extra frames before saving locked frame\n");
         printf("\tacquired video frame serial: ");
         fflush(stdout);
         char cbuf[32];
-        int n = 0;
-        for (int j = 0; j < 30*5; j++) {
+        int  n = 0;
+        for (int j = 0; j < 30 * 5; j++) {
             VSLFrame* frame1 = vsl_frame_wait(client, 0);
-            int serial  = vsl_frame_serial(frame1);
-            for (int k = 0; k < n; k++) {
-                printf("\b");
-            }
+            int       serial = vsl_frame_serial(frame1);
+            for (int k = 0; k < n; k++) { printf("\b"); }
             n = snprintf(cbuf, 32, "%d", serial);
             printf("%s", cbuf);
             fflush(stdout);
         }
         printf("\n");
-        printf("Saving original locked frame serial: %ld\n", vsl_frame_serial(frame));
+        printf("Saving original locked frame serial: %ld\n",
+               vsl_frame_serial(frame));
         if (fourcc == 0x33424752) {
             size_t         size;
             const uint8_t* buffer = vsl_frame_mmap(frame, &size);
@@ -201,8 +201,7 @@ main(int argc, char** argv)
                        __FUNCTION__,
                        srcbuf->buf_size,
                        srcbuf->buf_vaddr,
-                       srcbuf->buf_paddr
-                       );
+                       srcbuf->buf_paddr);
 #endif
             } else {
                 printf("[ERROR] g2d_buf_from_fd is required.\n");
@@ -267,8 +266,6 @@ main(int argc, char** argv)
         vsl_frame_munmap(frame);
         vsl_frame_unlock(frame);
         vsl_frame_release(frame);
-
-
     }
 
     vsl_client_release(client);

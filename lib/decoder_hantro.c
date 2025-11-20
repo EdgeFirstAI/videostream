@@ -300,7 +300,6 @@ vsl_decode_frame(VSLDecoder*  decoder,
     VpuDecFrameLengthInfo decFrmLengthInfo;
     int                   totalDecConsumedBytes = 0; // stuffer + frame
 
-
     VpuBufferNode inData    = {};
     inData.pVirAddr         = (unsigned char*) data;
     inData.nSize            = data_length;
@@ -404,7 +403,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
         out->handle                  = frameInfo.pDisplayFrameBuf->nIonFd;
         out->info.height             = decoder->outHeight;
         out->info.width              = decoder->outWidth;
-        out->info.paddr              = (intptr_t) frameInfo.pDisplayFrameBuf->pbufY;
+        out->info.paddr = (intptr_t) frameInfo.pDisplayFrameBuf->pbufY;
 
         // 4:2:0 for all video
         int ySize = decoder->outHeight * decoder->outWidth;

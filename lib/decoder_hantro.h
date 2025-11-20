@@ -8,13 +8,13 @@
 #include "vpu_wrapper.h"
 
 struct vsl_decoder {
-    int               outWidth;
-    int               outHeight;
-    int               fps;
-    VSLDecoderCodec   inputCodec;
-    uint32_t          outputFourcc;
-    VpuDecHandle      handle;
-    VSLRect           cropRegion;
+    int             outWidth;
+    int             outHeight;
+    int             fps;
+    VSLDecoderCodec inputCodec;
+    uint32_t        outputFourcc;
+    VpuDecHandle    handle;
+    VSLRect         cropRegion;
 
     // Internal memory
     VpuMemDesc     phyMem;

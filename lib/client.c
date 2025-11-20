@@ -311,8 +311,8 @@ VSL_API
 VSLFrame*
 vsl_frame_wait(VSLClient* client, int64_t until)
 {
-    ssize_t                ret = 0;
-    struct vsl_frame_event event = { 0 };
+    ssize_t                ret   = 0;
+    struct vsl_frame_event event = {0};
     struct vsl_aux         aux;
     struct msghdr          msg;
     struct iovec           iov;
@@ -540,8 +540,8 @@ int
 vsl_frame_trylock(VSLFrame* frame)
 {
     ssize_t                  ret;
-    struct vsl_frame_control control = { 0 };
-    struct vsl_frame_event   event = { 0 };
+    struct vsl_frame_control control = {0};
+    struct vsl_frame_event   event   = {0};
 
     if (!frame) {
         errno = EINVAL;
@@ -721,8 +721,8 @@ int
 vsl_frame_unlock(VSLFrame* frame)
 {
     ssize_t                  ret;
-    struct vsl_frame_control control = { 0 };
-    struct vsl_frame_event   event = { 0 };
+    struct vsl_frame_control control = {0};
+    struct vsl_frame_event   event   = {0};
 
     if (!frame) {
         errno = EINVAL;

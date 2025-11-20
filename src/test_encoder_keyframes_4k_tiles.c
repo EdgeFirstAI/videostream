@@ -130,9 +130,9 @@ typedef struct {
 void*
 encodeAndSave(void* arg)
 {
-    EncoderArgs* args = arg;
-    int tile_num = args->tile_num;
-    VSLFrame* encoded_frame =
+    EncoderArgs* args     = arg;
+    int          tile_num = args->tile_num;
+    VSLFrame*    encoded_frame =
         vsl_encoder_new_output_frame(args->encoder,
                                      args->cropRegion->width,
                                      args->cropRegion->height,
