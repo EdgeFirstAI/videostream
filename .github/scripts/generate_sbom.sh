@@ -74,7 +74,7 @@ echo
 echo "[2/5] Merging and cleaning source SBOMs..."
 
 # Extract version from include/videostream.h (single source of truth)
-VERSION=$(grep '#define VSL_VERSION' include/videostream.h | cut -d'"' -f2)
+VERSION=$(grep '#define VSL_VERSION "' include/videostream.h | cut -d'"' -f2)
 echo "  Detected version: $VERSION"
 
 python3 << EOF
@@ -123,9 +123,14 @@ for filename in sbom_files:
     # Clean the SBOM
     sbom = clean_sbom_properties(sbom)
     
-    # Extract components
+    # Extract components, filtering out the main videostream component
+    # (we define it in metadata, don't want scancode's duplicate)
     if 'components' in sbom:
-        all_components.extend(sbom['components'])
+        for component in sbom['components']:
+            # Skip videostream components from scancode - we define the main one in metadata
+            if component.get('name') == 'videostream':
+                continue
+            all_components.append(component)
     
     # Extract licenses
     if 'metadata' in sbom and 'licenses' in sbom['metadata']:
@@ -165,10 +170,20 @@ echo
 
 # Step 3: Generate system dependencies manifest
 echo "[3/5] Generating system dependencies manifest..."
-python3 << 'EOF'
+
+# Read NXP license text from file (escape for JSON)
+NXP_LICENSE_TEXT=$(cat ext/vpu_wrapper/LICENSE)
+
+python3 << EOF
 import json
 import subprocess
 import sys
+import os
+
+VERSION = "$VERSION"
+
+# Read NXP license from environment
+NXP_LICENSE_TEXT = """$NXP_LICENSE_TEXT"""
 
 def get_pkg_config_info(package):
     """Get version and license info from pkg-config"""
@@ -207,6 +222,47 @@ for dep in dependencies:
 
     components.append(component)
 
+# Add third-party embedded dependencies from ext/
+third_party = [
+    {
+        'type': 'library',
+        'name': 'stb_image_write',
+        'version': 'unknown',
+        'description': 'STB single-file public domain image writer library',
+        'licenses': [
+            {'license': {'id': 'MIT'}},
+            {'license': {'name': 'Public Domain'}}
+        ],
+        'copyright': 'Copyright (c) 2017 Sean Barrett',
+        'purl': 'pkg:github/nothings/stb'
+    },
+    {
+        'type': 'library',
+        'name': 'vpu_wrapper',
+        'version': 'ccaf10a',
+        'description': 'Modified version of NXP imx-vpuwrap library for Hantro VPU',
+        'licenses': [{
+            'license': {
+                'name': 'NXP Proprietary',
+                'text': {
+                    'contentType': 'text/plain',
+                    'content': NXP_LICENSE_TEXT
+                }
+            }
+        }],
+        'copyright': 'NXP Semiconductors',
+        'purl': 'pkg:github/NXP/imx-vpuwrap@ccaf10a0dae7c0d7d204bd64282598bc0e3bd661',
+        'externalReferences': [
+            {
+                'type': 'vcs',
+                'url': 'https://github.com/NXP/imx-vpuwrap'
+            }
+        ]
+    }
+]
+
+components.extend(third_party)
+
 # Create CycloneDX SBOM for dependencies
 deps_sbom = {
     'bomFormat': 'CycloneDX',
@@ -225,10 +281,10 @@ deps_sbom = {
 with open('deps-sbom.json', 'w') as f:
     json.dump(deps_sbom, f, indent=2)
 
-print(f"Found {len(components)} system dependencies")
+print(f"Found {len(dependencies)} system dependencies + {len(third_party)} third-party components")
 sys.exit(0)
 EOF
-echo "✓ Generated deps-sbom.json (system dependencies)"
+echo "✓ Generated deps-sbom.json (system dependencies + third-party components)"
 echo
 
 # Step 4: Merge SBOMs using cyclonedx-cli
@@ -240,8 +296,28 @@ fi
 
 cyclonedx merge \
     --input-files source-sbom.json deps-sbom.json \
-    --output-file sbom.json
+    --output-file sbom-temp.json
 
+# Remove duplicate videostream component from components list
+# (cyclonedx merge sometimes adds metadata.component to components)
+python3 << EOF
+import json
+
+with open('sbom-temp.json', 'r') as f:
+    sbom = json.load(f)
+
+# Filter out videostream from components (it's defined in metadata, not a dependency)
+if 'components' in sbom:
+    sbom['components'] = [
+        c for c in sbom['components']
+        if c.get('name') != 'videostream'
+    ]
+
+with open('sbom.json', 'w') as f:
+    json.dump(sbom, f, indent=2)
+EOF
+
+rm -f sbom-temp.json
 echo "✓ Generated sbom.json (merged: source + dependencies)"
 echo
 
@@ -256,15 +332,7 @@ else
 fi
 echo
 
-# Step 6: Generate NOTICE file
-echo "[6/6] Generating NOTICE file..."
-if [ -f ".github/scripts/generate_notice.py" ]; then
-    python3 .github/scripts/generate_notice.py sbom.json > NOTICE.generated
-    echo "✓ Generated NOTICE.generated (third-party attributions)"
-else
-    echo "Warning: NOTICE generator not found, skipping..."
-fi
-echo
+# Cleanup temporary files
 
 # Cleanup temporary files
 rm -f source-sbom-src.json source-sbom-lib.json source-sbom-include.json \
@@ -276,9 +344,6 @@ echo "SBOM Generation Complete"
 echo "=================================================="
 echo "Files generated:"
 echo "  - sbom.json (merged SBOM)"
-if [ -f "NOTICE.generated" ]; then
-    echo "  - NOTICE.generated (third-party attributions)"
-fi
 echo
 
 # Exit with license policy check result

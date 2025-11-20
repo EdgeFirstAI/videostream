@@ -25,6 +25,8 @@ ALLOWED_LICENSES: Set[str] = {
     "MIT-0",  # MIT No Attribution
     "CC0-1.0",  # Creative Commons Zero (for data/docs)
     "Public-Domain",  # Public Domain
+    "Public Domain",  # Public Domain (variant spelling)
+    "NXP Proprietary",  # NXP proprietary license for VPU wrapper
 }
 
 REVIEW_REQUIRED_LICENSES: Set[str] = {
@@ -63,8 +65,12 @@ def extract_license_from_component(component: Dict) -> Set[str]:
 
     for lic_entry in component["licenses"]:
         # Check for direct license ID
-        if "license" in lic_entry and "id" in lic_entry["license"]:
-            licenses.add(lic_entry["license"]["id"])
+        if "license" in lic_entry:
+            if "id" in lic_entry["license"]:
+                licenses.add(lic_entry["license"]["id"])
+            # Also check for license name (for proprietary/non-SPDX licenses)
+            elif "name" in lic_entry["license"]:
+                licenses.add(lic_entry["license"]["name"])
 
         # Check for SPDX expression
         if "expression" in lic_entry:
@@ -102,6 +108,11 @@ def check_license_policy(sbom_path: str) -> Tuple[bool, List[str], List[str], Li
     for component in components:
         name = component.get("name", "unknown")
         version = component.get("version", "unknown")
+        
+        # Skip the videostream component itself - it's the project, not a dependency
+        if name == "videostream":
+            continue
+        
         licenses = extract_license_from_component(component)
 
         if not licenses:

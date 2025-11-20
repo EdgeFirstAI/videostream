@@ -51,7 +51,7 @@
 //!
 //! For questions and support:
 //! - Documentation: <https://docs.rs/videostream>
-//! - Repository: <https://github.com/DeepViewML/videostream-rs>
+//! - Repository: <https://github.com/EdgeFirstAI/videostream>
 //! - Professional support: support@au-zone.com
 
 use std::{
