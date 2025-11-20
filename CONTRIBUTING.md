@@ -19,6 +19,7 @@ We welcome contributions from the community - whether it's fixing bugs, improvin
 9. [Commit Messages](#commit-messages)
 10. [Pull Request Guidelines](#pull-request-guidelines)
 11. [License Agreement](#license-agreement)
+12. [Release Process (Maintainers)](#release-process-maintainers)
 
 ---
 
@@ -693,6 +694,365 @@ Contributors are recognized in several ways:
 **Thank you for contributing to VideoStream and the EdgeFirst Perception ecosystem!**
 
 Your contributions help make edge AI more accessible and efficient for developers worldwide.
+
+---
+
+## Release Process (Maintainers)
+
+This section is for VideoStream maintainers who perform releases.
+
+### Release Overview
+
+VideoStream uses a **multi-language release process** that coordinates version numbers across:
+- **C Library** (`include/videostream.h` - `VSL_VERSION`)
+- **Rust Crates** (`Cargo.toml` workspace and member crates)
+- **Python Package** (`pyproject.toml`)
+- **Debian Package** (`debian/changelog`)
+- **Documentation** (`CHANGELOG.md`)
+
+We use **`cargo-release`** to automate this coordination through its `pre-release-replacements` feature.
+
+### Prerequisites
+
+1. **Install cargo-release** (0.25.20 or later):
+   ```bash
+   cargo install cargo-release
+   ```
+
+2. **Verify clean working tree**:
+   ```bash
+   git status  # Should show no uncommitted changes
+   ```
+
+3. **Ensure you're on the correct branch**:
+   ```bash
+   git checkout main  # Or develop, depending on workflow
+   git pull origin main
+   ```
+
+4. **Review CHANGELOG.md**:
+   - Move unreleased changes to new version section
+   - Add release date
+   - Verify formatting follows Keep a Changelog
+
+### Release Process Steps
+
+#### Step 1: Dry Run (REQUIRED)
+
+**ALWAYS** run a dry-run first to preview changes:
+
+```bash
+cargo release <level>
+```
+
+Where `<level>` is one of: `major`, `minor`, `patch`, `release`, `rc`, `beta`, `alpha`
+
+Example:
+```bash
+# Bump from 1.4.0 to 1.5.0
+cargo release minor
+
+# Bump from 1.5.0-rc0 to 1.5.0 (remove pre-release)
+cargo release release
+```
+
+This will show you:
+- What version will be set
+- What files will be modified
+- What git operations will occur
+- **BUT WILL NOT MAKE ANY CHANGES**
+
+#### Step 2: Execute Release
+
+Once you've reviewed the dry-run and are satisfied:
+
+```bash
+cargo release <level> --execute
+```
+
+**CRITICAL**: This command performs **ALL** of the following steps automatically:
+
+1. **`cargo release version`** - Bumps version in `Cargo.toml` workspace and crates
+2. **`cargo release replace`** - Runs pre-release-replacements:
+   - Updates `include/videostream.h` with new `VSL_VERSION`
+   - Updates `pyproject.toml` with new `version`
+   - Updates `debian/changelog` with new entry
+   - Updates `CHANGELOG.md` with release date
+3. **`cargo release hook`** - Runs pre-release hooks (if configured)
+4. **`cargo release commit`** - Creates git commit with version bump
+5. **`cargo release tag`** - Creates git tag (e.g., `v1.5.0`)
+6. **`cargo release push`** - Pushes commit and tag to remote
+
+#### Step 3: Verify Release
+
+After `cargo release --execute` completes:
+
+```bash
+# Verify tag was created
+git tag -l | grep v1.5.0
+
+# Verify all files were updated
+git show HEAD
+
+# Verify pyproject.toml
+grep "^version" pyproject.toml
+
+# Verify include/videostream.h
+grep "VSL_VERSION" include/videostream.h
+
+# Verify debian/changelog
+head -n 5 debian/changelog
+```
+
+#### Step 4: Push to Remote
+
+If you used `--no-push` option:
+
+```bash
+git push origin main
+git push origin v1.5.0
+```
+
+#### Step 5: Monitor CI/CD
+
+Watch GitHub Actions workflows:
+- **Build Workflow**: Verifies build across platforms
+- **SBOM Workflow**: Generates Software Bill of Materials
+- **Release Workflow**: Creates GitHub Release and publishes artifacts
+
+### Understanding cargo-release
+
+#### The Problem
+
+VideoStream has a **single source of truth** version that must be synchronized across **5 different files** in **3 different languages**:
+
+1. `Cargo.toml` (Rust workspace)
+2. `crates/*/Cargo.toml` (Rust crate manifests)
+3. `include/videostream.h` (C header: `#define VSL_VERSION "1.5.0"`)
+4. `pyproject.toml` (Python: `version = "1.5.0"`)
+5. `debian/changelog` (Debian: `videostream (1.5.0-1) unstable; urgency=medium`)
+
+Manually updating these is error-prone and easy to forget.
+
+#### The Solution
+
+`cargo-release` provides **pre-release-replacements** - a powerful regex-based find-and-replace system that runs automatically during the release process.
+
+In `release.toml`, we define:
+
+```toml
+[[pre-release-replacements]]
+file = "include/videostream.h"
+search = '#define VSL_VERSION "[^"]*"'
+replace = '#define VSL_VERSION "{{version}}"'
+
+[[pre-release-replacements]]
+file = "pyproject.toml"
+search = 'version = "[^"]*"'
+replace = 'version = "{{version}}"'
+
+# ... etc for other files
+```
+
+When you run `cargo release <level> --execute`:
+1. Cargo-release determines the new version (e.g., `1.5.0`)
+2. Substitutes `{{version}}` placeholder with `1.5.0`
+3. Uses regex `search` pattern to find exact location in file
+4. Replaces with `replace` string
+5. Repeats for all configured files
+
+#### Individual Steps
+
+You can run steps individually for debugging:
+
+```bash
+# Step 1: Just bump Cargo.toml versions (no other files)
+cargo release version minor --execute
+
+# Step 2: Run ONLY the pre-release-replacements
+cargo release replace --execute
+
+# Step 3: Commit the changes
+cargo release commit --execute
+
+# Step 4: Create the git tag
+cargo release tag --execute
+
+# Step 5: Push to remote
+cargo release push --execute
+```
+
+This is useful if:
+- You need to manually review changes between steps
+- Something failed mid-process
+- You want to add additional changes to the release commit
+
+#### Common Options
+
+```bash
+# Dry-run (default - shows what would happen)
+cargo release minor
+
+# Execute for real
+cargo release minor --execute
+
+# Don't create git tag
+cargo release minor --execute --no-tag
+
+# Don't push to remote (push manually later)
+cargo release minor --execute --no-push
+
+# Don't publish to crates.io (we don't publish)
+cargo release minor --execute --no-publish
+
+# Skip confirmation prompt
+cargo release minor --execute --no-confirm
+```
+
+### Troubleshooting
+
+#### Problem: pre-release-replacements didn't run
+
+**Symptoms**: After `cargo release --execute`, `pyproject.toml` or `include/videostream.h` still show old version.
+
+**Cause**: You likely ran `cargo release version --execute` instead of full `cargo release <level> --execute`.
+
+**Solution**:
+```bash
+# Option 1: Run the replace step manually
+cargo release replace --execute
+
+# Option 2: Start over (if no tag created yet)
+git reset --hard HEAD~1  # Undo the version bump commit
+cargo release <level> --execute  # Run full process
+```
+
+#### Problem: Tag already exists
+
+**Symptoms**: `cargo release` fails with "tag v1.5.0 already exists"
+
+**Cause**: You previously ran the release and created the tag, but files weren't updated.
+
+**Solution**:
+```bash
+# Delete the tag locally
+git tag -d v1.5.0
+
+# Delete the tag remotely (if pushed)
+git push origin :refs/tags/v1.5.0
+
+# Fix the files manually or run replace step
+cargo release replace --execute
+
+# Recreate tag on current commit
+git tag v1.5.0
+git push origin v1.5.0
+```
+
+#### Problem: Version mismatch in CI
+
+**Symptoms**: GitHub Actions fails with "Tag version (1.5.0) does not match pyproject.toml version (1.4.0-rc0)"
+
+**Cause**: The `cargo release replace` step didn't run or failed silently.
+
+**Solution**:
+```bash
+# Verify current versions in all files
+grep "^version" pyproject.toml
+grep "VSL_VERSION" include/videostream.h
+grep "^version" Cargo.toml
+
+# If they don't match the tag, manually update or re-run replace
+cargo release replace --execute
+
+# Amend the release commit
+git add .
+git commit --amend --no-edit
+
+# Force-push the tag
+git tag -f v1.5.0
+git push origin main --force-with-lease
+git push origin v1.5.0 --force
+```
+
+#### Problem: pre-release-replacements regex doesn't match
+
+**Symptoms**: `cargo release replace` says "0 replacements made" for a file
+
+**Cause**: The `search` regex in `release.toml` doesn't match the actual file content.
+
+**Solution**:
+```bash
+# Test regex manually
+grep -E 'version = "[^"]*"' pyproject.toml
+grep -E '#define VSL_VERSION "[^"]*"' include/videostream.h
+
+# If no match, update the search pattern in release.toml
+# Then re-run
+cargo release replace --execute
+```
+
+### Emergency Fixes
+
+#### Fix Version Mismatch After Tag Created
+
+If you've already pushed a tag but files are wrong:
+
+```bash
+# 1. Fix the files manually
+vim include/videostream.h  # Update VSL_VERSION
+vim pyproject.toml         # Update version
+
+# 2. Commit the fix
+git add include/videostream.h pyproject.toml
+git commit -m "fix: Update version to match v1.5.0 tag"
+
+# 3. Move the tag to new commit
+git tag -f v1.5.0
+
+# 4. Force-push (CAUTION: coordinate with team)
+git push origin main --force-with-lease
+git push origin v1.5.0 --force
+```
+
+#### Rollback a Release
+
+If you need to undo a release completely:
+
+```bash
+# 1. Delete remote tag
+git push origin :refs/tags/v1.5.0
+
+# 2. Delete local tag
+git tag -d v1.5.0
+
+# 3. Reset to before release commit
+git reset --hard HEAD~1
+
+# 4. Force-push (CAUTION: coordinate with team)
+git push origin main --force-with-lease
+```
+
+### Release Checklist
+
+- [ ] Update CHANGELOG.md with release notes
+- [ ] Run `cargo release <level>` dry-run
+- [ ] Review dry-run output carefully
+- [ ] Run `cargo release <level> --execute`
+- [ ] Verify all 5 files updated (`Cargo.toml`, `pyproject.toml`, `include/videostream.h`, `debian/changelog`, `CHANGELOG.md`)
+- [ ] Verify git tag created
+- [ ] Push to remote (or verify `cargo-release` pushed)
+- [ ] Monitor CI/CD workflows
+- [ ] Verify GitHub Release created
+- [ ] Announce release (if public)
+
+### References
+
+- **cargo-release Documentation**: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+- **cargo-release FAQ**: https://github.com/crate-ci/cargo-release/blob/master/docs/faq.md
+- **Working Example**: [EdgeFirst Client release.toml](https://github.com/EdgeFirstAI/client/blob/main/release.toml)
+- **VideoStream CHANGELOG.md**: Follow Keep a Changelog format
+- **VideoStream release.toml**: See pre-release-replacements configuration
 
 ---
 

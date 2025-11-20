@@ -18,6 +18,7 @@ This document provides instructions for AI coding assistants (GitHub Copilot, Cu
 6. [License Policy](#license-policy)
 7. [Security Practices](#security-practices)
 8. [Project-Specific Guidelines](#project-specific-guidelines)
+9. [Release Process](#release-process)
 
 ---
 
@@ -642,6 +643,140 @@ find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
 
 ---
 
+## Release Process
+
+**CRITICAL FOR AI ASSISTANTS**: VideoStream uses `cargo-release` to coordinate version numbers across C, Rust, Python, and Debian packages.
+
+### The Multi-Language Version Problem
+
+VideoStream must keep versions synchronized across **5 different files**:
+1. `Cargo.toml` (Rust workspace)
+2. `include/videostream.h` (C: `#define VSL_VERSION "1.5.0"`)
+3. `pyproject.toml` (Python: `version = "1.5.0"`)
+4. `debian/changelog` (Debian: `videostream (1.5.0-1)`)
+5. `CHANGELOG.md` (Documentation)
+
+### How cargo-release Works
+
+`cargo-release` has **individual step commands** that run in sequence:
+
+```bash
+# WRONG: Only bumps Cargo.toml (Rust files only)
+cargo release version minor --execute
+
+# CORRECT: Runs ALL steps including pre-release-replacements
+cargo release minor --execute
+```
+
+**The full process** when you run `cargo release <level> --execute`:
+1. `cargo release version` - Bumps Cargo.toml versions
+2. **`cargo release replace`** - **CRITICAL**: Updates pyproject.toml, include/videostream.h, debian/changelog via regex replacements
+3. `cargo release commit` - Creates git commit
+4. `cargo release tag` - Creates git tag (e.g., v1.5.0)
+5. `cargo release push` - Pushes to remote
+
+### Pre-Release Replacements
+
+The `release.toml` file configures **pre-release-replacements**:
+
+```toml
+[[pre-release-replacements]]
+file = "include/videostream.h"
+search = '#define VSL_VERSION "[^"]*"'
+replace = '#define VSL_VERSION "{{version}}"'
+
+[[pre-release-replacements]]
+file = "pyproject.toml"
+search = 'version = "[^"]*"'
+replace = 'version = "{{version}}"'
+```
+
+**How it works**:
+- `{{version}}` is replaced with the new version (e.g., `1.5.0`)
+- Regex `search` finds the exact line to replace
+- `replace` string updates the file
+
+### Running Individual Steps
+
+You can run steps separately for debugging:
+
+```bash
+# Step 1: Bump Cargo.toml only
+cargo release version minor --execute
+
+# Step 2: Run pre-release-replacements (updates other files)
+cargo release replace --execute
+
+# Step 3: Commit changes
+cargo release commit --execute
+
+# Step 4: Create tag
+cargo release tag --execute
+
+# Step 5: Push to remote
+cargo release push --execute
+```
+
+### Common Mistakes
+
+❌ **WRONG**:
+```bash
+# Only bumps Rust files, ignores pyproject.toml and include/videostream.h
+cargo release version 1.5.0 --execute
+```
+
+✅ **CORRECT**:
+```bash
+# Runs ALL steps including replace
+cargo release minor --execute
+```
+
+❌ **WRONG**:
+```bash
+# Manually editing version files - error-prone and inconsistent
+vim pyproject.toml
+vim include/videostream.h
+```
+
+✅ **CORRECT**:
+```bash
+# Let cargo-release handle all replacements
+cargo release minor --execute
+```
+
+### Fixing Version Mismatches
+
+If `cargo release` created a tag but didn't update all files:
+
+```bash
+# Run the replace step that was skipped
+cargo release replace --execute
+
+# Verify all files updated
+grep "^version" pyproject.toml
+grep "VSL_VERSION" include/videostream.h
+
+# Amend the release commit
+git add .
+git commit --amend --no-edit
+
+# Update the tag
+git tag -f v1.5.0
+git push origin main --force-with-lease
+git push origin v1.5.0 --force
+```
+
+### AI Assistant Guidelines
+
+When asked to prepare a release:
+1. **NEVER manually edit version numbers** in pyproject.toml, include/videostream.h, etc.
+2. **ALWAYS use** `cargo release <level> --execute` for the full process
+3. **Understand** that `cargo release version` is NOT sufficient - it skips the `replace` step
+4. **Verify** all 5 files after release: Cargo.toml, pyproject.toml, include/videostream.h, debian/changelog, CHANGELOG.md
+5. **Read MAINTAINERS.md** for complete release process details
+
+---
+
 ## Working with AI Assistants
 
 ### For GitHub Copilot / Cursor
@@ -741,6 +876,11 @@ git push -u origin feature/EDGEAI-123-add-image-preprocessing
 - Read project's `CONTRIBUTING.md`
 - Review recent merged PRs for examples
 - Follow PR template and checklist
+
+**For release process:**
+- Read "Release Process (Maintainers)" section in `CONTRIBUTING.md`
+- Understand cargo-release workflow and pre-release-replacements
+- Never manually edit version numbers across multiple files
 
 ---
 
