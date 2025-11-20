@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "videostream"
-version = "1.4.0-rc0"
+version = "1.5.0"
 description = "Video utility library for embedded Linux with DMA buffer support"
 readme = "README.md"
 requires-python = ">=3.8"
