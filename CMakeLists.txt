@@ -13,7 +13,14 @@ project(VideoStream
     VERSION ${PROJECT_VERSION}
     DESCRIPTION "VideoStream - Zero-copy IPC frame sharing library"
     LANGUAGES C
+    HOMEPAGE_URL "https://github.com/EdgeFirstAI/videostream"
 )
+
+# Set SPDX license variables for CMake 4.2+ compatibility
+# CMake 4.2 adds SPDX_LICENSE to project() but it's experimental and gated
+# We set these variables manually so they're available if needed by export/install
+set(PROJECT_SPDX_LICENSE "Apache-2.0")
+set(VideoStream_SPDX_LICENSE "Apache-2.0")
 
 # Project metadata
 set(COMPANY "Au-Zone Technologies")

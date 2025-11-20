@@ -25,6 +25,7 @@ cppcheck.xml
 
 scancode.json
 scancode.sqlite
+sbom.json
 
 .DS_Store
 *.user*

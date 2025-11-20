@@ -9,7 +9,7 @@ This product includes software developed at Au-Zone Technologies
 This software contains the following third-party components that require
 attribution under their respective licenses:
 
-  * stb (Public Domain / MIT-0)
+  * stb (Public Domain / MIT)
     - stb_image.h, stb_image_write.h
     - Author: Sean Barrett
     - https://github.com/nothings/stb
@@ -28,9 +28,10 @@ attribution under their respective licenses:
 
   * NXP VPU Wrapper (NXP proprietary - platform-specific)
     - Hantro VPU encoder/decoder wrapper
-    - Copyright 2016-2020 Freescale Semiconductor/NXP
+    - Copyright 2010-2016 Freescale Semiconductor Inc.
+    - Copyright 2017-2020 NXP
     - Only used on NXP i.MX8 platforms with Hantro VPU hardware
-    - License: https://raw.githubusercontent.com/nxp-imx/imx-vpuwrap/refs/heads/MM_04.10.01_2508_L6.12.34/LICENSE.txt
+    - License: See ext/vpu_wrapper/LICENSE
     - Note: VPU functionality is optional and disabled on non-NXP platforms
 
 ================================================================================
@@ -78,7 +79,7 @@ https://www.gtk.org/docs/license/
 
 stb Libraries
 -------------
-stb libraries are dual-licensed under Public Domain (Unlicense) or MIT-0,
+stb libraries are dual-licensed under Public Domain (Unlicense) or MIT,
 allowing use in any project without restrictions. The libraries are included
 in source form. License text available at:
 https://github.com/nothings/stb/blob/master/LICENSE
@@ -88,11 +89,11 @@ NXP VPU Wrapper
 The NXP VPU wrapper is proprietary software provided by NXP Semiconductors for
 use with their i.MX8 platforms containing Hantro VPU hardware. This component
 is only used when building for and running on NXP silicon with VPU support.
-The wrapper is disabled by default and optional. License information:
-https://raw.githubusercontent.com/nxp-imx/imx-vpuwrap/refs/heads/MM_04.10.01_2508_L6.12.34/LICENSE.txt
+The wrapper is disabled by default and optional. Full license text is included
+in ext/vpu_wrapper/LICENSE.
 
-Copyright 2016-2020 Freescale Semiconductor, Inc.
-Copyright 2018-2020 NXP
+Copyright 2010-2016 Freescale Semiconductor, Inc.
+Copyright 2017-2020 NXP
 
 ================================================================================
 
