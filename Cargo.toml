@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "1.4.0-rc0"
+version = "1.5.0"
 authors = ["Au-Zone Technologies"]
 license = "Apache-2.0"
 edition = "2021"
@@ -15,7 +15,7 @@ rust-version = "1.70"  # MSRV
 dma-buf = "0.4.0"
 unix-ts = "1.0.0"
 # Shared dependencies across workspace
-videostream-sys = { version = "1.4.0-rc0", path = "crates/videostream-sys" }
+videostream-sys = { version = "1.5.0", path = "crates/videostream-sys" }
 
 [profile.release]
 opt-level = 3
