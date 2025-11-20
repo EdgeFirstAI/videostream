@@ -72,10 +72,17 @@ echo
 
 # Step 2: Merge individual source SBOMs and clean for CycloneDX compatibility
 echo "[2/5] Merging and cleaning source SBOMs..."
-python3 << 'EOF'
+
+# Extract version from include/videostream.h (single source of truth)
+VERSION=$(grep '#define VSL_VERSION' include/videostream.h | cut -d'"' -f2)
+echo "  Detected version: $VERSION"
+
+python3 << EOF
 import json
 import sys
 import os
+
+VERSION = "$VERSION"
 
 def load_sbom(filename):
     """Load an SBOM file if it exists"""
@@ -135,7 +142,7 @@ merged_sbom = {
         'component': {
             'type': 'library',
             'name': 'videostream',
-            'version': '1.4.0-rc0',
+            'version': VERSION,
             'description': 'Video utility library for embedded Linux',
             'licenses': [
                 {'license': {'id': 'Apache-2.0'}}
@@ -209,7 +216,7 @@ deps_sbom = {
         'component': {
             'type': 'library',
             'name': 'videostream',
-            'version': '1.4.0-rc0'
+            'version': VERSION
         }
     },
     'components': components
