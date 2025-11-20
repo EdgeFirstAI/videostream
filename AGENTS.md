@@ -815,11 +815,11 @@ git push origin main
 **Step 7: Create and Push Git Tag**
 
 ```bash
-# Create annotated tag (NO 'v' prefix)
-git tag -a -m "Version 1.5.0" 1.5.0
+# Create annotated tag (v prefix is REQUIRED to trigger release workflow)
+git tag -a -m "Version 1.5.0" v1.5.0
 
 # Push tag
-git push --tags
+git push origin v1.5.0
 ```
 
 **Step 8: Monitor Release Workflow**
@@ -843,7 +843,7 @@ When asked to prepare a release:
 5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
 6. **CHECK SBOM locally** - run `make sbom` to catch license violations before CI/CD
 7. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
-8. **Use correct tag format** - `1.5.0` NOT `v1.5.0` (no v prefix)
+8. **Use correct tag format** - `v1.5.0` (v prefix is REQUIRED to trigger release.yml workflow)
 9. **ALWAYS use modern CMake workflow** - `cmake -S . -B build && cmake --build build` (stay in project root)
 10. **Test with proper environment** - activate venv and set VIDEOSTREAM_LIBRARY before running pytest
 11. **Read CONTRIBUTING.md** - has complete detailed release process
@@ -900,9 +900,9 @@ git push --tags
 ```bash
 git push origin main
 # Wait for GitHub Actions to show all green
-# Then create tag
-git tag -a -m "Version 1.5.0" 1.5.0
-git push origin 1.5.0
+# Then create tag (v prefix REQUIRED)
+git tag -a -m "Version 1.5.0" v1.5.0
+git push origin v1.5.0
 ```
 
 ❌ **WRONG**: Skipping SBOM check locally
@@ -1081,6 +1081,7 @@ When working with conversational AI:
 - **Skipping SBOM check**: Always run `make sbom` locally before release to catch license violations early
 - **Version file mismatches**: Use `make verify-version` to ensure all 6 files are synchronized
 - **Tagging before CI passes**: Wait for green checkmarks on GitHub Actions before creating release tag
+- **Wrong tag format**: MUST use `vX.Y.Z` format (v prefix required) to trigger release.yml workflow
 
 ---
 

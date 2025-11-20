@@ -825,14 +825,19 @@ make sbom
 ```
 
 #### Pitfall 6: Wrong Git Tag Format
-**Current convention**: Tags are `X.Y.Z` (no 'v' prefix):
-```bash
-# Correct
-git tag -a -m "Version 1.5.2" 1.5.2
-git push origin 1.5.2
+**Symptom**: Release workflow doesn't trigger
 
-# Note: Workflow uses v* pattern but accepts both formats
+**CRITICAL**: Tags MUST use `vX.Y.Z` format to trigger release workflow:
+```bash
+# Correct (v prefix REQUIRED)
+git tag -a -m "Version 1.5.2" v1.5.2
+git push origin v1.5.2
+
+# Wrong (missing v - release.yml will NOT trigger!)
+git tag -a -m "Version 1.5.2" 1.5.2
 ```
+
+The release.yml workflow is triggered by `tags: - 'v*'` pattern.
 
 ### Release Process Steps
 
