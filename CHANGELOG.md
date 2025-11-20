@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.2] - 2025-11-20
+
+### Fixed
+- Documentation: Updated doc/conf.py version to match other version files
+
+---
+
 ## [1.5.1] - 2025-11-20
 
 ### Fixed
