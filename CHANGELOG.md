@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.5.0] - 2025-11-19
+
 ### Added (Rust bindings only)
 
 - **Dynamic Library Loading**: Rust crates now use runtime dynamic loading via `libloading` crate
@@ -40,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   let frame = Frame::new(640, 480, 0, "RGB3");  // Could panic
   let width = frame.width();                     // Returns i32
   
-  // After (v1.4.0)
+  // After (v1.5.0)
   let frame = Frame::new(640, 480, 0, "RGB3")?;  // Returns Result<Frame, Error>
   let width = frame.width()?;                     // Returns Result<i32, Error>
   ```
@@ -67,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Rust Migration Guide: v1.3.x → v1.4.0
+## Rust Migration Guide: v1.3.x → v1.5.0
 
 ### Update Error Type References
 
@@ -128,6 +132,44 @@ cargo test --workspace
 
 ---
 
+## [1.4.0] - 2024-09-25
+
+### Added (C Library)
+
+- **VPU Decoder API**: Hardware-accelerated H.264/HEVC decoding via Hantro VPU
+  - `vsl_decoder_create()` - Create decoder instance with target output format and FPS
+  - `vsl_decode_frame()` - Decode compressed frame to VSLFrame with return codes
+  - `vsl_decoder_width()`, `vsl_decoder_height()` - Query decoded frame dimensions
+  - `vsl_decoder_crop()` - Get crop rectangle for decoded frames
+  - `vsl_decoder_release()` - Release decoder resources
+  - `VSLDecoderCodec` enum for H.264 (AVC) and HEVC codec selection
+  - `VSLDecoderRetCode` enum: `VSL_DEC_SUCCESS`, `VSL_DEC_ERR`, `VSL_DEC_INIT_INFO`, `VSL_DEC_FRAME_DEC`
+
+### Changed (C Library)
+
+- Enhanced build system with improved CMake configuration
+- Improved CI/CD pipeline for multi-platform testing
+- Performance optimizations for embedded platforms
+
+---
+
+## [1.3.0] - 2024
+
+### Added (C Library)
+
+- **VPU Encoder API**: Hardware-accelerated H.264/HEVC encoding via Hantro VC8000e
+  - `vsl_encoder_create()` - Create encoder instance with profile, codec, and FPS
+  - `vsl_encode_frame()` - Encode VSLFrame to compressed format with optional crop
+  - `vsl_encoder_new_output_frame()` - Allocate output frame for encoded data
+  - `vsl_encoder_release()` - Release encoder resources
+  - `VSLEncoderProfile` enum for quality/bitrate presets (AUTO, 5000_KBPS, 25000_KBPS, 50000_KBPS, 100000_KBPS)
+
+### Changed (C Library)
+
+- Various performance improvements and bug fixes
+
+---
+
 ## [1.3.14] - 2024
 
 ### C Library
@@ -151,5 +193,5 @@ Rust bindings were introduced in version 1.4.0.
 
 ---
 
-*Last Updated: 2025-11-18*
+*Last Updated: 2025-11-19*
 
