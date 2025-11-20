@@ -20,3 +20,7 @@ libloading = "0.8"
 [build-dependencies]
 # Build dependencies will be added when implementing bindgen
 bindgen = "0.70"
+
+[package.metadata.release]
+# Disable per-crate CHANGELOG updates (use workspace CHANGELOG.md)
+pre-release-replacements = []
