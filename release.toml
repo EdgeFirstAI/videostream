@@ -2,6 +2,19 @@
 # Manages version bumping across all project files
 # Single source of truth: versions are synchronized across C, Python, Rust, and Debian packaging
 
+# Tag format
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"
+
+# Don't publish to crates.io (handled by GitHub Actions)
+publish = false
+
+# Don't push automatically (gives us control to review first)
+push = false
+
+# Use single consolidated commit for workspace releases
+consolidate-commits = true
+
 # Automatic file updates during release
 pre-release-replacements = [
   # Update C library header (single source of truth for C code)
@@ -13,13 +26,3 @@ pre-release-replacements = [
   # Update Debian changelog
   {file="debian/changelog", search="videostream \\([^)]+\\)", replace="videostream ({{version}}-1)", min=1},
 ]
-
-# Tag format
-tag-name = "v{{version}}"
-tag-message = "Release {{version}}"
-
-# Don't publish to crates.io (handled by GitHub Actions)
-publish = false
-
-# Don't push automatically (gives us control to review first)
-push = false
