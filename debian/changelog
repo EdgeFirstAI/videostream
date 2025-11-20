@@ -1,4 +1,4 @@
-videostream (1.5.0-1) stable; urgency=medium
+videostream (1.5.1-1) stable; urgency=medium
 
   * Release candidate 0 for version 1.4.0
   * Rust bindings with dynamic library loading

@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.1] - 2025-11-20
+
+### Fixed
+- Release process: Ensured all version files are synchronized correctly
+
+---
+
 ## [1.5.0] - 2025-11-19
 
 ### Added (Rust bindings only)
