@@ -230,9 +230,9 @@ getInputFrame(VSLClient* client)
             exit(EXIT_FAILURE);
         }
 
-    // mmap frame here, later on mmap would be done four times in async procedures causing error
-        if(!vsl_frame_mmap(in_frame, NULL))
-        {
+        // mmap frame here, later on mmap would be done four times in async
+        // procedures causing error
+        if (!vsl_frame_mmap(in_frame, NULL)) {
             fprintf(stderr,
                     "failed to mmap frame %ld: %s\n",
                     vsl_frame_serial(in_frame),

@@ -50,7 +50,8 @@ vsl_release()
 
 #if !defined(_MSC_VER) && !defined(_GHS_MULTI) && !defined(__ICCARM__)
 VSL_API
-void __attribute__((constructor)) vsl_init_constructor()
+void __attribute__((constructor))
+vsl_init_constructor()
 {
     if (vsl_init()) {
         fprintf(stderr, "[ERROR] vsl_init: %s\n", strerror(errno));
@@ -59,7 +60,8 @@ void __attribute__((constructor)) vsl_init_constructor()
 }
 
 VSL_API
-void __attribute__((destructor)) vsl_init_destructor()
+void __attribute__((destructor))
+vsl_init_destructor()
 {
     vsl_release();
 }

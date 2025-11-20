@@ -31,7 +31,7 @@ class Frame:
         if ptr is not None:
             self._ptr = ptr
             return
-        if type(fourcc) == str:
+        if isinstance(fourcc, str):
             fourcc_ = lib.vsl_fourcc_from_string(fourcc.encode('utf-8'))
             if fourcc_ == 0:
                 raise RuntimeError('Invalid fourcc %s' % fourcc)

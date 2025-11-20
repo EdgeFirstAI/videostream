@@ -132,8 +132,8 @@ vsl_camera_buffer_timestamp(const vsl_camera_buffer* buffer,
                             int64_t*                 seconds,
                             int64_t*                 nanoseconds)
 {
-    if (seconds) {*seconds = buffer->timestamp.tv_sec;}
-    if (nanoseconds) {*nanoseconds = buffer->timestamp.tv_usec * 1000;}
+    if (seconds) { *seconds = buffer->timestamp.tv_sec; }
+    if (nanoseconds) { *nanoseconds = buffer->timestamp.tv_usec * 1000; }
 }
 
 VSL_API
@@ -637,11 +637,9 @@ vsl_camera_init_device(vsl_camera* ctx,
         fmt.fmt.pix_mp.field      = V4L2_FIELD_ANY;
         fmt.fmt.pix_mp.num_planes = 1;
 
-
         // the driver will set these values
         fmt.fmt.pix_mp.plane_fmt[0].sizeimage    = 0;
         fmt.fmt.pix_mp.plane_fmt[0].bytesperline = 0;
-
     }
 
     if (-1 == xioctl(ctx->fd, VIDIOC_S_FMT, &fmt)) {

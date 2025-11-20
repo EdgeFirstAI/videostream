@@ -9,7 +9,7 @@
 #include <string.h>
 
 #define Align(ptr, align) \
-    (((unsigned long) ptr + (align) -1) / (align) * (align))
+    (((unsigned long) ptr + (align) - 1) / (align) * (align))
 
 static int
 vpu_codec_from_fourcc(uint32_t fourcc)
@@ -206,7 +206,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
     sEncOpenParamSimp.nGOPSize = encoder->fps;
     sEncOpenParamSimp.nBitRate = 0;
     sEncOpenParamSimp.nIntraQP = 0;
-    
+
     switch (encoder->outputFourcc) {
     case VSL_FOURCC('H', '2', '6', '4'):
     case VSL_FOURCC('H', 'E', 'V', 'C'):

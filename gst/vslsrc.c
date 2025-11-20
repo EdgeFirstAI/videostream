@@ -212,34 +212,34 @@ stop(GstBaseSrc* src)
 /**
  * @brief extends gst_video_format_from_fourcc with RGB color formats
  * gst_video_format_from_fourcc only supports YUV formats
- * @param fourcc 
- * @return GstVideoFormat 
+ * @param fourcc
+ * @return GstVideoFormat
  */
 static GstVideoFormat
-gst_video_format_from_fourcc_extended (guint32 fourcc)
+gst_video_format_from_fourcc_extended(guint32 fourcc)
 {
-  switch (fourcc) {
-    case GST_MAKE_FOURCC ('R', 'G', 'B', 'x'):
-      return GST_VIDEO_FORMAT_RGBx;
-    case GST_MAKE_FOURCC ('B', 'G', 'R', 'x'):
-      return GST_VIDEO_FORMAT_BGRx;
-    case GST_MAKE_FOURCC ('R', 'G', 'B', 'A'):
-      return GST_VIDEO_FORMAT_RGBA;
-    case GST_MAKE_FOURCC ('B', 'G', 'R', 'A'):
-      return GST_VIDEO_FORMAT_BGRA;
+    switch (fourcc) {
+    case GST_MAKE_FOURCC('R', 'G', 'B', 'x'):
+        return GST_VIDEO_FORMAT_RGBx;
+    case GST_MAKE_FOURCC('B', 'G', 'R', 'x'):
+        return GST_VIDEO_FORMAT_BGRx;
+    case GST_MAKE_FOURCC('R', 'G', 'B', 'A'):
+        return GST_VIDEO_FORMAT_RGBA;
+    case GST_MAKE_FOURCC('B', 'G', 'R', 'A'):
+        return GST_VIDEO_FORMAT_BGRA;
     // Fix gstreamer and v4l2 fourcc mismatch
-    case GST_MAKE_FOURCC ('Y', 'U', 'Y', 'V'):
-      return GST_VIDEO_FORMAT_YUY2;
+    case GST_MAKE_FOURCC('Y', 'U', 'Y', 'V'):
+        return GST_VIDEO_FORMAT_YUY2;
     default:
-      return gst_video_format_from_fourcc (fourcc);
-  }
+        return gst_video_format_from_fourcc(fourcc);
+    }
 }
 
 static GstCaps*
 get_caps(GstBaseSrc* src, GstCaps* filter)
 {
     (void) filter;
-    
+
     VslSrc* vslsrc = VSL_SRC(src);
 
     if (!vslsrc->client) {
@@ -259,10 +259,11 @@ get_caps(GstBaseSrc* src, GstCaps* filter)
         return gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(src));
     }
 
-    vslsrc->width         = vsl_frame_width(frame);
-    vslsrc->height        = vsl_frame_height(frame);
-    vslsrc->fourcc        = vsl_frame_fourcc(frame);
-    GstVideoFormat format = gst_video_format_from_fourcc_extended(vslsrc->fourcc);
+    vslsrc->width  = vsl_frame_width(frame);
+    vslsrc->height = vsl_frame_height(frame);
+    vslsrc->fourcc = vsl_frame_fourcc(frame);
+    GstVideoFormat format =
+        gst_video_format_from_fourcc_extended(vslsrc->fourcc);
 
     GST_INFO_OBJECT(vslsrc,
                     "videostream frame %dx%d format: %c%c%c%c, gst enum: %d",
@@ -275,7 +276,7 @@ get_caps(GstBaseSrc* src, GstCaps* filter)
                     format);
 
     if (format == GST_VIDEO_FORMAT_UNKNOWN) {
-        
+
         GST_ERROR_OBJECT(vslsrc, "unknown video format");
         return gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(src));
     }

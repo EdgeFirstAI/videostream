@@ -128,7 +128,7 @@ main(void)
         if (bytes_to_give > 100000) { bytes_to_give = 100000; }
         printf("Giving %i bytes\n", bytes_to_give);
         size_t bytes_consumed = 0;
-        int ret_code       = vsl_decode_frame(dec,
+        int    ret_code       = vsl_decode_frame(dec,
                                         buf,
                                         bytes_read,
                                         &bytes_consumed,

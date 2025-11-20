@@ -368,10 +368,7 @@ vsl_frame_release(VSLFrame* frame)
     if (frame->client) { vsl_frame_unlock(frame); }
 
     vsl_frame_unalloc(frame);
-    if (frame->cleanup)
-    {
-        frame->cleanup(frame);
-    }
+    if (frame->cleanup) { frame->cleanup(frame); }
 
     free(frame);
 }
