@@ -1075,8 +1075,8 @@ make verify-version
 ❌ **WRONG**: Tagging before CI passes
 ```bash
 git push origin main
-git tag -a -m "Version 1.5.0" 1.5.0  # TOO SOON!
-git push --tags
+git tag -a -m "Version 1.5.0" v1.5.0  # TOO SOON!
+git push origin v1.5.0
 # Now CI fails and you have to delete the tag
 ```
 
@@ -1141,94 +1141,6 @@ python3 -m venv venv
 venv/bin/pip install scancode-toolkit
 # Then run
 make sbom
-```
-
----
-
-## Working with AI Assistants
-5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
-6. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
-7. **Use correct tag format** - `1.5.0` NOT `v1.5.0` (no v prefix)
-8. **Read CONTRIBUTING.md** - has complete detailed release process
-
-### Common Mistakes to Avoid
-
-❌ **WRONG**: Skipping version file updates
-```bash
-# Only updating some files - CI WILL FAIL
-vim Cargo.toml
-git commit -m "Update version"  # Missing 5 other files!
-```
-
-✅ **CORRECT**: Update all 6 files
-```bash
-# Edit all 6 version files, then verify:
-grep "1.5.0" Cargo.toml include/videostream.h pyproject.toml \
-             doc/conf.py debian/changelog CHANGELOG.md
-```
-
-❌ **WRONG**: Tagging before CI passes
-```bash
-git push origin main
-git tag -a -m "Version 1.5.0" 1.5.0  # TOO SOON!
-git push --tags
-# Now CI fails and you have to delete the tag
-```
-
-✅ **CORRECT**: Wait for CI, then tag
-```bash
-git push origin main
-# Wait for GitHub Actions to show all green
-# Then create tag
-git tag -a -m "Version 1.5.0" 1.5.0
-git push --tags
-```
-
-❌ **WRONG**: Forgetting doc/conf.py
-```bash
-# This file is easy to forget!
-# CI will fail with version mismatch
-```
-
-✅ **CORRECT**: Use checklist from CONTRIBUTING.md
-```bash
-# Follow the 6-file checklist every time
-```
-
-### Troubleshooting
-
-**Problem**: Forgot to update a version file
-
-**Solution**:
-```bash
-# 1. Delete the tag
-git tag -d 1.5.0
-git push origin :refs/tags/1.5.0
-
-# 2. Fix missing file
-vim doc/conf.py
-
-# 3. Amend commit
-git add doc/conf.py
-git commit --amend --no-edit
-
-# 4. Force-push
-git push origin main --force-with-lease
-
-# 5. Recreate tag
-git tag -a -m "Version 1.5.0" 1.5.0
-git push origin 1.5.0
-```
-
-**Problem**: Version mismatch between files
-
-**Solution**:
-```bash
-# Verify all versions
-grep -r "1.5.0" Cargo.toml include/videostream.h pyproject.toml \
-               doc/conf.py debian/changelog
-
-# Fix any that don't match, then amend commit
 ```
 
 ---
