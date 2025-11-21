@@ -161,22 +161,20 @@ cd videostream
 
 ## Building
 
+**Note:** VideoStream uses modern CMake workflow - all commands run from the project root directory. This ensures consistency and avoids directory confusion.
+
 ### Standard Build (Debug)
 
 ```bash
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(nproc)
 ```
 
 ### Release Build
 
 ```bash
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 ```
 
 ### Build Options
@@ -196,10 +194,11 @@ VideoStream supports several CMake options:
 
 **Example:**
 ```bash
-cmake -DCMAKE_BUILD_TYPE=Debug \
+cmake -S . -B build \
+      -DCMAKE_BUILD_TYPE=Debug \
       -DENABLE_COVER=ON \
-      -DBUILD_TESTING=ON \
-      ..
+      -DBUILD_TESTING=ON
+cmake --build build -j$(nproc)
 ```
 
 ### Cross-Compiling for ARM/ARM64
@@ -210,10 +209,9 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
 # Source the SDK environment
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
 
-mkdir build-arm64
-cd build-arm64
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+# Configure and build
+cmake -S . -B build-arm64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build-arm64 -j$(nproc)
 ```
 
 #### Using Docker
@@ -249,22 +247,59 @@ After building, you'll find:
 VideoStream includes Python-based integration tests:
 
 ```bash
-# Install test dependencies
-pip3 install pytest
+# Create virtual environment (first time only)
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
 
-# Run all tests
-cd build
-pytest ../tests/
+# Build library
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(nproc)
 
+# Set library path for ctypes loading
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+
+# Run tests
+venv/bin/pytest tests/
+
+# Or use make target (handles venv, env.sh, and library path automatically)
+make test
+```
+
+**Test Options:**
+```bash
 # Run specific test file
-pytest ../tests/test_frame.py
+venv/bin/pytest tests/test_frame.py
 
 # Run with verbose output
-pytest -v ../tests/
+venv/bin/pytest -v tests/
 
 # Run with coverage
-pytest --cov=videostream ../tests/
+venv/bin/pytest --cov=videostream tests/
 ```
+
+### Environment Configuration (Optional)
+
+Some integration tests may require external services (APIs, databases). Create `env.sh` for local development:
+
+```bash
+#!/bin/bash
+# env.sh - LOCAL DEVELOPMENT ONLY (never commit!)
+export API_ENDPOINT="https://dev.example.com/api"
+export API_TOKEN="eyJ0eXAi...expires-in-24h"  # Ephemeral token, 24-48h lifespan
+```
+
+**CRITICAL:** `env.sh` is in `.gitignore` and must NEVER be committed. Use ephemeral tokens, not passwords.
+
+**Usage:**
+```bash
+# Source env.sh if it exists
+[ -f env.sh ] && source env.sh
+
+# Run integration tests
+venv/bin/pytest tests/
+```
+
+**CI/CD:** Production environments use secure vaults (GitHub Secrets), not env.sh files.
 
 ### Running C Unit Tests (Future)
 
@@ -272,10 +307,9 @@ C unit tests are planned - see [TODO.md](TODO.md) for status.
 
 ```bash
 # Once implemented:
-cd build
-cmake -DBUILD_TESTING=ON ..
-make
-ctest --output-on-failure
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 ### Manual Testing
@@ -319,14 +353,14 @@ build/src/vsl-monitor --jpeg --rate 10 /tmp/test-vsl
 
 ```bash
 # Build with debug symbols
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
 
 # Run with valgrind
 valgrind --leak-check=full \
          --show-leak-kinds=all \
          --track-origins=yes \
-         ./build/src/vsl-monitor /tmp/test-vsl
+         build/src/vsl-monitor /tmp/test-vsl
 ```
 
 ---
