@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.4] - 2025-11-21
+
+### Changed
+- Internal documentation improvements to AGENTS.md (AI assistant guidelines)
+- No user-facing changes - release verifies updated release process
+
+---
+
 ## [1.5.3] - 2025-11-20
 
 ### Added
