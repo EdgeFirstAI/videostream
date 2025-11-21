@@ -37,6 +37,187 @@ When contributing to Au-Zone projects, AI assistants should prioritize:
 - **Testing**: Comprehensive coverage with unit, integration, and edge case tests
 - **Documentation**: Clear explanations for complex logic and public APIs
 - **License compliance**: Strict adherence to approved open source licenses
+- **Stay in project root**: **NEVER** change directories unless explicitly required - use paths instead
+
+### ⚠️ CRITICAL RULE: No Directory Changes
+
+**BANNED: Changing directories during command execution**
+
+AI assistants frequently get lost in subdirectories and fail to recover. To prevent this:
+
+**❌ NEVER DO THIS:**
+```bash
+cd build && cmake ..
+cd tests && pytest
+cd src && grep "pattern" *.c
+cd build && make install
+cd .. # Trying to get back - but where are we?
+```
+
+**✅ ALWAYS DO THIS:**
+```bash
+cmake -S . -B build                    # Stay in root, specify paths
+pytest tests/                          # Stay in root, specify test directory
+grep "pattern" src/*.c                 # Stay in root, specify source files
+cmake --build build                    # Stay in root, build from root
+cmake --install build                  # Stay in root, install from root
+cat build/output.txt                   # Stay in root, read with path
+ls -la build/                          # Stay in root, list with path
+```
+
+**If you MUST change directories (rare):**
+1. Get **explicit permission** from the user first
+2. Use a subshell to auto-return: `(cd subdir && command)`
+3. Document why path-based approach won't work
+
+**Why this matters:**
+- AI context doesn't reliably track current directory
+- Failed commands leave you in unknown locations
+- `cd ..` doesn't guarantee return to project root
+- Modern tools (cmake, pytest, make) work from any directory with correct paths
+
+**Remember:** All VideoStream workflows assume you're in the project root directory
+
+---
+
+### ⚠️ CRITICAL RULE: Always Use Project venv for Python
+
+**REQUIRED: All Python commands must use the project's virtual environment**
+
+Projects using Python **must** have a virtual environment, and **all** Python commands must be executed within it.
+
+**Standard venv location:** `venv/` in project root (created with `python3 -m venv venv`)
+
+**❌ NEVER DO THIS:**
+```bash
+pip install package                    # Installs to system Python!
+python script.py                        # Uses system Python!
+pytest tests/                          # Uses system pytest!
+python -m pip install package          # Still system Python!
+```
+
+**✅ ALWAYS DO THIS:**
+```bash
+# Activate venv first, then run commands
+source venv/bin/activate
+pip install package
+python script.py
+pytest tests/
+deactivate
+
+# OR use venv directly without activation
+venv/bin/pip install package
+venv/bin/python script.py
+venv/bin/pytest tests/
+```
+
+**Best practice - Direct venv invocation (no activation needed):**
+```bash
+# Install dependencies
+venv/bin/pip install -r requirements.txt
+
+# Run Python scripts
+venv/bin/python deepview/example.py
+
+# Run tests
+venv/bin/pytest tests/
+
+# Run linters
+venv/bin/pylint src/
+venv/bin/black --check src/
+```
+
+**Why this matters:**
+- System Python may have different versions or missing packages
+- Installing to system Python pollutes global environment
+- venv isolation ensures reproducible builds
+- CI/CD uses venv - local dev must match
+
+**If venv doesn't exist:**
+```bash
+python3 -m venv venv
+venv/bin/pip install --upgrade pip
+venv/bin/pip install -r requirements.txt
+```
+
+**Remember:** The project venv is in `.gitignore` - it's created locally, never committed
+
+---
+
+### ⚠️ CRITICAL RULE: Source env.sh Before Tests/Benchmarks
+
+**REQUIRED: If env.sh exists, source it before running tests or benchmarks**
+
+The `env.sh` file configures the test and benchmark environment with:
+- Server URLs and endpoints
+- Temporary session tokens (ephemeral, limited lifespan)
+- API keys and credentials (short-lived tokens preferred)
+- Test database connection strings
+- Feature flags for testing
+
+**Location:** `env.sh` in project root (if it exists)
+
+**❌ NEVER DO THIS:**
+```bash
+pytest tests/                          # Missing environment configuration!
+venv/bin/pytest tests/                 # Still missing env.sh!
+git add env.sh                         # NEVER commit env.sh!
+git commit -a -m "..."                 # Could accidentally commit env.sh!
+```
+
+**✅ ALWAYS DO THIS:**
+```bash
+# Check if env.sh exists and source it
+if [ -f env.sh ]; then source env.sh; fi
+venv/bin/pytest tests/
+
+# Or inline for single command
+[ -f env.sh ] && source env.sh; venv/bin/pytest tests/
+
+# For benchmarks too
+[ -f env.sh ] && source env.sh; venv/bin/python benchmarks/run.py
+```
+
+**Example env.sh content:**
+```bash
+#!/bin/bash
+# Test environment configuration - NEVER COMMIT THIS FILE
+# Use ephemeral tokens with limited lifespan, not passwords
+
+export API_URL="https://staging.example.com/api/v1"
+export API_TOKEN="eyJhbG...short-lived-token"  # Expires in 24h
+export TEST_DATABASE="postgresql://localhost:5432/testdb"
+export ENABLE_INTEGRATION_TESTS=1
+export LOG_LEVEL="DEBUG"
+
+# Delete this file between coding sessions or regenerate tokens daily
+```
+
+**Why this matters:**
+- Tests may require external services (APIs, databases)
+- Tokens are temporary and session-specific
+- Local dev environment differs from CI/CD
+- Keeps secrets out of git history
+
+**CRITICAL SECURITY RULES:**
+- ✅ **env.sh MUST be in `.gitignore`** (never committed)
+- ✅ **Use ephemeral tokens** (24-48 hour lifespan), not passwords
+- ✅ **Delete between sessions** or regenerate tokens daily
+- ❌ **NEVER commit env.sh** even if it "looks safe"
+- ❌ **NEVER put long-lived credentials** in env.sh
+
+**If env.sh doesn't exist:**
+- Tests run with default/mock configuration
+- Some integration tests may be skipped
+- Benchmarks may use mock data
+- Check project README for env.sh template
+
+**Verify env.sh is in .gitignore:**
+```bash
+grep "env.sh" .gitignore || echo "env.sh" >> .gitignore
+```
+
+**Remember:** env.sh is a local development convenience - CI/CD uses environment variables from secure vaults
 
 ---
 
@@ -526,11 +707,12 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_COVER=ON
 cmake --build build -j$(nproc)
 
 # Run Python tests (from project root)
-# IMPORTANT: Requires venv activation and library path
+# IMPORTANT: Use venv, source env.sh (if exists), and set library path
+[ -f env.sh ] && source env.sh
 source venv/bin/activate
 export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
 pytest tests/
-# Or use: make test
+# Or use: make test (handles venv and env.sh automatically)
 
 # Generate SBOM and check license compliance (REQUIRED before release)
 make sbom
@@ -836,17 +1018,18 @@ Watch: `https://github.com/EdgeFirstAI/videostream/actions/workflows/release.yml
 
 When asked to prepare a release:
 
-1. **RUN pre-release checks FIRST** - use `make pre-release` to verify format, build, test, SBOM, and version sync
+1. **RUN pre-release checks FIRST** - use `make pre-release` to verify format, update Cargo.lock, test, SBOM, and version sync
 2. **ALWAYS update ALL 6 version files** - missing even one will break CI/CD
 3. **VERIFY versions match** - use `make verify-version` to confirm all files have same version
 4. **FOLLOW semantic versioning** - breaking changes = MINOR (or MAJOR on request), non-breaking = PATCH
 5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
 6. **CHECK SBOM locally** - run `make sbom` to catch license violations before CI/CD
 7. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
-8. **Use correct tag format** - `v1.5.0` (v prefix is REQUIRED to trigger release.yml workflow)
+8. **Use correct tag format** - `vX.Y.Z` (v prefix is REQUIRED to trigger release.yml workflow)
 9. **ALWAYS use modern CMake workflow** - `cmake -S . -B build && cmake --build build` (stay in project root)
 10. **Test with proper environment** - activate venv and set VIDEOSTREAM_LIBRARY before running pytest
-11. **Read CONTRIBUTING.md** - has complete detailed release process
+11. **Commit with -a flag** - `git commit -a -m "message"` commits all tracked files (safer than `git add -A`)
+12. **Read CONTRIBUTING.md** - has complete detailed release process
 
 ### Common Mistakes to Avoid
 
@@ -862,17 +1045,18 @@ cmake --build build -j$(nproc)
 # Always stay in project root
 ```
 
-❌ **WRONG**: Running tests without environment
+❌ **WRONG**: Running tests without venv or env.sh
 ```bash
-pytest tests/  # FAILS - library not found
+pytest tests/  # FAILS - uses system Python, missing environment
 ```
 
-✅ **CORRECT**: Tests with environment
+✅ **CORRECT**: Tests with venv, env.sh, and environment
 ```bash
+[ -f env.sh ] && source env.sh
 source venv/bin/activate
 export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
 pytest tests/
-# Or: make test
+# Or use: make test (handles venv and env.sh automatically)
 ```
 
 ❌ **WRONG**: Skipping version file updates
@@ -936,22 +1120,23 @@ git commit --amend --no-edit
 git commit -m "Fix missing debian/changelog version update"
 ```
 
-**Problem**: Tests fail with "Unable to load VideoStream library"
+**Problem**: Tests fail with "Unable to load VideoStream library" or missing API tokens
 
 **Solution**:
 ```bash
-# Always activate venv and set library path
+# Always source env.sh (if exists), use venv, and set library path
+[ -f env.sh ] && source env.sh
 source venv/bin/activate
 export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
 pytest tests/
-# Or use: make test
+# Or use: make test (handles venv and env.sh automatically)
 ```
 
 **Problem**: SBOM generation fails
 
 **Solution**:
 ```bash
-# Ensure scancode-toolkit is installed
+# Ensure scancode-toolkit is installed in venv
 python3 -m venv venv
 venv/bin/pip install scancode-toolkit
 # Then run
@@ -1077,6 +1262,10 @@ When working with conversational AI:
 - **Directory confusion with CMake**: NEVER use `cd build && cmake .. && make`. Always use modern workflow: `cmake -S . -B build && cmake --build build`
 - **Forgetting to return from directories**: If you must `cd` somewhere, immediately return to project root after
 - **Using `make` directly**: Use `cmake --build <dir>` instead - it works with all generators (Make, Ninja, etc.)
+- **Changing directories AT ALL**: **BANNED** - Stay in project root and use paths. Example: `cat build/file.txt` NOT `cd build && cat file.txt`
+- **Using system Python**: **BANNED** - Always use project venv. Example: `venv/bin/pytest tests/` NOT `pytest tests/`
+- **Forgetting to source env.sh**: If env.sh exists, source it before tests/benchmarks: `[ -f env.sh ] && source env.sh; pytest tests/`
+- **Committing env.sh**: **NEVER** commit env.sh - contains tokens/secrets, must be in .gitignore
 - **Tests without environment**: Python tests REQUIRE `source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1` before running
 - **Skipping SBOM check**: Always run `make sbom` locally before release to catch license violations early
 - **Version file mismatches**: Use `make verify-version` to ensure all 6 files are synchronized
