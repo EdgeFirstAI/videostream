@@ -42,7 +42,12 @@ test:
 		echo "ERROR: Library not built. Run: cmake -S . -B build && cmake --build build"; \
 		exit 1; \
 	fi
-	@bash -c "source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"
+	@if [ -f env.sh ]; then \
+		echo "Sourcing env.sh..."; \
+		bash -c "source env.sh && source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"; \
+	else \
+		bash -c "source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"; \
+	fi
 
 .PHONY: verify-version
 verify-version:
@@ -58,11 +63,14 @@ verify-version:
 
 .PHONY: pre-release
 pre-release: format verify-version test sbom
+	@echo "Updating Cargo.lock..."
+	@cargo update --workspace
+	@echo "✓ Cargo.lock updated"
 	@echo "✓ All pre-release checks passed"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Review changes: git status"
-	@echo "  2. Commit: git commit -m 'Prepare Version X.Y.Z'"
+	@echo "  2. Commit: git commit -a -m 'Prepare Version X.Y.Z'"
 	@echo "  3. Push: git push origin main"
 	@echo "  4. Wait for CI/CD to pass"
 	@echo "  5. Tag: git tag -a -m 'Version X.Y.Z' vX.Y.Z"
