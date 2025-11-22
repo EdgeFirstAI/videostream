@@ -768,17 +768,17 @@ VideoStream uses a **manual release process** that ensures version consistency a
    # Or run checks individually:
    
    # Format code
-   find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
+   make format
+   
+   # Lint code
+   make lint
    
    # Build (ALWAYS use modern CMake workflow - stay in project root)
    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
    cmake --build build -j$(nproc)
    
-   # Run tests (requires venv activation and library path)
-   source venv/bin/activate
-   export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-   pytest tests/
-   # Or use: make test
+   # Run tests
+   make test
    
    # Generate SBOM and verify license compliance
    make sbom

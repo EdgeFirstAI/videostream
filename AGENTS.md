@@ -1,599 +1,228 @@
 # AGENTS.md - AI Assistant Development Guidelines
 
-This document provides instructions for AI coding assistants (GitHub Copilot, Cursor, Claude Code, etc.) working on Au-Zone Technologies projects. These guidelines ensure consistent code quality, proper workflow adherence, and maintainable contributions.
+This document provides instructions for AI coding assistants (GitHub Copilot, Cursor, Claude Code, etc.) working on the VideoStream project. These guidelines ensure consistent code quality, proper workflow adherence, and maintainable contributions.
 
-**Version:** 1.0
-**Last Updated:** November 2025
-**Applies To:** All Au-Zone Technologies software repositories
+**Version:** 2.0
+**Last Updated:** 2025-11-22
+**Applies To:** EdgeFirst VideoStream Library
 
 ---
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Git Workflow](#git-workflow)
-3. [Code Quality Standards](#code-quality-standards)
-4. [Testing Requirements](#testing-requirements)
-5. [Documentation Expectations](#documentation-expectations)
+2. [Critical Rules](#critical-rules)
+3. [Git Workflow](#git-workflow)
+4. [Code Quality Standards](#code-quality-standards)
+5. [Testing Requirements](#testing-requirements)
 6. [License Policy](#license-policy)
 7. [Security Practices](#security-practices)
-8. [Project-Specific Guidelines](#project-specific-guidelines)
+8. [VideoStream-Specific Guidelines](#videostream-specific-guidelines)
 9. [Release Process](#release-process)
 
 ---
 
 ## Overview
 
-Au-Zone Technologies develops edge AI and computer vision solutions for resource-constrained embedded devices. Our software spans:
-- Edge AI inference engines and model optimization tools
-- Computer vision processing pipelines
-- Embedded Linux device drivers and system software
-- MLOps platform (EdgeFirst Studio) for model deployment and management
-- Open source libraries and tools (Apache-2.0 licensed)
+EdgeFirst VideoStream Library provides video I/O capabilities for embedded Linux applications, including camera capture, hardware encoding, and inter-process frame sharing.
 
-When contributing to Au-Zone projects, AI assistants should prioritize:
+When contributing to VideoStream, AI assistants should prioritize:
 - **Resource efficiency**: Memory, CPU, and power consumption matter on embedded devices
 - **Code quality**: Maintainability, readability, and adherence to established patterns
 - **Testing**: Comprehensive coverage with unit, integration, and edge case tests
 - **Documentation**: Clear explanations for complex logic and public APIs
 - **License compliance**: Strict adherence to approved open source licenses
-- **Stay in project root**: **NEVER** change directories unless explicitly required - use paths instead
+- **Stay in project root**: **NEVER** change directories - use paths instead
 
-### ⚠️ CRITICAL RULE: No Directory Changes
+---
+
+## Quick Reference
+
+**Branch:** `feature/EDGEAI-###-description` or `bugfix/EDGEAI-###-description`
+**Commit:** `EDGEAI-###: Brief description` (50-72 chars, what changed not how)
+**PR:** main=2 approvals, develop=1. Link JIRA ticket, ensure CI passes.
+
+**License Policy:** ✅ MIT/Apache/BSD | ⚠️ LGPL (dynamic only) | ❌ GPL/AGPL
+**Coverage:** 70% minimum, 80%+ for core modules (lib/host.c, lib/client.c, lib/frame.c)
+
+---
+
+## ⚠️ Critical Rules
+
+### Rule #1: NEVER Use cd Commands
 
 **BANNED: Changing directories during command execution**
-
-AI assistants frequently get lost in subdirectories and fail to recover. To prevent this:
 
 **❌ NEVER DO THIS:**
 ```bash
 cd build && cmake ..
 cd tests && pytest
-cd src && grep "pattern" *.c
-cd build && make install
-cd .. # Trying to get back - but where are we?
 ```
 
 **✅ ALWAYS DO THIS:**
 ```bash
-cmake -S . -B build                    # Stay in root, specify paths
-pytest tests/                          # Stay in root, specify test directory
-grep "pattern" src/*.c                 # Stay in root, specify source files
-cmake --build build                    # Stay in root, build from root
-cmake --install build                  # Stay in root, install from root
-cat build/output.txt                   # Stay in root, read with path
-ls -la build/                          # Stay in root, list with path
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+pytest tests/
 ```
 
-**If you MUST change directories (rare):**
-1. Get **explicit permission** from the user first
-2. Use a subshell to auto-return: `(cd subdir && command)`
-3. Document why path-based approach won't work
+**Why:** AI context doesn't reliably track current directory. Stay in project root, use paths.
 
-**Why this matters:**
-- AI context doesn't reliably track current directory
-- Failed commands leave you in unknown locations
-- `cd ..` doesn't guarantee return to project root
-- Modern tools (cmake, pytest, make) work from any directory with correct paths
-
-**Remember:** All VideoStream workflows assume you're in the project root directory
-
----
-
-### ⚠️ CRITICAL RULE: Always Use Project venv for Python
-
-**REQUIRED: All Python commands must use the project's virtual environment**
-
-Projects using Python **must** have a virtual environment, and **all** Python commands must be executed within it.
-
-**Standard venv location:** `venv/` in project root (created with `python3 -m venv venv`)
+### Rule #2: ALWAYS Use Python venv
 
 **❌ NEVER DO THIS:**
 ```bash
-pip install package                    # Installs to system Python!
-python script.py                        # Uses system Python!
-pytest tests/                          # Uses system pytest!
-python -m pip install package          # Still system Python!
+pip install package
+python script.py
+pytest tests/
 ```
 
 **✅ ALWAYS DO THIS:**
 ```bash
-# Activate venv first, then run commands
-source venv/bin/activate
-pip install package
-python script.py
-pytest tests/
-deactivate
-
-# OR use venv directly without activation
 venv/bin/pip install package
 venv/bin/python script.py
 venv/bin/pytest tests/
 ```
 
-**Best practice - Direct venv invocation (no activation needed):**
-```bash
-# Install dependencies
-venv/bin/pip install -r requirements.txt
-
-# Run Python scripts
-venv/bin/python deepview/example.py
-
-# Run tests
-venv/bin/pytest tests/
-
-# Run linters
-venv/bin/pylint src/
-venv/bin/black --check src/
-```
-
-**Why this matters:**
-- System Python may have different versions or missing packages
-- Installing to system Python pollutes global environment
-- venv isolation ensures reproducible builds
-- CI/CD uses venv - local dev must match
-
-**If venv doesn't exist:**
+**Setup:**
 ```bash
 python3 -m venv venv
-venv/bin/pip install --upgrade pip
 venv/bin/pip install -r requirements.txt
 ```
 
-**Remember:** The project venv is in `.gitignore` - it's created locally, never committed
+### Rule #3: Source env.sh Before Tests (If Exists)
 
----
-
-### ⚠️ CRITICAL RULE: Source env.sh Before Tests/Benchmarks
-
-**REQUIRED: If env.sh exists, source it before running tests or benchmarks**
-
-The `env.sh` file configures the test and benchmark environment with:
-- Server URLs and endpoints
-- Temporary session tokens (ephemeral, limited lifespan)
-- API keys and credentials (short-lived tokens preferred)
-- Test database connection strings
-- Feature flags for testing
-
-**Location:** `env.sh` in project root (if it exists)
-
-**❌ NEVER DO THIS:**
 ```bash
-pytest tests/                          # Missing environment configuration!
-venv/bin/pytest tests/                 # Still missing env.sh!
-git add env.sh                         # NEVER commit env.sh!
-git commit -a -m "..."                 # Could accidentally commit env.sh!
-```
-
-**✅ ALWAYS DO THIS:**
-```bash
-# Check if env.sh exists and source it
-if [ -f env.sh ]; then source env.sh; fi
+# env.sh contains ephemeral tokens (<48h lifespan) - NEVER commit!
+[ -f env.sh ] && source env.sh
 venv/bin/pytest tests/
 
-# Or inline for single command
-[ -f env.sh ] && source env.sh; venv/bin/pytest tests/
-
-# For benchmarks too
-[ -f env.sh ] && source env.sh; venv/bin/python benchmarks/run.py
+# Or use make test (handles venv + env.sh automatically)
+make test
 ```
 
-**Example env.sh content:**
-```bash
-#!/bin/bash
-# Test environment configuration - NEVER COMMIT THIS FILE
-# Use ephemeral tokens with limited lifespan, not passwords
-
-export API_URL="https://staging.example.com/api/v1"
-export API_TOKEN="eyJhbG...short-lived-token"  # Expires in 24h
-export TEST_DATABASE="postgresql://localhost:5432/testdb"
-export ENABLE_INTEGRATION_TESTS=1
-export LOG_LEVEL="DEBUG"
-
-# Delete this file between coding sessions or regenerate tokens daily
-```
-
-**Why this matters:**
-- Tests may require external services (APIs, databases)
-- Tokens are temporary and session-specific
-- Local dev environment differs from CI/CD
-- Keeps secrets out of git history
-
-**CRITICAL SECURITY RULES:**
-- ✅ **env.sh MUST be in `.gitignore`** (never committed)
-- ✅ **Use ephemeral tokens** (24-48 hour lifespan), not passwords
-- ✅ **Delete between sessions** or regenerate tokens daily
-- ❌ **NEVER commit env.sh** even if it "looks safe"
-- ❌ **NEVER put long-lived credentials** in env.sh
-
-**If env.sh doesn't exist:**
-- Tests run with default/mock configuration
-- Some integration tests may be skipped
-- Benchmarks may use mock data
-- Check project README for env.sh template
-
-**Verify env.sh is in .gitignore:**
-```bash
-grep "env.sh" .gitignore || echo "env.sh" >> .gitignore
-```
-
-**Remember:** env.sh is a local development convenience - CI/CD uses environment variables from secure vaults
+**Security:** ✅ Ephemeral tokens | ❌ NEVER commit env.sh | ❌ NO passwords
 
 ---
 
 ## Git Workflow
 
-### Branch Naming Convention
+### Branch Naming
 
-**REQUIRED FORMAT**: `<type>/<PROJECTKEY-###>[-optional-description]`
+**Format**: `<type>/EDGEAI-###[-description]`
 
-**Branch Types:**
-- `feature/` - New features and enhancements
-- `bugfix/` - Non-critical bug fixes
-- `hotfix/` - Critical production issues requiring immediate fix
+**Types:**
+- `feature/` - New features
+- `bugfix/` - Bug fixes
+- `hotfix/` - Critical fixes
 
 **Examples:**
 ```bash
-feature/EDGEAI-123-add-authentication
-bugfix/STUDIO-456-fix-memory-leak
-hotfix/MAIVIN-789-security-patch
-
-# Minimal format (JIRA key only)
-feature/EDGEAI-123
-bugfix/STUDIO-456
+feature/EDGEAI-123-add-dmabuf-support
+bugfix/EDGEAI-456-fix-memory-leak
 ```
 
-**Rules:**
-- JIRA key is REQUIRED (format: `PROJECTKEY-###`)
-- Description is OPTIONAL but recommended for clarity
-- Use kebab-case for descriptions (lowercase with hyphens)
-- Branch from `develop` for features/bugfixes, from `main` for hotfixes
+### Commit Messages
 
-### Commit Message Format
+**Format**: `EDGEAI-###: Brief description`
 
-**REQUIRED FORMAT**: `PROJECTKEY-###: Brief description of what was done`
-
-**Rules:**
-- Subject line: 50-72 characters ideal
-- Focus on WHAT changed, not HOW (implementation details belong in code)
-- No type prefixes (`feat:`, `fix:`, etc.) - JIRA provides context
-- Optional body: Use bullet points for additional detail
-
-**Examples of Good Commits:**
+**Good commits:**
 ```bash
-EDGEAI-123: Add JWT authentication to user API
-
-STUDIO-456: Fix memory leak in CUDA kernel allocation
-
-MAIVIN-789: Optimize tensor operations for inference
-- Implemented tiled memory access pattern
-- Reduced memory bandwidth by 40%
-- Added benchmarks to verify improvements
+EDGEAI-123: Add DmaBuf support for zero-copy frame sharing
+EDGEAI-456: Fix memory leak in frame pool cleanup
 ```
 
-**Examples of Bad Commits:**
-```bash
-fix bug                           # Missing JIRA key, too vague
-feat(auth): add OAuth2           # Has type prefix (not our convention)
-EDGEAI-123                       # Missing description
-edgeai-123: update code          # Lowercase key, vague description
-```
+### Pull Requests
 
-### Pull Request Process
-
-**Requirements:**
-- **2 approvals required** for merging to `main`
-- **1 approval required** for merging to `develop`
+- **main**: 2 approvals required
+- **develop**: 1 approval required
 - All CI/CD checks must pass
-- PR title: `PROJECTKEY-### Brief description of changes`
-- PR description must link to JIRA ticket
-
-**PR Description Template:**
-```markdown
-## JIRA Ticket
-Link: [PROJECTKEY-###](https://au-zone.atlassian.net/browse/PROJECTKEY-###)
-
-## Changes
-Brief summary of what changed and why
-
-## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests pass
-- [ ] Manual testing completed
-
-## Checklist
-- [ ] Code follows project conventions
-- [ ] Documentation updated
-- [ ] No secrets or credentials committed
-- [ ] License policy compliance verified
-```
-
-**Process:**
-1. Create PR via GitHub/Bitbucket web interface
-2. Link to JIRA ticket in description
-3. Wait for CI/CD to complete successfully
-4. Address reviewer feedback through additional commits
-5. Obtain required approvals
-6. Merge using squash or rebase to keep history clean
-
-### JIRA Integration
-
-While full JIRA details are internal, contributors should know:
-- **Branch naming triggers automation**: Creating a branch with format `<type>/PROJECTKEY-###` automatically updates the linked JIRA ticket
-- **PR creation triggers status updates**: Opening a PR moves tickets to review status
-- **Merge triggers closure**: Merging a PR to main/develop closes the associated ticket
-- **Commit messages link to JIRA**: Format `PROJECTKEY-###: Description` creates automatic linkage
-
-**Note**: External contributors without JIRA access can use branch naming like `feature/issue-123-description` referencing GitHub issue numbers instead.
+- Link JIRA ticket in description
 
 ---
 
 ## Code Quality Standards
 
-### General Principles
+### Language Standards
 
-- **Consistency**: Follow existing codebase patterns and conventions
-- **Readability**: Code is read more often than written - optimize for comprehension
-- **Simplicity**: Prefer simple, straightforward solutions over clever ones
-- **Error Handling**: Validate inputs, sanitize outputs, provide actionable error messages
-- **Performance**: Consider time/space complexity, especially for edge deployment
+**C11:**
+- Compiler flags: `-Wall -Wextra -Werror`
+- Formatter: clang-format (`make format`)
+- Error handling: Return negative errno values
 
-### Language-Specific Standards
+**Rust:**
+- Toolchain: Stable (1.70+)
+- Formatter: `cargo fmt`
+- Linter: `cargo clippy -- -D warnings` (`make lint`)
 
-Follow established conventions for each language:
-- **Rust**: Use `cargo fmt` and `cargo clippy`; follow Rust API guidelines
-- **Python**: Follow PEP 8; use autopep8 formatter (or project-specified tool); type hints preferred
-- **C/C++**: Follow project's .clang-format; use RAII patterns
-- **Go**: Use `go fmt`; follow Effective Go guidelines
-- **JavaScript/TypeScript**: Use ESLint; Prettier formatter; prefer TypeScript
-
-### Code Quality Tools
-
-**SonarQube Integration:**
-- Projects with `sonar-project.properties` must follow SonarQube guidelines
-- Verify code quality using:
-  - MCP integration for automated checks
-  - VSCode SonarLint plugin for real-time feedback
-  - SonarCloud reports in CI/CD pipeline
-- Address critical and high-severity issues before submitting PR
-- Maintain or improve project quality gate scores
-
-### Code Review Checklist
-
-Before submitting code, verify:
-- [ ] Code follows project style guidelines (check `.editorconfig`, `CONTRIBUTING.md`)
-- [ ] No commented-out code or debug statements
-- [ ] Error handling is comprehensive and provides useful messages
-- [ ] Complex logic has explanatory comments
-- [ ] Public APIs have documentation
-- [ ] No hardcoded values that should be configuration
-- [ ] Resource cleanup (memory, file handles, connections) is proper
-- [ ] No obvious security vulnerabilities (SQL injection, XSS, etc.)
-- [ ] SonarQube quality checks pass (if applicable)
+**Python:**
+- Version: 3.8+
+- Formatter: autopep8 (in venv)
+- Always use venv
 
 ### Performance Considerations
 
-For edge AI applications, always consider:
-- **Memory footprint**: Minimize allocations; reuse buffers where possible
-- **CPU efficiency**: Profile critical paths; optimize hot loops
-- **Power consumption**: Reduce wake-ups; batch operations
-- **Latency**: Consider real-time requirements for vision processing
-- **Hardware acceleration**: Leverage NPU/GPU/DSP when available
+Edge AI constraints:
+- **Memory**: 512MB-2GB RAM
+- **CPU**: <2% for frame distribution
+- **Latency**: <3ms for zero-copy DmaBuf
+- **Hardware**: Leverage G2D, Hantro VPU when available
 
 ---
 
 ## Testing Requirements
 
-### Coverage Standards
+### Coverage
 
-- **Minimum coverage**: 70% (project-specific thresholds may vary)
-- **Critical paths**: 90%+ coverage for core functionality
-- **Edge cases**: Explicit tests for boundary conditions
-- **Error paths**: Validate error handling and recovery
-
-### Test Types
-
-**Unit Tests:**
-- Test individual functions/methods in isolation
-- Mock external dependencies
-- Fast execution (< 1 second per test suite)
-- Use property-based testing where applicable
-
-**Integration Tests:**
-- Test component interactions
-- Use real dependencies when feasible
-- Validate API contracts and data flows
-- Test configuration and initialization
-
-**Edge Case Tests:**
-- Null/empty inputs
-- Boundary values (min, max, overflow)
-- Concurrent access and race conditions
-- Resource exhaustion scenarios
-- Platform-specific behaviors
-
-### Test Organization
-
-**Test layout follows language/framework conventions. Each project should define specific practices.**
-
-**Rust (common pattern):**
-```rust
-// Unit tests at end of implementation file
-// src/module/component.rs
-pub fn process_data(input: &[u8]) -> Result<Vec<u8>, Error> {
-    // implementation
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_process_data_valid_input() {
-        // test implementation
-    }
-}
-```
-
-```
-# Integration tests in separate directory
-tests/
-├── integration_test.rs
-└── common/
-    └── mod.rs
-```
-
-**Python (depends on pytest vs unittest):**
-```
-# Common patterns - follow project conventions
-project/
-├── src/
-│   └── mypackage/
-│       └── module.py
-└── tests/
-    ├── unit/
-    │   └── test_module.py
-    └── integration/
-        └── test_api_workflow.py
-```
-
-**General guidance:**
-- Follow common patterns for your language and testing framework
-- Consult project's `CONTRIBUTING.md` for specific conventions
-- Keep test organization consistent within the project
-- Co-locate unit tests or separate - project decides
+- **Minimum**: 70% (project-wide)
+- **Core modules**: 80%+ (lib/host.c, lib/client.c, lib/frame.c)
+- **Edge cases**: Explicit tests for boundaries
+- **Error paths**: Validate error handling
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Using make (recommended - handles venv + env.sh + library path)
 make test
 
-# Run with coverage
-make coverage
-
-# Language-specific examples
-cargo test --workspace              # Rust
-pytest tests/                       # Python with pytest
-python -m unittest discover tests/  # Python with unittest
-go test ./...                       # Go
+# Manual (requires setup)
+[ -f env.sh ] && source env.sh
+source venv/bin/activate
+export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
+pytest tests/
 ```
 
----
-
-## Documentation Expectations
-
-### Code Documentation
-
-**When to document:**
-- Public APIs, functions, and classes (ALWAYS)
-- Complex algorithms or non-obvious logic
-- Performance considerations or optimization rationale
-- Edge cases and error conditions
-- Thread safety and concurrency requirements
-- Hardware-specific code or platform dependencies
-
-**Documentation style:**
-```python
-def preprocess_image(image: np.ndarray, target_size: tuple[int, int]) -> np.ndarray:
-    """
-    Resize and normalize image for model inference.
-
-    Args:
-        image: Input image as HWC numpy array (uint8)
-        target_size: Target dimensions as (width, height)
-
-    Returns:
-        Preprocessed image as CHW float32 array normalized to [0, 1]
-
-    Raises:
-        ValueError: If image dimensions are invalid or target_size is negative
-
-    Performance:
-        Uses bilinear interpolation. For better quality with 2x cost,
-        use bicubic interpolation via config.interpolation = 'bicubic'
-    """
-```
-
-### Project Documentation
-
-**Essential files for public repositories:**
-- `README.md` - Project overview, quick start, documentation links
-- `CONTRIBUTING.md` - Development setup, contribution process, coding standards
-- `CODE_OF_CONDUCT.md` - Community standards (Contributor Covenant)
-- `SECURITY.md` - Vulnerability reporting process
-- `LICENSE` - Complete license text (Apache-2.0 for open source)
-
-**Additional documentation:**
-- User guides for features and workflows
-- API reference documentation
-- Migration guides for breaking changes
-
-### Documentation Updates
-
-When modifying code, update corresponding documentation:
-- README if user-facing behavior changes
-- API docs if function signatures or semantics change
-- CHANGELOG for all user-visible changes
-- Configuration guides if new options added
+**Test files:**
+- `tests/test_frame.py` - Frame lifecycle
+- `tests/test_ipc.py` - IPC protocol
+- `tests/test_host.py` - Host-side management
+- `tests/test_client.py` - Client-side acquisition
 
 ---
 
 ## License Policy
 
-**CRITICAL**: Au-Zone has strict license policy for all dependencies.
+### Allowed ✅
 
-### Allowed Licenses
+MIT, Apache-2.0, BSD-2/3, ISC, 0BSD, Unlicense, Public Domain
 
-✅ **Permissive licenses (APPROVED)**:
-- MIT
-- Apache-2.0
-- BSD-2-Clause, BSD-3-Clause
-- ISC
-- 0BSD
-- Unlicense
+### Conditional ⚠️
 
-### Review Required
+LGPL (dynamic linking only - NEVER static)
+MPL-2.0 (external dependencies only)
 
-⚠️ **Weak copyleft (REQUIRES LEGAL REVIEW)**:
-- MPL-2.0 (Mozilla Public License)
-- LGPL-2.1-or-later, LGPL-3.0-or-later (if dynamically linked)
+### Blocked ❌
 
-### Strictly Disallowed
+GPL (any version), AGPL, SSPL, Commons Clause
 
-❌ **NEVER USE THESE LICENSES**:
-- GPL (any version)
-- AGPL (any version)
-- Creative Commons with NC (Non-Commercial) or ND (No Derivatives)
-- SSPL (Server Side Public License)
-- BSL (Business Source License, before conversion)
-- OSL-3.0 (Open Software License)
+### Verification
 
-### Verification Process
-
-**Before adding dependencies:**
-1. Check license compatibility with project license (typically Apache-2.0)
-2. Verify no GPL/AGPL in dependency tree
-3. Review project's SBOM (Software Bill of Materials) if available
-4. Document third-party licenses in NOTICE file
-
-**Local verification (REQUIRED before release):**
 ```bash
+# REQUIRED before release
 make sbom
-# Generates SBOM and checks license policy compliance
-# Catches GPL/AGPL violations before CI/CD
 ```
 
-**CI/CD will automatically:**
-- Generate SBOM using scancode-toolkit
-- Validate CycloneDX SBOM schema
-- Check for disallowed licenses
-- Block PR merges if violations detected
-
-**If you need a library with incompatible license:**
-- Search for alternatives with permissive licenses
-- Consider implementing functionality yourself
-- Escalate to technical leadership for approval (rare exceptions)
+CI/CD automatically blocks GPL/AGPL violations.
 
 ---
 
@@ -601,167 +230,104 @@ make sbom
 
 ### Vulnerability Reporting
 
-**For security issues**, use project's SECURITY.md process:
-- Email: `support@au-zone.com` with subject "Security Vulnerability"
-- Expected acknowledgment: 48 hours
-- Expected assessment: 7 days
-- Fix timeline based on severity
+Email: `support@au-zone.com` (Subject: "Security Vulnerability - VideoStream")
 
-### Secure Coding Guidelines
+### Secure Coding
 
 **Input Validation:**
-- Validate all external inputs (API requests, file uploads, user input)
-- Use allowlists rather than blocklists
-- Enforce size/length limits
-- Sanitize for appropriate context (HTML, SQL, shell)
+- Validate all external inputs
+- Use allowlists, enforce size limits
 
-**Authentication & Authorization:**
-- Never hardcode credentials or API keys
-- Use environment variables or secure vaults for secrets
-- Implement proper session management
-- Follow principle of least privilege
+**Credentials:**
+- NEVER hardcode credentials
+- Use ephemeral tokens (<48h) in env.sh
+- NEVER commit env.sh
 
-**Data Protection:**
-- Encrypt sensitive data at rest and in transit
-- Use secure protocols (HTTPS, TLS 1.2+)
-- Implement proper key management
-- Sanitize logs (no passwords, tokens, PII)
-
-**Common Vulnerabilities to Avoid:**
-- SQL Injection: Use parameterized queries
-- XSS (Cross-Site Scripting): Escape output, use CSP headers
-- CSRF (Cross-Site Request Forgery): Use tokens
-- Path Traversal: Validate and sanitize file paths
-- Command Injection: Avoid shell execution; use safe APIs
-- Buffer Overflows: Use safe string functions; bounds checking
-
-### Dependencies
-
-- Keep dependencies up to date
-- Monitor for security advisories
-- Use dependency scanning tools (Dependabot, Snyk)
-- Audit new dependencies before adding
+**DmaBuf Security:**
+- Understand FDs grant direct memory access
+- Close FDs immediately after use
+- Don't share with untrusted processes
 
 ---
 
-## Project-Specific Guidelines
-
-This section should be customized per repository. Common customizations:
+## VideoStream-Specific Guidelines
 
 ### Technology Stack
 
-**VideoStream Library Stack:**
 - **Language**: C11 (ISO/IEC 9899:2011)
-- **Build system**: CMake 3.10+ with modular configuration
-- **Key dependencies**:
-  - GStreamer 1.4+ (multimedia framework, LGPL-2.1)
-  - GLib 2.0+ (core utilities, LGPL-2.1)
-  - pthread (POSIX threads)
-  - stb libraries (image encoding, Public Domain / MIT-0)
-- **Target platforms**: Embedded Linux (NXP i.MX8, generic ARM64/ARMv7)
-- **Development platforms**: Linux (primary), macOS (limited), Windows (minimal support)
-- **Hardware acceleration**: G2D, Hantro VPU (NXP-specific), V4L2 DmaBuf
-- **Kernel requirements**: Linux 4.14+ (5.6+ recommended for DmaBuf heap)
+- **Build system**: CMake 3.10+
+- **Dependencies**:
+  - GStreamer 1.4+ (LGPL-2.1)
+  - GLib 2.0+ (LGPL-2.1)
+  - pthread
+  - stb libraries (Public Domain)
+- **Platforms**: NXP i.MX8, ARM64/ARMv7, x86_64
+- **Acceleration**: G2D, Hantro VPU, V4L2 DmaBuf
+- **Kernel**: Linux 4.14+ (5.6+ recommended)
 
 ### Architecture
 
-**VideoStream Architecture:**
-- **Pattern**: Host/Client IPC architecture with event-driven frame sharing
-- **Layers**:
-  - Public API (vsl_host_*, vsl_client_*, vsl_frame_*)
-  - IPC Protocol Layer (UNIX domain sockets, FD passing)
-  - Frame Management (reference counting, lifecycle)
-  - Memory Allocation (DmaBuf / POSIX shared memory)
-- **Threading**:
-  - Host: Main thread + GStreamer task thread for client servicing
-  - Client: Main thread + POSIX timer thread for timeouts
-- **Data flow**: Frame Registration → Event Broadcast → Lock Request → FD Passing → Processing → Unlock → Recycling
-- **Error handling**: Negative errno values (e.g., -EINVAL, -ENOMEM), 0 for success
-- **GStreamer Integration**: vslsink (host) and vslsrc (client) plugins
+**Pattern:** Host/Client IPC with event-driven frame sharing
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed threading diagrams and internal design.
+**Layers:**
+- Public API (vsl_host_*, vsl_client_*, vsl_frame_*)
+- IPC Protocol (UNIX sockets, FD passing)
+- Frame Management (reference counting)
+- Memory Allocation (DmaBuf / POSIX shm)
 
-### Build and Deployment
+**Threading:**
+- Host: Main + GStreamer task thread
+- Client: Main + POSIX timer thread
 
-**VideoStream Build Commands:**
+**Error handling:** Negative errno values (e.g., -EINVAL), 0 for success
 
-**IMPORTANT: Use Modern CMake Workflow** - Always use `cmake -S <source> -B <build>` and `cmake --build <build>` instead of changing directories. This prevents getting lost in the filesystem and works consistently across all environments.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+
+### Build Commands
+
+**IMPORTANT:** Use modern CMake workflow - stay in project root.
 
 ```bash
-# Standard build (Debug) - PREFERRED METHOD
+# Build (Debug)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
 
-# Alternative (legacy, avoid if possible)
-mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j$(nproc)
-cd ..  # Don't forget to return!
-
-# Release build
+# Build (Release)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
-# Release with coverage enabled (for CI/testing)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_COVER=ON
-cmake --build build -j$(nproc)
+# Run tests
+make test
 
-# Run Python tests (from project root)
-# IMPORTANT: Use venv, source env.sh (if exists), and set library path
-[ -f env.sh ] && source env.sh
-source venv/bin/activate
-export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-pytest tests/
-# Or use: make test (handles venv and env.sh automatically)
+# Format code
+make format
 
-# Generate SBOM and check license compliance (REQUIRED before release)
+# Lint code
+make lint
+
+# Generate SBOM
 make sbom
 
-# Verify all version files are synchronized (REQUIRED before release)
+# Verify version consistency
 make verify-version
 
-# Run all pre-release checks (format, build, test, sbom, version check)
+# Generate PDF documentation
+make doc
+
+# All pre-release checks
 make pre-release
 
-# Cross-compile for ARM64 (NXP Yocto SDK)
+# Cross-compile for ARM64
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
 cmake -S . -B build-arm64 -DCMAKE_BUILD_TYPE=Release
 cmake --build build-arm64 -j$(nproc)
 
-# Docker build (note: uses modern CMake workflow)
-docker pull deepview/yocto-sdk-imx8mp
-docker run -v $PWD:/src deepview/yocto-sdk-imx8mp \
-    cmake -S/src -B/src/build -DCMAKE_BUILD_TYPE=Release
-docker run -v $PWD:/src deepview/yocto-sdk-imx8mp \
-    cmake --build /src/build -j16
-
-# Install (from project root)
+# Install
 cmake --install build
 
-# Clean build directory
-rm -rf build
-
-# Reconfigure existing build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_COVER=ON
-
-# Format code
-find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
+# Clean
+make clean
 ```
-
-**CMake Workflow Best Practices:**
-- **Always use `-S <source> -B <build>`**: Explicitly specify source and build directories
-- **Never `cd` into build directories**: Use `cmake --build <path>` instead of `make`
-- **Stay in project root**: All commands should be run from the workspace root
-- **Use `cmake --install`**: Instead of `cd build && make install`
-- **Parallel builds**: Use `-j$(nproc)` or `-j<N>` with `cmake --build`
-- **Multiple configurations**: Use different build directories (e.g., `build-debug`, `build-release`, `build-arm64`)
-
-**Why Modern Workflow Matters:**
-1. **No directory confusion**: Your shell always stays in the project root
-2. **IDE compatibility**: Modern IDEs expect this pattern
-3. **CI/CD friendly**: Works in containers and automation without state tracking
-4. **Cross-platform**: Same commands work on Linux, macOS, Windows
-5. **Generator agnostic**: Works with Make, Ninja, Visual Studio, Xcode, etc.
 
 **CMake Options:**
 - `-DENABLE_GSTREAMER=ON/OFF` - Build GStreamer plugins (default: ON)
@@ -773,508 +339,140 @@ find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
 
 ### Performance Targets
 
-**VideoStream Performance Goals (NXP i.MX8M Plus):**
-- Frame latency: < 3ms (zero-copy DmaBuf path)
-- Frame latency: < 10ms (shared memory fallback)
-- Throughput: 1080p @ 60 fps with 3 concurrent clients
-- Throughput: 4K @ 30 fps with single client
-- Memory overhead: < 100 KB per client connection
-- CPU usage: < 2% for frame distribution (1080p30)
-- Startup time: < 100ms (pool initialization + IPC setup)
+**NXP i.MX8M Plus:**
+- Frame latency: <3ms (DmaBuf), <10ms (shm)
+- Throughput: 1080p@60fps (3 clients), 4K@30fps (1 client)
+- Memory overhead: <100KB per client
+- CPU usage: <2% for distribution (1080p30)
+- Startup: <100ms
 
-**Critical Paths to Optimize:**
-- Frame registration (target: < 0.1ms)
-- Event broadcast (target: < 0.5ms per client)
-- Lock/unlock round-trip (target: < 2ms)
-- mmap() overhead (kernel-dependent, monitor closely)
+**Critical paths:**
+- Frame registration: <0.1ms
+- Event broadcast: <0.5ms per client
+- Lock/unlock round-trip: <2ms
 
-### Hardware Specifics
+### Hardware Platforms
 
-**Supported Platforms:**
-- **NXP i.MX8M Plus**: Full support (G2D, Hantro VPU, V4L2 DmaBuf)
-- **NXP i.MX8M**: DmaBuf and basic acceleration
-- **Generic ARM64/ARMv7**: POSIX shared memory fallback
-- **x86_64**: Development/testing (shared memory mode)
+**Supported:**
+- **NXP i.MX8M Plus**: Full (G2D, VPU, DmaBuf)
+- **NXP i.MX8M**: DmaBuf + basic acceleration
+- **Generic ARM64/ARMv7**: POSIX shm fallback
+- **x86_64**: Development/testing (shm mode)
 
-**Hardware Acceleration:**
-- **G2D** (NXP): Format conversion, scaling, rotation
-  - Requires physical address for DMA operations
-  - Accessed via `libg2d.so` (proprietary NXP library)
-- **Hantro VPU** (NXP): H.264/H.265 encode/decode
-  - Integrated via `vpu_wrapper` library
-  - DmaBuf input/output for zero-copy
-- **V4L2 DMABUF**: Camera buffer export
-  - Use `VIDIOC_EXPBUF` ioctl for zero-copy capture
+**Acceleration:**
+- **G2D**: Format conversion, scaling, rotation
+- **Hantro VPU**: H.264/H.265 encode/decode
+- **V4L2 DMABUF**: Zero-copy camera capture
 
-**Platform Quirks:**
-- **i.MX8**: G2D requires contiguous physical memory (CMA)
-- **DmaBuf heap**: `/dev/dma_heap/system` available on Linux 5.6+
-- **Older kernels**: Fall back to `ion` allocator if available
-- **Permissions**: Ensure user in `video` group for `/dev/video*` access
-
-### Testing Conventions
-
-**VideoStream Testing Structure:**
-
-**Python Tests** (current implementation):
-- Framework: **pytest**
-- Location: `tests/` directory at project root
-- Test files:
-  - `tests/test_frame.py` - Frame lifecycle and reference counting
-  - `tests/test_ipc.py` - IPC protocol and socket communication
-  - `tests/test_host.py` - Host-side frame management
-  - `tests/test_client.py` - Client-side frame acquisition
-  - `tests/test_library.py` - End-to-end library tests
-- Run with: 
-  ```bash
-  # IMPORTANT: Must activate venv and set library path
-  source venv/bin/activate
-  export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-  pytest tests/
-  # Or use: make test
-  ```
-- Configuration: `pytest.ini` at project root
-
-**C Unit Tests** (planned - see TODO.md):
-- Framework: To be determined (Criterion, Unity, or Cmocka)
-- Location: `tests/unit/` and `tests/integration/`
-- Naming: `test_<module>_<scenario>.c`
-- Run with: `ctest` or `make test`
-
-**Manual Testing:**
-- GStreamer pipelines: See README.md examples
-- Hardware validation: Performed on Maivin/Raivin platforms by QA team
-- Performance benchmarks: `v4l2src ! vslsink` → `vslsrc` clients
-
-**Test Coverage Goals:**
-- Minimum: 70% line coverage
-- Target: 80%+ for core modules (lib/host.c, lib/client.c, lib/frame.c)
+**Platform quirks:**
+- i.MX8: G2D requires contiguous physical memory (CMA)
+- DmaBuf heap: `/dev/dma_heap/system` on Linux 5.6+
+- Permissions: User must be in `video` group
 
 ---
 
 ## Release Process
 
-**CRITICAL FOR AI ASSISTANTS**: VideoStream uses a **manual release process** that requires updating version numbers across multiple files. This process MUST be followed exactly to ensure consistency.
+**CRITICAL:** VideoStream uses manual release requiring version sync across 6 files.
 
-### The Multi-Language Version Problem
+### Version Files
 
-VideoStream must keep versions synchronized across **6 different files**:
-1. `Cargo.toml` (Rust workspace: `version = "X.Y.Z"`)
-2. `include/videostream.h` (C: `#define VSL_VERSION "X.Y.Z"`)
-3. `pyproject.toml` (Python: `version = "X.Y.Z"`)
-4. `doc/conf.py` (Sphinx: `version = 'X.Y.Z'` - note single quotes)
-5. `debian/changelog` (Debian: `videostream (X.Y.Z-1) stable; urgency=medium`)
-6. `CHANGELOG.md` (Release notes: `## [X.Y.Z] - YYYY-MM-DD`)
+1. `Cargo.toml` - `version = "X.Y.Z"`
+2. `include/videostream.h` - `#define VSL_VERSION "X.Y.Z"`
+3. `pyproject.toml` - `version = "X.Y.Z"`
+4. `doc/conf.py` - `version = 'X.Y.Z'` (single quotes!)
+5. `debian/changelog` - `videostream (X.Y.Z-1) stable`
+6. `CHANGELOG.md` - `## [X.Y.Z] - YYYY-MM-DD`
 
-**Note**: `CMakeLists.txt` automatically parses version from `include/videostream.h`, so it does NOT need manual updates.
+**Note:** `CMakeLists.txt` parses from `include/videostream.h` automatically.
 
-### Manual Release Process
+### Release Workflow
 
-**Step 1: Pre-commit Checks**
-
-Before starting release process, ensure all checks pass:
-
+**Step 1: Pre-release checks**
 ```bash
-# Format code
-find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
-
-# Build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-
-# Test
-pytest tests/
-
-# SBOM
-make sbom
-```
-
-**Step 1: Pre-commit Checks**
-
-Before starting release process, ensure all checks pass:
-
-```bash
-# Use the unified pre-release target (recommended)
 make pre-release
-
-# This runs: format, verify-version, test, sbom
-# Or run individually:
-
-# Format code
-find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
-
-# Build (ALWAYS use modern CMake workflow)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-
-# Test (with proper environment)
-source venv/bin/activate
-export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-pytest tests/
-# Or: make test
-
-# SBOM and license check
-make sbom
-
-# Verify versions
-make verify-version
+# Runs: format, lint, verify-version, test, sbom
 ```
 
-**Step 2: Determine Next Version**
-
-Follow **Semantic Versioning**:
-- **MINOR** (X.Y.0): Breaking changes, new features requiring migration
-  - Include migration details in CHANGELOG.md
-  - Or create separate migration guide if complex
-- **PATCH** (X.Y.Z): Non-breaking changes, bug fixes, docs
-- **MAJOR** (X.0.0): Only on explicit user request
+**Step 2: Determine version**
+- **PATCH** (X.Y.Z): Bug fixes, non-breaking changes
+- **MINOR** (X.Y.0): New features, breaking changes
+- **MAJOR** (X.0.0): Only on explicit request
 
 **Step 3: Update CHANGELOG.md**
+- Move items from `## [Unreleased]` to new version
+- Follow [Keep a Changelog](https://keepachangelog.com/) format
 
-Follow [Keep a Changelog](https://keepachangelog.com/) rules:
-1. Move items from `## [Unreleased]` to new version section
-2. Add: `## [X.Y.Z] - YYYY-MM-DD`
-3. Categorize changes: Added, Changed, Deprecated, Removed, Fixed, Security
-4. For breaking changes, include migration guide
-
-**Step 4: Update ALL Version Files**
-
-**CRITICAL**: Update these 6 files to the EXACT SAME VERSION:
-
-| File | Format | Location |
-|------|--------|----------|
-| `Cargo.toml` | `version = "X.Y.Z"` | Line ~6, `[workspace.package]` |
-| `include/videostream.h` | `#define VSL_VERSION "X.Y.Z"` | Line ~16 |
-| `pyproject.toml` | `version = "X.Y.Z"` | Line ~7, `[project]` |
-| `doc/conf.py` | `version = 'X.Y.Z'` | Line ~28 (single quotes!) |
-| `debian/changelog` | `videostream (X.Y.Z-1) stable; urgency=medium` | New entry at TOP |
-| `CHANGELOG.md` | `## [X.Y.Z] - YYYY-MM-DD` | After `[Unreleased]` |
-
-**Verification checklist**:
+**Step 4: Update ALL 6 version files**
 ```bash
-# Use make target (recommended):
 make verify-version
-
-# Or verify manually:
-grep "version = \"1.5.0\"" Cargo.toml
-grep "VSL_VERSION \"1.5.0\"" include/videostream.h
-grep "version = \"1.5.0\"" pyproject.toml
-grep "version = '1.5.0'" doc/conf.py
-grep "videostream (1.5.0-1)" debian/changelog
-grep "## \[1.5.0\]" CHANGELOG.md
 ```
 
-**Important Notes**:
-- `CMakeLists.txt` automatically parses version from `include/videostream.h`, so it does NOT need manual updates
-- `debian/changelog` entry must be added at TOP (new entry), not modify existing
-- `doc/conf.py` uses single quotes `'X.Y.Z'`, all others use double quotes
-
-**Step 5: Create Release Commit**
-
-Commit message format: `Prepare Version X.Y.Z`
-
+**Step 5: Commit**
 ```bash
-git add Cargo.toml include/videostream.h pyproject.toml \
-        doc/conf.py debian/changelog CHANGELOG.md
+git commit -a -m "Prepare Version X.Y.Z
 
-git commit -m "Prepare Version 1.5.0
-
-- Updated all version files to 1.5.0
-- Finalized CHANGELOG.md with release notes
-- See CHANGELOG.md for detailed changes"
+- Updated all version files to X.Y.Z
+- Finalized CHANGELOG.md
+- See CHANGELOG.md for details"
 
 git push origin main
 ```
 
-**Step 6: Wait for CI/CD to Pass**
+**Step 6: Wait for CI/CD** (all green checkmarks)
 
-**DO NOT TAG until all checks green**:
-- ✅ Build workflow
-- ✅ Test workflow
-- ✅ SBOM workflow
-- ✅ Code quality checks
-
-**Step 7: Create and Push Git Tag**
-
+**Step 7: Tag and push**
 ```bash
-# Create annotated tag (v prefix is REQUIRED to trigger release workflow)
-git tag -a -m "Version 1.5.0" v1.5.0
-
-# Push tag
-git push origin v1.5.0
+# v prefix REQUIRED to trigger release workflow
+git tag -a -m "Version X.Y.Z" vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-**Step 8: Monitor Release Workflow**
+### Common Mistakes
 
-GitHub Actions automatically:
-1. Builds release artifacts
-2. Creates GitHub Release
-3. Publishes to PyPI
-4. Publishes to crates.io
+❌ Forgetting to update all 6 version files
+❌ Tagging before CI/CD passes
+❌ Missing `v` prefix on tag
+❌ Running tests without venv or library path
+❌ Using `cd` commands
 
-Watch: `https://github.com/EdgeFirstAI/videostream/actions/workflows/release.yml`
-
-### AI Assistant Guidelines
-
-When asked to prepare a release:
-
-1. **RUN pre-release checks FIRST** - use `make pre-release` to verify format, update Cargo.lock, test, SBOM, and version sync
-2. **ALWAYS update ALL 6 version files** - missing even one will break CI/CD
-3. **VERIFY versions match** - use `make verify-version` to confirm all files have same version
-4. **FOLLOW semantic versioning** - breaking changes = MINOR (or MAJOR on request), non-breaking = PATCH
-5. **UPDATE CHANGELOG FIRST** - move Unreleased items to new version section
-6. **CHECK SBOM locally** - run `make sbom` to catch license violations before CI/CD
-7. **DO NOT TAG until CI passes** - wait for green checkmarks after release commit
-8. **Use correct tag format** - `vX.Y.Z` (v prefix is REQUIRED to trigger release.yml workflow)
-9. **ALWAYS use modern CMake workflow** - `cmake -S . -B build && cmake --build build` (stay in project root)
-10. **Test with proper environment** - activate venv and set VIDEOSTREAM_LIBRARY before running pytest
-11. **Commit with -a flag** - `git commit -a -m "message"` commits all tracked files (safer than `git add -A`)
-12. **Read CONTRIBUTING.md** - has complete detailed release process
-
-### Common Mistakes to Avoid
-
-❌ **WRONG**: Using old CMake workflow
-```bash
-cd build && cmake .. && make  # Directory confusion!
-```
-
-✅ **CORRECT**: Modern CMake workflow
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-# Always stay in project root
-```
-
-❌ **WRONG**: Running tests without venv or env.sh
-```bash
-pytest tests/  # FAILS - uses system Python, missing environment
-```
-
-✅ **CORRECT**: Tests with venv, env.sh, and environment
-```bash
-[ -f env.sh ] && source env.sh
-source venv/bin/activate
-export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-pytest tests/
-# Or use: make test (handles venv and env.sh automatically)
-```
-
-❌ **WRONG**: Skipping version file updates
-```bash
-# Only updating some files - CI WILL FAIL
-vim Cargo.toml
-git commit -m "Update version"  # Missing 5 other files!
-```
-
-✅ **CORRECT**: Update all 6 files
-```bash
-# Edit all 6 version files, then verify:
-make verify-version
-```
-
-❌ **WRONG**: Tagging before CI passes
-```bash
-git push origin main
-git tag -a -m "Version 1.5.0" v1.5.0  # TOO SOON!
-git push origin v1.5.0
-# Now CI fails and you have to delete the tag
-```
-
-✅ **CORRECT**: Wait for CI, then tag
-```bash
-git push origin main
-# Wait for GitHub Actions to show all green
-# Then create tag (v prefix REQUIRED)
-git tag -a -m "Version 1.5.0" v1.5.0
-git push origin v1.5.0
-```
-
-❌ **WRONG**: Skipping SBOM check locally
-```bash
-# Skipping make sbom means license violations caught in CI only
-git commit && git push  # Fails in CI!
-```
-
-✅ **CORRECT**: Run SBOM before committing
-```bash
-make sbom  # Catches GPL/AGPL violations early
-```
-
-### Troubleshooting
-
-**Problem**: Forgot to update a version file
-
-**Solution**:
-```bash
-# 1. Fix missing file
-vim debian/changelog
-
-# 2. Verify all files match
-make verify-version
-
-# 3. Amend commit if not pushed yet
-git add debian/changelog
-git commit --amend --no-edit
-
-# 4. If already pushed, create new commit
-git commit -m "Fix missing debian/changelog version update"
-```
-
-**Problem**: Tests fail with "Unable to load VideoStream library" or missing API tokens
-
-**Solution**:
-```bash
-# Always source env.sh (if exists), use venv, and set library path
-[ -f env.sh ] && source env.sh
-source venv/bin/activate
-export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
-pytest tests/
-# Or use: make test (handles venv and env.sh automatically)
-```
-
-**Problem**: SBOM generation fails
-
-**Solution**:
-```bash
-# Ensure scancode-toolkit is installed in venv
-python3 -m venv venv
-venv/bin/pip install scancode-toolkit
-# Then run
-make sbom
-```
+✅ Run `make pre-release`, wait for CI, tag with `vX.Y.Z`
 
 ---
 
-## Working with AI Assistants
+## AI Assistant Best Practices
 
-### For GitHub Copilot / Cursor
+**Verify:**
+- APIs exist (no hallucinations)
+- License compatibility before adding deps
+- Test coverage meets 70% minimum
+- Version files synchronized before release
+- CI/CD passes before tagging
 
-These tools provide inline suggestions. Ensure:
-- Suggestions match project conventions (run linters after accepting)
-- Complex logic has explanatory comments
-- Generated tests have meaningful assertions
-- Security best practices are followed
+**Avoid:**
+- Using `cd` commands (stay in root)
+- System Python (always use venv)
+- GPL/AGPL dependencies
+- Hardcoded secrets
+- Committing env.sh
 
-### For Claude Code / Chat-Based Assistants
-
-When working with conversational AI:
-1. **Provide context**: Share relevant files, error messages, and requirements
-2. **Verify outputs**: Review generated code critically before committing
-3. **Iterate**: Refine solutions through follow-up questions
-4. **Document decisions**: Capture architectural choices and tradeoffs
-5. **Test thoroughly**: AI-generated code needs human verification
-
-### Common AI Assistant Pitfalls
-
-- **Hallucinated APIs**: Verify library functions exist before using
-- **Outdated patterns**: Check if suggestions match current best practices
-- **Over-engineering**: Prefer simple solutions over complex ones
-- **Missing edge cases**: Explicitly test boundary conditions
-- **License violations**: AI may suggest code with incompatible licenses
-- **Directory confusion with CMake**: NEVER use `cd build && cmake .. && make`. Always use modern workflow: `cmake -S . -B build && cmake --build build`
-- **Forgetting to return from directories**: If you must `cd` somewhere, immediately return to project root after
-- **Using `make` directly**: Use `cmake --build <dir>` instead - it works with all generators (Make, Ninja, etc.)
-- **Changing directories AT ALL**: **BANNED** - Stay in project root and use paths. Example: `cat build/file.txt` NOT `cd build && cat file.txt`
-- **Using system Python**: **BANNED** - Always use project venv. Example: `venv/bin/pytest tests/` NOT `pytest tests/`
-- **Forgetting to source env.sh**: If env.sh exists, source it before tests/benchmarks: `[ -f env.sh ] && source env.sh; pytest tests/`
-- **Committing env.sh**: **NEVER** commit env.sh - contains tokens/secrets, must be in .gitignore
-- **Tests without environment**: Python tests REQUIRE `source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1` before running
-- **Skipping SBOM check**: Always run `make sbom` locally before release to catch license violations early
-- **Version file mismatches**: Use `make verify-version` to ensure all 6 files are synchronized
-- **Tagging before CI passes**: Wait for green checkmarks on GitHub Actions before creating release tag
-- **Wrong tag format**: MUST use `vX.Y.Z` format (v prefix required) to trigger release.yml workflow
-
----
-
-## Workflow Example
-
-**Implementing a new feature:**
-
-```bash
-# 1. Create branch from develop
-git checkout develop
-git pull origin develop
-git checkout -b feature/EDGEAI-123-add-image-preprocessing
-
-# 2. Implement feature with tests
-# - Write unit tests first (TDD)
-# - Implement functionality
-# - Add integration tests
-# - Update documentation
-
-# 3. Verify quality
-make format    # Auto-format code
-make lint      # Run linters
-make test      # Run all tests
-make coverage  # Check coverage meets threshold
-
-# 4. Commit with proper message
-git add .
-git commit -m "EDGEAI-123: Add image preprocessing pipeline
-
-- Implemented resize, normalize, and augment functions
-- Added comprehensive unit and integration tests
-- Documented API with usage examples
-- Achieved 85% test coverage"
-
-# 5. Push and create PR
-git push -u origin feature/EDGEAI-123-add-image-preprocessing
-# Create PR via GitHub/Bitbucket UI with template
-
-# 6. Address review feedback
-# - Make requested changes
-# - Push additional commits
-# - Respond to comments
-
-# 7. Merge after approvals
-# Maintainer merges via PR interface (squash or rebase)
-```
+**Remember:** Review all AI-generated code thoroughly. YOU are the author, AI is a tool.
 
 ---
 
 ## Getting Help
 
-**For development questions:**
-- Check project's `CONTRIBUTING.md` for setup instructions
-- Review existing code for patterns and conventions
-- Search GitHub Issues for similar problems
-- Ask in GitHub Discussions (for public repos)
+**Documentation:**
+- [README.md](README.md) - Overview and quick start
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Internal design
+- [DESIGN.md](DESIGN.md) - High-level architecture
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Detailed contribution guide
+- [EdgeFirst Docs](https://doc.edgefirst.ai/test/perception/)
 
-**For security concerns:**
-- Email `support@au-zone.com` with subject "Security Vulnerability"
-- Do not disclose vulnerabilities publicly
-
-**For license questions:**
-- Review license policy section above
-- Check project's `LICENSE` file
-- Contact technical leadership if unclear
-
-**For contribution guidelines:**
-- Read project's `CONTRIBUTING.md`
-- Review recent merged PRs for examples
-- Follow PR template and checklist
-
-**For release process:**
-- Read "Release Process (Maintainers)" section in `CONTRIBUTING.md`
-- Understand cargo-release workflow and pre-release-replacements
-- Never manually edit version numbers across multiple files
+**Support:** support@au-zone.com
 
 ---
 
-## Document Maintenance
+**v2.0** | 2025-11-22 | EdgeFirst VideoStream Library
 
-**Project maintainers should:**
-- Update [Project-Specific Guidelines](#project-specific-guidelines) with repository details
-- Add technology stack, architecture patterns, and performance targets
-- Document build/test/deployment procedures specific to the project
-- Specify testing conventions (unit test location, framework choice, etc.)
-- Keep examples and code snippets current
-- Review and update annually or when major changes occur
-
-**This template version**: 1.0 (November 2025)
-**Organization**: Au-Zone Technologies
-**License**: Apache-2.0 (for open source projects)
-
----
-
-*This document helps AI assistants contribute effectively to Au-Zone projects while maintaining quality, security, and consistency. For questions or suggestions, contact `support@au-zone.com`.*
+*This file helps AI assistants contribute effectively to VideoStream while maintaining quality, security, and consistency.*
