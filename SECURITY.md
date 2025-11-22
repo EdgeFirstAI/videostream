@@ -163,10 +163,9 @@ vsl-monitor --version
 cd videostream
 git fetch origin
 git checkout tags/v1.x.y  # Latest secure version
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+sudo cmake --install build
 ```
 
 **For EdgeFirst Studio deployments:**

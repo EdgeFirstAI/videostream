@@ -99,18 +99,16 @@ sudo dnf install -y \
 ```bash
 git clone https://github.com/EdgeFirstAI/videostream.git
 cd videostream
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+sudo cmake --install build
 ```
 
 #### Cross-Compile for ARM64 (NXP Yocto SDK)
 ```bash
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
 ```
 
 ---

@@ -5,7 +5,22 @@ TEXFLAGS := --pdf-engine=xelatex --template=doc/template.tex --listings -H doc/s
 %.pdf: %.md doc/template.tex doc/syntax.tex Makefile
 	pandoc $< -f markdown -t latex -o $@ $(TEXFLAGS) $(COVER) $(DOCFLAGS)
 
-all: README.pdf DESIGN.pdf
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  make format         - Format source code (C, Rust, Python)"
+	@echo "  make lint           - Run linters (clippy for Rust)"
+	@echo "  make test           - Run test suite"
+	@echo "  make sbom           - Generate SBOM and check license policy"
+	@echo "  make verify-version - Verify version consistency across files"
+	@echo "  make pre-release    - Run all pre-release checks"
+	@echo "  make doc            - Generate PDF documentation (README.pdf, DESIGN.pdf)"
+	@echo "  make clean          - Clean build artifacts"
+
+.PHONY: doc
+doc: README.pdf DESIGN.pdf
 
 .PHONY: format
 format:
@@ -20,6 +35,15 @@ format:
 		echo "Skipping Python formatting (venv not found or autopep8 not installed)"; \
 	fi
 	@echo "✓ Formatting complete"
+
+.PHONY: lint
+lint:
+	@echo "Running linters..."
+	@if [ -f "Cargo.toml" ]; then \
+		echo "  Running clippy..."; \
+		cargo clippy --all-targets --all-features -- -D warnings || echo "Warning: clippy failed"; \
+	fi
+	@echo "✓ Linting complete"
 
 .PHONY: sbom
 sbom:
@@ -62,7 +86,7 @@ verify-version:
 	echo "All version files verified ✓"
 
 .PHONY: pre-release
-pre-release: format verify-version test sbom
+pre-release: format lint verify-version test sbom
 	@echo "Updating Cargo.lock..."
 	@cargo update --workspace
 	@echo "✓ Cargo.lock updated"
@@ -77,3 +101,13 @@ pre-release: format verify-version test sbom
 	@echo "  6. Push tag: git push origin vX.Y.Z"
 	@echo ""
 	@echo "CRITICAL: The 'v' prefix is REQUIRED to trigger release.yml workflow!"
+
+.PHONY: clean
+clean:
+	@echo "Cleaning build artifacts..."
+	@rm -rf build/ target/ venv/ __pycache__/ .pytest_cache/
+	@rm -f sbom.json *-sbom.json *.cdx.json
+	@rm -f README.pdf DESIGN.pdf
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "✓ Clean complete"

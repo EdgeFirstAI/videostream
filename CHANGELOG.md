@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Makefile: Default target now displays help instead of building documentation
+- Makefile: Added `make doc` target for building PDF documentation (README.pdf, DESIGN.pdf)
+- Makefile: Added `make lint` and `make clean` targets for code quality and cleanup
+- Documentation: Updated all build instructions to use modern CMake workflow (cmake -S . -B build)
+- AGENTS.md: Aligned with SPS v2.0 standards, reduced from 1,280 to 424 lines
+- AGENTS.md: Removed duplicated organization-wide rules, added reference to Au-Zone SPS
+
 ---
 
 ## [1.5.4] - 2025-11-21
