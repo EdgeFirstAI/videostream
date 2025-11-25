@@ -27,6 +27,7 @@ This document provides instructions for AI coding assistants (GitHub Copilot, Cu
 EdgeFirst VideoStream Library provides video I/O capabilities for embedded Linux applications, including camera capture, hardware encoding, and inter-process frame sharing.
 
 When contributing to VideoStream, AI assistants should prioritize:
+
 - **Resource efficiency**: Memory, CPU, and power consumption matter on embedded devices
 - **Code quality**: Maintainability, readability, and adherence to established patterns
 - **Testing**: Comprehensive coverage with unit, integration, and edge case tests
@@ -54,12 +55,14 @@ When contributing to VideoStream, AI assistants should prioritize:
 **BANNED: Changing directories during command execution**
 
 **❌ NEVER DO THIS:**
+
 ```bash
 cd build && cmake ..
 cd tests && pytest
 ```
 
 **✅ ALWAYS DO THIS:**
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
@@ -71,6 +74,7 @@ pytest tests/
 ### Rule #2: ALWAYS Use Python venv
 
 **❌ NEVER DO THIS:**
+
 ```bash
 pip install package
 python script.py
@@ -78,6 +82,7 @@ pytest tests/
 ```
 
 **✅ ALWAYS DO THIS:**
+
 ```bash
 venv/bin/pip install package
 venv/bin/python script.py
@@ -85,6 +90,7 @@ venv/bin/pytest tests/
 ```
 
 **Setup:**
+
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
@@ -112,11 +118,13 @@ make test
 **Format**: `<type>/EDGEAI-###[-description]`
 
 **Types:**
+
 - `feature/` - New features
 - `bugfix/` - Bug fixes
 - `hotfix/` - Critical fixes
 
 **Examples:**
+
 ```bash
 feature/EDGEAI-123-add-dmabuf-support
 bugfix/EDGEAI-456-fix-memory-leak
@@ -127,6 +135,7 @@ bugfix/EDGEAI-456-fix-memory-leak
 **Format**: `EDGEAI-###: Brief description`
 
 **Good commits:**
+
 ```bash
 EDGEAI-123: Add DmaBuf support for zero-copy frame sharing
 EDGEAI-456: Fix memory leak in frame pool cleanup
@@ -146,16 +155,19 @@ EDGEAI-456: Fix memory leak in frame pool cleanup
 ### Language Standards
 
 **C11:**
+
 - Compiler flags: `-Wall -Wextra -Werror`
 - Formatter: clang-format (`make format`)
 - Error handling: Return negative errno values
 
 **Rust:**
+
 - Toolchain: Stable (1.70+)
 - Formatter: `cargo fmt`
 - Linter: `cargo clippy -- -D warnings` (`make lint`)
 
 **Python:**
+
 - Version: 3.8+
 - Formatter: autopep8 (in venv)
 - Always use venv
@@ -163,6 +175,7 @@ EDGEAI-456: Fix memory leak in frame pool cleanup
 ### Performance Considerations
 
 Edge AI constraints:
+
 - **Memory**: 512MB-2GB RAM
 - **CPU**: <2% for frame distribution
 - **Latency**: <3ms for zero-copy DmaBuf
@@ -193,6 +206,7 @@ pytest tests/
 ```
 
 **Test files:**
+
 - `tests/test_frame.py` - Frame lifecycle
 - `tests/test_ipc.py` - IPC protocol
 - `tests/test_host.py` - Host-side management
@@ -235,15 +249,18 @@ Email: `support@au-zone.com` (Subject: "Security Vulnerability - VideoStream")
 ### Secure Coding
 
 **Input Validation:**
+
 - Validate all external inputs
 - Use allowlists, enforce size limits
 
 **Credentials:**
+
 - NEVER hardcode credentials
 - Use ephemeral tokens (<48h) in env.sh
 - NEVER commit env.sh
 
 **DmaBuf Security:**
+
 - Understand FDs grant direct memory access
 - Close FDs immediately after use
 - Don't share with untrusted processes
@@ -270,12 +287,14 @@ Email: `support@au-zone.com` (Subject: "Security Vulnerability - VideoStream")
 **Pattern:** Host/Client IPC with event-driven frame sharing
 
 **Layers:**
+
 - Public API (vsl_host_*, vsl_client_*, vsl_frame_*)
 - IPC Protocol (UNIX sockets, FD passing)
 - Frame Management (reference counting)
 - Memory Allocation (DmaBuf / POSIX shm)
 
 **Threading:**
+
 - Host: Main + GStreamer task thread
 - Client: Main + POSIX timer thread
 
@@ -330,6 +349,7 @@ make clean
 ```
 
 **CMake Options:**
+
 - `-DENABLE_GSTREAMER=ON/OFF` - Build GStreamer plugins (default: ON)
 - `-DENABLE_DMABUF=ON/OFF` - Enable DmaBuf support (default: ON on Linux)
 - `-DENABLE_G2D=ON/OFF` - Enable G2D acceleration (default: ON on Linux)
@@ -340,6 +360,7 @@ make clean
 ### Performance Targets
 
 **NXP i.MX8M Plus:**
+
 - Frame latency: <3ms (DmaBuf), <10ms (shm)
 - Throughput: 1080p@60fps (3 clients), 4K@30fps (1 client)
 - Memory overhead: <100KB per client
@@ -347,6 +368,7 @@ make clean
 - Startup: <100ms
 
 **Critical paths:**
+
 - Frame registration: <0.1ms
 - Event broadcast: <0.5ms per client
 - Lock/unlock round-trip: <2ms
@@ -354,17 +376,20 @@ make clean
 ### Hardware Platforms
 
 **Supported:**
+
 - **NXP i.MX8M Plus**: Full (G2D, VPU, DmaBuf)
 - **NXP i.MX8M**: DmaBuf + basic acceleration
 - **Generic ARM64/ARMv7**: POSIX shm fallback
 - **x86_64**: Development/testing (shm mode)
 
 **Acceleration:**
+
 - **G2D**: Format conversion, scaling, rotation
 - **Hantro VPU**: H.264/H.265 encode/decode
 - **V4L2 DMABUF**: Zero-copy camera capture
 
 **Platform quirks:**
+
 - i.MX8: G2D requires contiguous physical memory (CMA)
 - DmaBuf heap: `/dev/dma_heap/system` on Linux 5.6+
 - Permissions: User must be in `video` group
@@ -389,26 +414,31 @@ make clean
 ### Release Workflow
 
 **Step 1: Pre-release checks**
+
 ```bash
 make pre-release
 # Runs: format, lint, verify-version, test, sbom
 ```
 
 **Step 2: Determine version**
+
 - **PATCH** (X.Y.Z): Bug fixes, non-breaking changes
 - **MINOR** (X.Y.0): New features, breaking changes
 - **MAJOR** (X.0.0): Only on explicit request
 
 **Step 3: Update CHANGELOG.md**
+
 - Move items from `## [Unreleased]` to new version
 - Follow [Keep a Changelog](https://keepachangelog.com/) format
 
 **Step 4: Update ALL 6 version files**
+
 ```bash
 make verify-version
 ```
 
 **Step 5: Commit**
+
 ```bash
 git commit -a -m "Prepare Version X.Y.Z
 
@@ -422,6 +452,7 @@ git push origin main
 **Step 6: Wait for CI/CD** (all green checkmarks)
 
 **Step 7: Tag and push**
+
 ```bash
 # v prefix REQUIRED to trigger release workflow
 git tag -a -m "Version X.Y.Z" vX.Y.Z
@@ -443,6 +474,7 @@ git push origin vX.Y.Z
 ## AI Assistant Best Practices
 
 **Verify:**
+
 - APIs exist (no hallucinations)
 - License compatibility before adding deps
 - Test coverage meets 70% minimum
@@ -450,6 +482,7 @@ git push origin vX.Y.Z
 - CI/CD passes before tagging
 
 **Avoid:**
+
 - Using `cd` commands (stay in root)
 - System Python (always use venv)
 - GPL/AGPL dependencies
@@ -463,6 +496,7 @@ git push origin vX.Y.Z
 ## Getting Help
 
 **Documentation:**
+
 - [README.md](README.md) - Overview and quick start
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Internal design
 - [DESIGN.md](DESIGN.md) - High-level architecture

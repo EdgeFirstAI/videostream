@@ -9,10 +9,23 @@ This product includes software developed at Au-Zone Technologies
 This software contains the following third-party components that require
 attribution under their respective licenses:
 
-  * stb (Public Domain / MIT)
-    - stb_image.h, stb_image_write.h
-    - Author: Sean Barrett
-    - https://github.com/nothings/stb
+Rust Dependencies:
+
+  * dma-buf 0.4.0 (MIT)
+    - Linux DMA-Buf Abstraction Library
+    - Copyright (c) 2020 Maxime Ripard
+    - https://github.com/mripard/dma-buf/
+
+  * unix-ts 1.0.0 (MIT)
+    - Unix timestamp manipulation and conversion
+    - Copyright (c) Luke Sneeringer
+    - https://github.com/lukesneeringer/unix-ts
+
+  * videostream-sys 1.5.4 (Apache-2.0)
+    - Low-level FFI bindings for VideoStream Library
+    - Internal component - part of this project
+
+C/C++ Dependencies:
 
   * GStreamer (LGPL-2.1-or-later)
     - GStreamer multimedia framework
@@ -76,13 +89,6 @@ GLib is licensed under the GNU Lesser General Public License (LGPL) version
 2.1 or later. VideoStream dynamically links to GLib, which is permitted under
 LGPL. The complete GLib license can be found at:
 https://www.gtk.org/docs/license/
-
-stb Libraries
--------------
-stb libraries are dual-licensed under Public Domain (Unlicense) or MIT,
-allowing use in any project without restrictions. The libraries are included
-in source form. License text available at:
-https://github.com/nothings/stb/blob/master/LICENSE
 
 NXP VPU Wrapper
 ---------------

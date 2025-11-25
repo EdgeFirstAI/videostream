@@ -120,6 +120,7 @@ sequenceDiagram
 ```
 
 **Implementation Details:**
+
 - **Frame registration:** Called from GStreamer streaming thread or application thread
   - Function: `vsl_host_push()` in `lib/host.c`
   - Protected by `pthread_mutex_t` on frame pool
@@ -133,6 +134,7 @@ sequenceDiagram
 The client process uses **main thread + POSIX timer**:
 
 **Implementation Details:**
+
 - **Frame waiting:** Blocks on `recv()` until host broadcasts frame event
   - Function: `vsl_frame_wait()` in `lib/client.c`
 - **Timeout watchdog:** POSIX timer (`timer_t`) monitors socket inactivity
@@ -154,6 +156,7 @@ The client process uses **main thread + POSIX timer**:
 VideoStream uses connection-oriented UNIX sockets (`AF_UNIX`, `SOCK_SEQPACKET`) for reliable, ordered message delivery between processes.
 
 **Socket Paths:**
+
 - **Explicit paths**: Set via `path` parameter (e.g., `/tmp/vsl_camera`)
 - **Filesystem vs Abstract**: Paths starting with `/` create filesystem entries; paths without `/` are abstract sockets (Linux-specific, see unix(7))
 - **Auto-generated (vslsink only)**: When no path specified, vslsink generates `/tmp/<element_name>.<thread_id>`
@@ -177,6 +180,7 @@ VideoStream uses connection-oriented UNIX sockets (`AF_UNIX`, `SOCK_SEQPACKET`) 
 VideoStream uses `SCM_RIGHTS` ancillary data to pass file descriptors over UNIX sockets, enabling zero-copy frame sharing.
 
 **Implementation:**
+
 ```c
 // Host side (lib/host.c)
 struct msghdr msg = {0};
@@ -208,12 +212,14 @@ stateDiagram-v2
 ```
 
 **Frame Expiry:**
+
 - Host sets expiry time when posting frame via `vsl_host_post()` `expires` parameter
 - Default lifespan in vslsink: 100 milliseconds (configurable via `lifespan` property)
 - **Timer disabled**: Set `expires` to 0 for manual frame recycling (no automatic expiry)
 - Frames only recycled when: `ref_count == 0 AND (expires == 0 OR current_time > expires)`
 
 **Key Functions:**
+
 - `vsl_host_post()` - Register frame with host, set expiry, broadcast event
 - `vsl_frame_wait()` - Client receives frame_event, blocks until frame available
 - `vsl_frame_trylock()` - Client sends trylock request, host responds with FD via SCM_RIGHTS
@@ -229,22 +235,26 @@ stateDiagram-v2
 VideoStream prefers DmaBuf for zero-copy frame sharing:
 
 **Allocation:**
+
 - Via `/dev/dma_heap/system` (Linux 5.6+)
 - Via V4L2 `VIDIOC_EXPBUF` (camera export)
 
 **Sharing:**
+
 1. Host exports DmaBuf FD during frame capture/creation
 2. Host passes FD to client via `SCM_RIGHTS`
 3. Client calls `mmap()` on received FD
 4. Both processes access same physical memory
 
 **Physical Address Access:**
+
 - DmaBuf supports querying physical address via `vsl_frame_paddr()`
 - Returns `intptr_t` physical address or `MAP_FAILED` if unavailable
 - **Use case**: Pass physical address to hardware accelerators (VPU, NPU, DMA engines)
 - **Example**: ModelRunner uses physical addresses for zero-copy model input loading
 
 **Semantic Note:**
+
 - File descriptor passing via `SCM_RIGHTS` is functionally similar to `dup(2)` across process boundaries
 - Both processes receive independent FDs referring to same underlying DmaBuf object
 - Each process must `close()` their FD when done
@@ -256,6 +266,7 @@ VideoStream prefers DmaBuf for zero-copy frame sharing:
 When DmaBuf unavailable:
 
 **Allocation:**
+
 ```c
 // lib/host.c or lib/frame.c
 int shm_fd = shm_open("/vsl-frame-<serial>", O_CREAT | O_RDWR, 0600);
@@ -274,10 +285,12 @@ Frame reference counting ensures frames aren't recycled while clients are using 
 - **Recycle condition:** Frame recycled when `locked == 0 AND (expires == 0 OR current_time > expires)`
 
 **Per-Client Tracking:**
+
 - Host maintains up to 20 frames per client socket (`MAX_FRAMES_PER_CLIENT`)
 - When client disconnects, host automatically decrements all locked frames for that client
 
 **Implementation:**
+
 - Reference count stored in `frame->info.locked` field (lib/frame.h)
 - Protected by `pthread_mutex_t` in `VSLHost` structure (lib/host.c:38)
 - See `add_frame_to_socket()` and `remove_frame_from_socket()` in lib/host.c
@@ -299,6 +312,7 @@ Receives GstBuffers from upstream GStreamer elements and shares them with client
 5. **Task thread:** Services client lock/unlock requests via `vsl_host_poll()`
 
 **Properties:**
+
 - `path` (string) - UNIX socket path
 - `lifespan` (int64) - Frame timeout in milliseconds
 
@@ -315,6 +329,7 @@ Produces GstBuffers from shared frames for downstream GStreamer processing:
 5. **Custom allocator:** Calls `vsl_frame_unlock()` when GstBuffer finalized
 
 **Properties:**
+
 - `path` (string) - UNIX socket path to connect
 - `timeout` (float) - Frame wait timeout in seconds
 - `reconnect` (boolean) - Auto-reconnect on disconnect
@@ -334,6 +349,7 @@ VideoStream interfaces directly with Video4Linux2 drivers:
 - **Buffer management:** `VIDIOC_QBUF`/`VIDIOC_DQBUF` for capture
 
 **Key Functions:**
+
 - `v4l2_open_device()` - Open camera device
 - `v4l2_set_format()` - Configure capture format
 - `v4l2_start_streaming()` - Begin frame capture
@@ -350,6 +366,7 @@ Hardware H.264/H.265 encoding on NXP i.MX8 platforms:
 - **Codec support:** H.264 (AVC), H.265 (HEVC)
 
 **Key Functions:**
+
 - `hantro_encoder_create()` - Initialize VPU encoder
 - `hantro_encoder_encode()` - Encode frame to H.264/H.265
 - `hantro_encoder_destroy()` - Release VPU resources
@@ -393,10 +410,12 @@ Preventing premature frame recycling:
 Preventing deadlocks and resource leaks:
 
 **Host-side timeout:**
+
 - Frame lifespan timer ensures stale frames are recycled
 - Implementation: POSIX timers or polling check in task thread
 
 **Client-side timeout:**
+
 - Socket inactivity watchdog forces reconnection
 - Implementation: POSIX timer (`timer_t`) in `lib/client.c`
 
@@ -421,6 +440,7 @@ Platform compatibility:
 **Why:** Ensures VideoStream works on systems without DmaBuf support while optimizing for zero-copy when available.
 
 **Allocation Strategy:**
+
 - `vsl_frame_alloc(frame, path)`:
   - If `path` starts with `/dev`, attempt DmaBuf allocation from heap device
   - If `path` is NULL, try DmaBuf from `/dev/dma_heap/system`, fallback to POSIX shm
@@ -495,6 +515,7 @@ strace -e trace=sendmsg,recvmsg,socket,connect ./your_app
 ### Frame Sharing Test Utility
 
 **vsl-framelock** (`src/framelock_demo.c`):
+
 - Demo application showing frame lock/unlock usage
 - Useful for testing frame sharing without GStreamer
 - Example: Connect to vslsink and process frames in standalone C program

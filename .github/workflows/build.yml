@@ -52,6 +52,11 @@ jobs:
             tex-gyre
           python3 -m pip install --upgrade pip
           python3 -m pip install -r doc/requirements.txt
+          sudo npm install -g @mermaid-js/mermaid-cli
+
+      - name: Install Chrome for Mermaid
+        run: |
+          npx puppeteer browsers install chrome-headless-shell
 
       - name: Build HTML documentation
         run: |
@@ -113,8 +118,8 @@ jobs:
 
       - name: Create ZIP package
         run: |
-          cd build
           cpack
+        working-directory: build
 
       - name: List package contents
         run: |

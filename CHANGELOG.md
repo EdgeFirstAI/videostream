@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+
 - Makefile: Default target now displays help instead of building documentation
 - Makefile: Added `make doc` target for building PDF documentation (README.pdf, DESIGN.pdf)
 - Makefile: Added `make lint` and `make clean` targets for code quality and cleanup
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.4] - 2025-11-21
 
 ### Changed
+
 - Internal documentation improvements to AGENTS.md (AI assistant guidelines)
 - No user-facing changes - release verifies updated release process
 
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.3] - 2025-11-20
 
 ### Added
+
 - Makefile automation targets for release process
   - `make format` - Formats C, Rust, and Python code
   - `make test` - Runs tests with proper environment setup
@@ -38,12 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `make pre-release` - Runs complete pre-release checklist
 
 ### Changed
+
 - Improved crates.io publishing using official Trusted Publishers via rust-lang/crates-io-auth-action
 - Updated to Rust 1.90+ cargo publish --workspace for simplified multi-crate releases
 - Enhanced release process documentation with common pitfalls and solutions
 - Expanded AI assistant guidelines with concrete examples from 1.5.2 release learnings
 
 ### Fixed
+
 - Release workflow now properly uses crates.io Trusted Publishers (OIDC)
 - Removed manual dependency ordering and wait times in crate publishing
 
@@ -52,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.2] - 2025-11-20
 
 ### Fixed
+
 - Documentation: Updated doc/conf.py version to match other version files
 
 ---
@@ -59,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.1] - 2025-11-20
 
 ### Fixed
+
 - Release process: Ensured all version files are synchronized correctly
 
 ---
@@ -91,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Migration**: Error matching code must use new variant names
 
 - **BREAKING: All Rust APIs now return `Result` types**:
+
   ```rust
   // Before (v1.3.x)
   let frame = Frame::new(640, 480, 0, "RGB3");  // Could panic
@@ -112,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed (Rust bindings only)
 
 - Drop implementations now handle library initialization failures gracefully
-  - `Frame`, `Client`, `Host`, `Encoder`, `Decoder`, `CameraReader`, `CameraBuffer` 
+  - `Frame`, `Client`, `Host`, `Encoder`, `Decoder`, `CameraReader`, `CameraBuffer`
   - Errors during cleanup are silently ignored (cannot propagate from `Drop` trait)
 
 ### Removed (Rust bindings only)
@@ -234,16 +242,18 @@ Rust bindings were introduced in version 1.4.0.
 ## Support
 
 **For latest releases:**
+
 - GitHub Releases: https://github.com/EdgeFirstAI/videostream/releases
 - Documentation: https://doc.edgefirst.ai/
 
 **For security updates:**
+
 - See [SECURITY.md](SECURITY.md) for supported versions and reporting process
 
 **For commercial support:**
+
 - Contact: support@au-zone.com
 
 ---
 
 *Last Updated: 2025-11-19*
-

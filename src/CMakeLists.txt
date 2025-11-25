@@ -4,6 +4,12 @@ target_link_libraries(vsl-monitor PRIVATE stb videostream)
 add_executable(vsl-test-shm test_shm.c)
 target_link_libraries(vsl-test-shm PRIVATE videostream m)
 
+add_executable(vsl-test-host test_host.c)
+target_link_libraries(vsl-test-host PRIVATE videostream)
+
+add_executable(vsl-test-client test_client.c)
+target_link_libraries(vsl-test-client PRIVATE videostream)
+
 add_executable(vsl-camhost camhost.c)
 target_link_libraries(vsl-camhost PRIVATE videostream)
 
