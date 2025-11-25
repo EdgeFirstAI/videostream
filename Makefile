@@ -1,10 +1,3 @@
-COVER := -V titlepage -V titlepage-skip-title -V titlepage-background=doc/cover.pdf
-DOCFLAGS := -V toc -V toc-own-page -V colorlinks
-TEXFLAGS := --pdf-engine=xelatex --template=doc/template.tex --listings -H doc/syntax.tex
-
-%.pdf: %.md doc/template.tex doc/syntax.tex Makefile
-	pandoc $< -f markdown -t latex -o $@ $(TEXFLAGS) $(COVER) $(DOCFLAGS)
-
 .DEFAULT_GOAL := help
 
 .PHONY: help
@@ -13,14 +6,23 @@ help:
 	@echo "  make format         - Format source code (C, Rust, Python)"
 	@echo "  make lint           - Run linters (clippy for Rust)"
 	@echo "  make test           - Run test suite"
+	@echo "  make test-ipc       - Run host/client IPC integration test"
 	@echo "  make sbom           - Generate SBOM and check license policy"
 	@echo "  make verify-version - Verify version consistency across files"
 	@echo "  make pre-release    - Run all pre-release checks"
-	@echo "  make doc            - Generate PDF documentation (README.pdf, DESIGN.pdf)"
+	@echo "  make doc            - Generate HTML documentation (Sphinx + Doxygen)"
 	@echo "  make clean          - Clean build artifacts"
 
 .PHONY: doc
-doc: README.pdf DESIGN.pdf
+doc:
+	@echo "Generating documentation..."
+	@if [ ! -f "venv/bin/sphinx-build" ]; then \
+		echo "ERROR: sphinx-build not found in venv. Please install:"; \
+		echo "  venv/bin/pip install -r doc/requirements.txt"; \
+		exit 1; \
+	fi
+	@$(MAKE) -C doc html SPHINXBUILD=../venv/bin/sphinx-build
+	@echo "✓ Documentation generated in doc/_build/html/index.html"
 
 .PHONY: format
 format:
@@ -57,7 +59,9 @@ sbom:
 	@.github/scripts/generate_sbom.sh
 	@echo "Checking license policy compliance..."
 	@python3 .github/scripts/check_license_policy.py sbom.json
-	@echo "✓ SBOM generated and license policy verified"
+	@echo "Validating NOTICE file against first-level dependencies..."
+	@python3 .github/scripts/validate_notice.py NOTICE sbom-deps.json
+	@echo "✓ SBOM generated, license policy verified, and NOTICE validated"
 
 .PHONY: test
 test:
@@ -72,6 +76,15 @@ test:
 	else \
 		bash -c "source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"; \
 	fi
+
+.PHONY: test-ipc
+test-ipc:
+	@echo "Running host/client IPC integration test..."
+	@if [ ! -f "build/src/vsl-test-host" ] || [ ! -f "build/src/vsl-test-client" ]; then \
+		echo "ERROR: Test executables not built. Run: cmake -S . -B build && cmake --build build"; \
+		exit 1; \
+	fi
+	@./scripts/test_host_client.sh
 
 .PHONY: verify-version
 verify-version:
