@@ -45,6 +45,7 @@ When contributing to VideoStream, AI assistants should prioritize:
 
 **License Policy:** ✅ MIT/Apache/BSD | ⚠️ LGPL (dynamic only) | ❌ GPL/AGPL
 **Coverage:** 70% minimum, 80%+ for core modules (lib/host.c, lib/client.c, lib/frame.c)
+**Output:** ❌ NEVER filter build/test/sbom with head/tail/grep | ✅ Use tee for long output
 
 ---
 
@@ -108,6 +109,58 @@ make test
 ```
 
 **Security:** ✅ Ephemeral tokens | ❌ NEVER commit env.sh | ❌ NO passwords
+
+### Rule #4: NEVER Filter Output of Non-Trivial Commands
+
+**BANNED: Using head, tail, grep to hide output that users need to monitor**
+
+**❌ NEVER DO THIS:**
+
+```bash
+make test | head -20
+cmake --build build 2>&1 | grep -i error
+make sbom | tail -10
+venv/bin/pytest tests/ | grep PASSED
+```
+
+**✅ ALWAYS DO THIS:**
+
+```bash
+# Show full output for commands users need to monitor
+make test
+cmake --build build
+make sbom
+venv/bin/pytest tests/
+
+# For very long output, capture to file for review
+make test 2>&1 | tee test-output.log
+cmake --build build 2>&1 | tee build-output.log
+```
+
+**Exception: Fast parsing commands are OK:**
+
+```bash
+# Quick version checks - OK to filter
+grep "VSL_VERSION" include/videostream.h
+cat pyproject.toml | grep "^version"
+```
+
+**Why:**
+
+- **Builds/Tests/SBOM**: Users need to see progress, warnings, errors in real-time
+- **Debugging**: Filtering hides critical context (warnings before errors, timing info)
+- **CI/CD transparency**: Full output shows what actually happened
+- **tee preserves output**: User sees everything AND gets log file for detailed review
+
+**What counts as "non-trivial":**
+
+- ❌ Build commands (cmake, make, cargo build)
+- ❌ Test suites (pytest, cargo test, make test)
+- ❌ SBOM generation (make sbom)
+- ❌ Linting/formatting with multiple files (make lint, make format)
+- ❌ Any command taking >1 second
+- ✅ Simple parsing (grep version from single file)
+- ✅ File counting (wc -l, ls | wc)
 
 ---
 
@@ -466,6 +519,7 @@ git push origin vX.Y.Z
 ❌ Missing `v` prefix on tag
 ❌ Running tests without venv or library path
 ❌ Using `cd` commands
+❌ Filtering output of build/test/sbom commands
 
 ✅ Run `make pre-release`, wait for CI, tag with `vX.Y.Z`
 
@@ -488,6 +542,7 @@ git push origin vX.Y.Z
 - GPL/AGPL dependencies
 - Hardcoded secrets
 - Committing env.sh
+- Filtering output with head/tail/grep on non-trivial commands
 
 **Remember:** Review all AI-generated code thoroughly. YOU are the author, AI is a tool.
 
