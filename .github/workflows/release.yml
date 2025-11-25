@@ -266,7 +266,7 @@ jobs:
           find artifacts -type f || echo "No artifacts found"
           echo ""
           
-          # Documentation PDF (primary artifact to include)
+          # Documentation PDF
           PDF_PATH=$(find artifacts/documentation -name "VideoStream.pdf" -type f 2>/dev/null | head -1)
           if [ -n "$PDF_PATH" ] && [ -f "$PDF_PATH" ]; then
             cp "$PDF_PATH" \
@@ -275,6 +275,51 @@ jobs:
           else
             echo "ERROR: Documentation PDF not found"
             exit 1
+          fi
+          
+          # ZIP packages
+          ZIP_X86=$(find artifacts/zip-package-x86_64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
+          if [ -n "$ZIP_X86" ] && [ -f "$ZIP_X86" ]; then
+            cp "$ZIP_X86" \
+               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-x86_64.zip
+            echo "✓ x86_64 ZIP package copied"
+          else
+            echo "⚠ x86_64 ZIP package not found"
+          fi
+          
+          ZIP_ARM=$(find artifacts/zip-package-aarch64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
+          if [ -n "$ZIP_ARM" ] && [ -f "$ZIP_ARM" ]; then
+            cp "$ZIP_ARM" \
+               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-aarch64.zip
+            echo "✓ aarch64 ZIP package copied"
+          else
+            echo "⚠ aarch64 ZIP package not found"
+          fi
+          
+          # Debian packages (x86_64)
+          if [ -d artifacts/debian-packages-x86_64 ]; then
+            for deb in artifacts/debian-packages-x86_64/*.deb; do
+              if [ -f "$deb" ]; then
+                BASENAME=$(basename "$deb")
+                cp "$deb" "release-assets/${BASENAME%.deb}-x86_64.deb"
+                echo "✓ Copied x86_64 DEB: $BASENAME"
+              fi
+            done
+          else
+            echo "⚠ x86_64 Debian packages directory not found"
+          fi
+          
+          # Debian packages (aarch64)
+          if [ -d artifacts/debian-packages-aarch64 ]; then
+            for deb in artifacts/debian-packages-aarch64/*.deb; do
+              if [ -f "$deb" ]; then
+                BASENAME=$(basename "$deb")
+                cp "$deb" "release-assets/${BASENAME%.deb}-aarch64.deb"
+                echo "✓ Copied aarch64 DEB: $BASENAME"
+              fi
+            done
+          else
+            echo "⚠ aarch64 Debian packages directory not found"
           fi
           
           # SBOM
@@ -311,7 +356,14 @@ jobs:
             ```
             
             ### Debian Package
-            Available through standard apt repository or download `.deb` files from build artifacts.
+            Download the appropriate `.deb` file for your architecture (x86_64 or aarch64) and install:
+            ```bash
+            sudo dpkg -i videostream-*.deb
+            sudo apt-get install -f  # Install dependencies
+            ```
+            
+            ### Binary Release (ZIP)
+            Download the ZIP archive for your architecture and extract to desired location.
             
             ---
             
@@ -321,12 +373,12 @@ jobs:
             
             ---
             
-            ## Release Assets
+            ## Assets
             
-            - **Documentation PDF**: Complete reference documentation
-            - **SBOM**: Software Bill of Materials in CycloneDX format
-            
-            **Note**: ZIP and DEB packages include HTML documentation. Build artifacts are available in the Actions tab.
+            - **Documentation**: `videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf`
+            - **SBOM**: `videostream-${{ needs.prepare-release.outputs.version }}-sbom.json` (CycloneDX format)
+            - **Linux x86_64**: ZIP and DEB packages
+            - **Linux ARM64**: ZIP and DEB packages
             
             ## Links
             
