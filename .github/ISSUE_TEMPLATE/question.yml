@@ -1,0 +1,68 @@
+name: Question
+description: Ask a question about using VideoStream Library
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about VideoStream Library?
+        
+        For general usage questions, consider using GitHub Discussions instead.
+        Use this form for specific technical questions.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+      placeholder: Describe your question clearly
+    validations:
+      required: true
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      description: What is your question about?
+      options:
+        - Getting Started / Installation
+        - Camera Capture (V4L2)
+        - Hardware Encoding (H.264/H.265)
+        - IPC Frame Sharing (Host/Client)
+        - GStreamer Plugin (vslsink/vslsrc)
+        - Python Bindings
+        - Performance Optimization
+        - Platform Support
+        - Build System
+        - Documentation
+        - Other
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide relevant background (what you're trying to accomplish, platform, etc.)
+      placeholder: |
+        - Goal: Build real-time video pipeline
+        - Platform: NXP i.MX8M Plus
+        - Current approach: ...
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What Have You Tried?
+      description: What steps have you already taken?
+      placeholder: |
+        - Checked documentation: README.md, ARCHITECTURE.md
+        - Tried example code: ...
+        - Searched issues: ...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I checked the documentation (README, CONTRIBUTING, ARCHITECTURE)
+          required: true
+        - label: I searched existing issues and discussions
+          required: true

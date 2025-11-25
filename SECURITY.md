@@ -21,10 +21,12 @@ Au-Zone Technologies takes security seriously across the entire EdgeFirst ecosys
 ### How to Report
 
 **Primary Contact:**
+
 - **Email**: support@au-zone.com
 - **Subject Line**: "Security Vulnerability - VideoStream"
 
 **For EdgeFirst Studio Users:**
+
 - You can also report through the EdgeFirst Studio interface under Settings → Support → Security Report
 
 ### What to Include
@@ -87,14 +89,16 @@ Please provide as much information as possible to help us understand and address
 
 We ask that security researchers and users follow responsible disclosure practices:
 
-### Please DO:
+### Please DO
+
 - ✅ Allow reasonable time for us to fix the vulnerability before public disclosure
 - ✅ Provide detailed information to help us understand and fix the issue
 - ✅ Test against the latest version before reporting
 - ✅ Work with us on a coordinated disclosure timeline
 - ✅ Report the issue privately to support@au-zone.com
 
-### Please DO NOT:
+### Please DO NOT
+
 - ❌ Publicly disclose the vulnerability before a fix is available
 - ❌ Exploit the vulnerability beyond what's necessary to demonstrate it
 - ❌ Access, modify, or delete data belonging to others
@@ -107,15 +111,17 @@ We ask that security researchers and users follow responsible disclosure practic
 
 We value the contributions of security researchers who help keep VideoStream and the EdgeFirst ecosystem secure.
 
-### How We Recognize Contributors:
+### How We Recognize Contributors
 
 **With your permission, we will:**
+
 - Credit you in the security advisory
 - List you in release notes for the fixed version
 - Include you in our annual security report
 - Provide a letter of acknowledgment for your portfolio (if requested)
 
 **Optional:**
+
 - You may choose to remain anonymous
 - We'll respect your preferred attribution (name, handle, organization)
 
@@ -146,6 +152,7 @@ Security updates are distributed through:
 ### Applying Updates
 
 **For package installations:**
+
 ```bash
 # Check current version
 vsl-monitor --version
@@ -159,6 +166,7 @@ vsl-monitor --version
 ```
 
 **For source builds:**
+
 ```bash
 cd videostream
 git fetch origin
@@ -169,6 +177,7 @@ sudo cmake --install build
 ```
 
 **For EdgeFirst Studio deployments:**
+
 - Follow the in-app update prompts
 - Or manually deploy updated version via Studio dashboard
 
@@ -204,6 +213,7 @@ sudo cmake --install build
    - Don't share DmaBuf FDs with untrusted processes
 
 **Example: Secure Client Initialization**
+
 ```c
 #include <videostream.h>
 #include <sys/stat.h>
@@ -329,6 +339,7 @@ For production deployments requiring enhanced security, Au-Zone Technologies off
 _(No security vulnerabilities have been publicly disclosed as of 2025-11-14)_
 
 As vulnerabilities are discovered and fixed, they will be listed here with:
+
 - CVE identifier
 - Affected versions
 - Impact summary
@@ -347,6 +358,7 @@ VideoStream Library is designed to support deployments in security-sensitive env
 - **Audit Trail**: Optional logging of security-relevant events
 
 **Certifications** (available for enterprise customers):
+
 - Common Criteria evaluation (on request)
 - FIPS 140-2 compliance assistance
 - Industry-specific certifications (automotive, medical, etc.)
@@ -358,15 +370,18 @@ Contact support@au-zone.com for compliance and certification inquiries.
 ## Resources
 
 ### Security Documentation
+
 - [OWASP Secure Coding Practices](https://owasp.org/www-project-secure-coding-practices-quick-reference-guide/)
 - [CWE/SANS Top 25](https://cwe.mitre.org/top25/archive/2023/2023_top25_list.html)
 - [Linux Kernel Security](https://www.kernel.org/doc/html/latest/admin-guide/security.html)
 
 ### EdgeFirst Security
+
 - [EdgeFirst Studio Security](https://doc.edgefirst.ai/security/)
 - [EdgeFirst Modules Security Guide](https://doc.edgefirst.ai/test/platforms/hardware/security/)
 
 ### External Security Lists
+
 - [GStreamer Security](https://gstreamer.freedesktop.org/security/)
 - [Linux Security Announcements](https://www.kernel.org/category/security.html)
 - [NVD - National Vulnerability Database](https://nvd.nist.gov/)
@@ -387,5 +402,5 @@ Contact support@au-zone.com for compliance and certification inquiries.
 
 ---
 
-*Last Updated: 2025-11-14*
-*Document Version: 1.0*
+_Last Updated: 2025-11-14_
+_Document Version: 1.0_

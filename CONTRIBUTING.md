@@ -32,24 +32,28 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
 ## Ways to Contribute
 
 ### Code Contributions
+
 - **Bug Fixes** - Fix issues reported in the issue tracker
 - **New Features** - Implement requested features or propose new ones
 - **Performance Improvements** - Optimize critical paths for embedded platforms
 - **Platform Support** - Add support for new hardware platforms and accelerators
 
 ### Documentation Contributions
+
 - **Guides and Tutorials** - Write usage examples and how-to guides
 - **API Documentation** - Improve inline code documentation
 - **Architecture Documentation** - Clarify internal design decisions
 - **Translation** - Help translate documentation to other languages
 
 ### Testing Contributions
+
 - **Bug Reports** - Report bugs with detailed reproduction steps
 - **Hardware Validation** - Test on different platforms (i.MX8, Raspberry Pi, etc.)
 - **Test Coverage** - Write unit and integration tests
 - **Performance Benchmarks** - Measure and report performance on various platforms
 
 ### Community Contributions
+
 - **Answer Questions** - Help others in GitHub Discussions
 - **Code Reviews** - Review pull requests from other contributors
 - **Blog Posts and Talks** - Share your VideoStream use cases and experiences
@@ -83,6 +87,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
 ### Prerequisites
 
 **Required:**
+
 - **CMake** 3.10 or later
 - **C Compiler** with C11 support (GCC 7+, Clang 6+, or MSVC 2019+)
 - **GStreamer** 1.4 or later (with development headers)
@@ -95,17 +100,20 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
 - **Git** for version control
 
 **Recommended:**
+
 - **clang-format** for code formatting
 - **valgrind** for memory leak detection
 - **GDB** or **LLDB** for debugging
 
 **Optional (for cross-compilation):**
+
 - **NXP Yocto SDK** for i.MX8 target builds
 - **Docker** for containerized builds
 
 ### Installing Prerequisites
 
 #### Ubuntu / Debian
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
@@ -124,6 +132,7 @@ sudo apt-get install -y \
 ```
 
 #### Fedora / RHEL / CentOS
+
 ```bash
 sudo dnf install -y \
     gcc gcc-c++ make cmake \
@@ -140,11 +149,13 @@ sudo dnf install -y \
 ```
 
 #### macOS
+
 ```bash
 brew install cmake gstreamer glib pkg-config python3
 ```
 
 #### Windows
+
 - Install [Visual Studio 2019+](https://visualstudio.microsoft.com/) with C++ workload
 - Install [GStreamer](https://gstreamer.freedesktop.org/download/) for Windows (MSVC build)
 - Install [CMake](https://cmake.org/download/)
@@ -193,6 +204,7 @@ VideoStream supports several CMake options:
 | `BUILD_TESTING` | OFF | Build test suite |
 
 **Example:**
+
 ```bash
 cmake -S . -B build \
       -DCMAKE_BUILD_TYPE=Debug \
@@ -232,6 +244,7 @@ docker run -v $PWD:/src deepview/yocto-sdk-imx8mp \
 ### Build Artifacts
 
 After building, you'll find:
+
 - `build/libvideostream.so` - Core library
 - `build/gst/libgstvideostream.so` - GStreamer plugin
 - `build/src/vsl-camhost` - Camera host example
@@ -266,6 +279,7 @@ make test
 ```
 
 **Test Options:**
+
 ```bash
 # Run specific test file
 venv/bin/pytest tests/test_frame.py
@@ -291,6 +305,7 @@ export API_TOKEN="eyJ0eXAi...expires-in-24h"  # Ephemeral token, 24-48h lifespan
 **CRITICAL:** `env.sh` is in `.gitignore` and must NEVER be committed. Use ephemeral tokens, not passwords.
 
 **Usage:**
+
 ```bash
 # Source env.sh if it exists
 [ -f env.sh ] && source env.sh
@@ -317,6 +332,7 @@ ctest --test-dir build --output-on-failure
 #### Test GStreamer Plugin
 
 **Terminal 1 (Host):**
+
 ```bash
 # Make sure the plugin is in GST_PLUGIN_PATH
 export GST_PLUGIN_PATH=$PWD/build/gst:$GST_PLUGIN_PATH
@@ -332,6 +348,7 @@ gst-launch-1.0 videotestsrc ! \
 ```
 
 **Terminal 2 (Client):**
+
 ```bash
 export GST_PLUGIN_PATH=$PWD/build/gst:$GST_PLUGIN_PATH
 
@@ -380,12 +397,15 @@ valgrind --leak-check=full \
 VideoStream follows **C11 standard** with the following conventions:
 
 #### Formatting
+
 # Add upstream remote
+
 git remote add upstream https://github.com/EdgeFirstAI/videostream.git
 git fetch upstream
 We use **clang-format** with the included [.clang-format](.clang-format) configuration.
 
 **Format your code before committing:**
+
 ```bash
 # Format all C/C++ files
 find src lib gst include -name "*.[ch]" -exec clang-format -i {} \;
@@ -395,6 +415,7 @@ clang-format -i lib/client.c
 ```
 
 **Key style rules:**
+
 - **Indentation**: 4 spaces (no tabs)
 - **Line length**: 100 characters maximum
 - **Braces**: K&R style (opening brace on same line, except for functions)
@@ -404,6 +425,7 @@ clang-format -i lib/client.c
 - **Macros**: `UPPER_SNAKE_CASE` with `VSL_` prefix
 
 **Example:**
+
 ```c
 // Good
 int vstream_client_open(const char *path, VStreamClient **client)
@@ -521,6 +543,7 @@ was chosen.
 ### Examples
 
 **Good commit messages:**
+
 ```
 Add DmaBuf support for NVIDIA Jetson platforms
 
@@ -551,6 +574,7 @@ Fixes #67
 ```
 
 **Bad commit messages:**
+
 ```
 fix bug          # Too vague, no context
 updated stuff    # Meaningless description
@@ -565,6 +589,7 @@ fixed #45        # Should explain what was done
 ### PR Title
 
 Use the same format as commit messages:
+
 - **Feature**: "Add RTSP support for remote video sources"
 - **Bugfix**: "Fix memory leak in client disconnect"
 - **Docs**: "Improve API documentation with usage examples"
@@ -616,6 +641,7 @@ Any other context, screenshots, or information reviewers should know.
 5. **Merge**: Squash or rebase to keep history clean
 
 **Timeline:**
+
 - Initial review: Within 3 business days
 - Follow-up on feedback: Be responsive to comments
 - Merge after approval: Usually within 1-2 days
@@ -627,6 +653,7 @@ Any other context, screenshots, or information reviewers should know.
 By contributing to VideoStream, you agree that your contributions will be licensed under the **Apache License 2.0**, the same license as the project.
 
 You represent that:
+
 - You have the right to contribute the code
 - Your contribution is your original work
 - You understand the contribution will be publicly available
@@ -640,6 +667,7 @@ You represent that:
 ### Debugging
 
 **Enable debug logging:**
+
 ```bash
 # Set environment variable for verbose logging
 export VSL_DEBUG=1
@@ -647,6 +675,7 @@ export GST_DEBUG=3  # For GStreamer debugging
 ```
 
 **Use GDB:**
+
 ```bash
 gdb --args ./build/src/vsl-monitor /tmp/test-vsl
 (gdb) break vstream_client_open
@@ -654,6 +683,7 @@ gdb --args ./build/src/vsl-monitor /tmp/test-vsl
 ```
 
 **Use valgrind for memory issues:**
+
 ```bash
 valgrind --leak-check=full --track-origins=yes \
          ./build/src/vsl-monitor /tmp/test-vsl
@@ -662,6 +692,7 @@ valgrind --leak-check=full --track-origins=yes \
 ### Performance Profiling
 
 **Use `perf` on Linux:**
+
 ```bash
 # Record performance data
 perf record -g ./build/src/vsl-monitor /tmp/test-vsl
@@ -671,6 +702,7 @@ perf report
 ```
 
 **Use `tracy` profiler (if integrated):**
+
 ```bash
 cmake -DENABLE_TRACY=ON ..
 make
@@ -680,17 +712,20 @@ make
 ### Common Issues
 
 **GStreamer plugin not found:**
+
 ```bash
 export GST_PLUGIN_PATH=$PWD/build/gst:$GST_PLUGIN_PATH
 gst-inspect-1.0 vslsink  # Should list the plugin
 ```
 
 **DmaBuf not available:**
+
 - Ensure kernel has CONFIG_DMA_SHARED_BUFFER=y
 - Check `/dev/dma_heap` exists (Linux 5.6+)
 - Verify permissions: `ls -l /dev/dma_heap`
 
 **Cross-compilation issues:**
+
 - Ensure Yocto SDK environment is sourced
 - Check CMake toolchain file paths
 - Verify pkg-config finds correct GStreamer libs
@@ -700,17 +735,20 @@ gst-inspect-1.0 vslsink  # Should list the plugin
 ## Getting Help
 
 **For development questions:**
+
 - Check existing [documentation](https://doc.edgefirst.ai/test/perception/videostream/)
 - Search [GitHub Issues](https://github.com/EdgeFirstAI/videostream/issues)
 - Ask in [GitHub Discussions](https://github.com/EdgeFirstAI/videostream/discussions)
 - Review [ARCHITECTURE.md](ARCHITECTURE.md) for internal details
 
 **For contribution process questions:**
+
 - Read this CONTRIBUTING.md thoroughly
 - Check recent merged PRs for examples
 - Ask in GitHub Discussions under "Contributing" category
 
 **For bugs or security issues:**
+
 - **Bugs**: [Open an issue](https://github.com/EdgeFirstAI/videostream/issues/new)
 - **Security**: Email support@au-zone.com with subject "Security Vulnerability"
 
@@ -719,6 +757,7 @@ gst-inspect-1.0 vslsink  # Should list the plugin
 ## Recognition
 
 Contributors are recognized in several ways:
+
 - Listed in [CONTRIBUTORS.md](CONTRIBUTORS.md) (coming soon)
 - Mentioned in release notes for significant contributions
 - Acknowledged in commit messages and PR comments
@@ -750,17 +789,20 @@ VideoStream uses a **manual release process** that ensures version consistency a
 ### Prerequisites
 
 1. **Verify clean working tree**:
+
    ```bash
    git status  # Should show no uncommitted changes
    ```
 
 2. **Ensure you're on the correct branch**:
+
    ```bash
    git checkout main  # Or develop, depending on workflow
    git pull origin main
    ```
 
 3. **Ensure all pre-commit checks pass**:
+
    ```bash
    # Use the unified pre-release target (recommended)
    make pre-release
@@ -790,9 +832,11 @@ VideoStream uses a **manual release process** that ensures version consistency a
 ### Common Pitfalls and Solutions
 
 #### Pitfall 1: Forgot to Activate venv Before Tests
+
 **Symptom**: `pytest tests/` fails with "Unable to load VideoStream library"
 
 **Solution**:
+
 ```bash
 source venv/bin/activate
 export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1
@@ -801,7 +845,9 @@ pytest tests/
 ```
 
 #### Pitfall 2: Using Old CMake Workflow (Directory Confusion)
+
 **Wrong**:
+
 ```bash
 cd build
 cmake ..
@@ -810,6 +856,7 @@ cd ..  # Easy to forget!
 ```
 
 **Correct** (ALWAYS use this):
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
@@ -817,15 +864,18 @@ cmake --build build -j$(nproc)
 ```
 
 **Why it matters**:
+
 - Prevents getting lost in filesystem
 - Works with all generators (Make, Ninja, Visual Studio)
 - Required by modern IDEs and automation
 - Cross-platform compatible
 
 #### Pitfall 3: Missing debian/changelog Update
+
 **Symptom**: `make verify-version` fails, CI/CD fails
 
 **Solution**: debian/changelog requires NEW entry at TOP with specific format:
+
 ```
 videostream (X.Y.Z-1) stable; urgency=medium
 
@@ -837,9 +887,11 @@ videostream (X.Y.Z-1) stable; urgency=medium
 ```
 
 #### Pitfall 4: Version Files Out of Sync
+
 **Symptom**: CI/CD fails with version mismatch
 
 **Solution**: All 6 files MUST have identical version:
+
 1. `Cargo.toml` - line ~6: `version = "X.Y.Z"`
 2. `include/videostream.h` - line ~16: `#define VSL_VERSION "X.Y.Z"`
 3. `pyproject.toml` - line ~7: `version = "X.Y.Z"`
@@ -850,18 +902,22 @@ videostream (X.Y.Z-1) stable; urgency=medium
 Verify with: `make verify-version`
 
 #### Pitfall 5: SBOM License Violations Not Caught Locally
+
 **Symptom**: PR fails CI/CD with license policy violations
 
 **Solution**: ALWAYS run `make sbom` before committing release:
+
 ```bash
 make sbom
 # Reviews license compliance and catches GPL/AGPL violations
 ```
 
 #### Pitfall 6: Wrong Git Tag Format
+
 **Symptom**: Release workflow doesn't trigger
 
 **CRITICAL**: Tags MUST use `vX.Y.Z` format to trigger release workflow:
+
 ```bash
 # Correct (v prefix REQUIRED)
 git tag -a -m "Version 1.5.2" v1.5.2
@@ -894,6 +950,7 @@ Follow **Semantic Versioning** (MAJOR.MINOR.PATCH):
   - Security patches (non-breaking)
 
 **Example decision tree**:
+
 - Changed function signature? → MINOR (or MAJOR if requested)
 - Added new optional API? → MINOR
 - Fixed memory leak? → PATCH
@@ -908,6 +965,7 @@ vim CHANGELOG.md
 ```
 
 **Required changes**:
+
 1. Move all items from `## [Unreleased]` section to new version section
 2. Add version number and release date: `## [1.5.0] - 2025-11-20`
 3. Ensure changes are categorized:
@@ -921,6 +979,7 @@ vim CHANGELOG.md
 5. Keep `## [Unreleased]` section at top for future changes
 
 **Example**:
+
 ```markdown
 ## [Unreleased]
 
@@ -947,30 +1006,36 @@ vim CHANGELOG.md
 **Files requiring version updates**:
 
 1. **`Cargo.toml`** (Rust workspace):
+
    ```toml
    [workspace.package]
    version = "1.5.0"  # Update this line
    ```
 
 2. **`include/videostream.h`** (C header - single source of truth for CMake):
+
    ```c
    #define VSL_VERSION "1.5.0"  // Update this line
    ```
+
    Note: CMake parses this file to extract PROJECT_VERSION automatically
 
 3. **`pyproject.toml`** (Python package):
+
    ```toml
    [project]
    version = "1.5.0"  # Update this line
    ```
 
 4. **`doc/conf.py`** (Sphinx documentation):
+
    ```python
    version = '1.5.0'  # Update this line (keep quotes)
    release = version  # This line stays unchanged
    ```
 
 5. **`debian/changelog`** (Debian package):
+
    ```bash
    # Add NEW entry at the TOP of the file
    videostream (1.5.0-1) stable; urgency=medium
@@ -980,9 +1045,11 @@ vim CHANGELOG.md
 
     -- Au-Zone Technologies <support@au-zone.com>  Wed, 20 Nov 2025 14:30:00 -0400
    ```
+
    **Important**: Use `dch` tool or manually ensure proper Debian changelog format
 
 **Update checklist**:
+
 ```bash
 # Verify all files updated with same version
 grep "version = \"1.5.0\"" Cargo.toml
@@ -1034,6 +1101,7 @@ git push origin main
 ```
 
 If any checks fail:
+
 1. Fix the issues
 2. Create new commits to address failures
 3. Push fixes
@@ -1066,6 +1134,7 @@ git push origin 1.5.0
 ```
 
 **Tag naming**:
+
 - Release: `1.5.0`
 - Release candidate: `1.5.0-rc0`, `1.5.0-rc1`, etc.
 - Beta: `1.5.0-beta0`
@@ -1080,6 +1149,7 @@ After pushing the tag, GitHub Actions automatically triggers the release workflo
 ```
 
 **The release workflow**:
+
 1. **Builds release artifacts**:
    - Source tarball
    - Debian package
@@ -1095,6 +1165,7 @@ After pushing the tag, GitHub Actions automatically triggers the release workflo
    - GitHub Releases (archives)
 
 **Verify success**:
+
 ```bash
 # Check GitHub Release created:
 # https://github.com/EdgeFirstAI/videostream/releases/tag/1.5.0
@@ -1107,6 +1178,7 @@ After pushing the tag, GitHub Actions automatically triggers the release workflo
 ```
 
 If release workflow fails:
+
 1. Check workflow logs for errors
 2. Fix issues (may require code changes)
 3. Delete the tag: `git tag -d 1.5.0 && git push origin :refs/tags/1.5.0`
@@ -1116,6 +1188,7 @@ If release workflow fails:
 ### Post-Release Tasks
 
 1. **Verify published packages**:
+
    ```bash
    # Test PyPI installation
    pip install videostream==1.5.0
@@ -1135,6 +1208,7 @@ If release workflow fails:
    - Social media / blog post (for major releases)
 
 4. **Create milestone for next version**:
+
    ```bash
    # On GitHub: Projects → Milestones → New Milestone
    # Version: 1.5.1 or 1.6.0
@@ -1147,6 +1221,7 @@ If release workflow fails:
 **Symptoms**: CI fails with version mismatch errors, or GitHub Release fails
 
 **Solution**:
+
 ```bash
 # 1. Delete the tag
 git tag -d 1.5.0
@@ -1172,6 +1247,7 @@ git push origin 1.5.0
 **Symptoms**: Tag exists but GitHub Release not created, or packages not published
 
 **Solution**:
+
 ```bash
 # 1. Fix the issue causing CI failure
 # (may require new commits)
@@ -1201,6 +1277,7 @@ git push origin 1.5.0
 **Symptoms**: CMake complains about version, Python package version wrong, etc.
 
 **Solution**:
+
 ```bash
 # Verify all versions match
 grep -r "1.5.0" Cargo.toml include/videostream.h pyproject.toml doc/conf.py debian/changelog
@@ -1244,6 +1321,7 @@ git push origin :refs/tags/1.5.0
 ### Release Checklist
 
 Pre-release:
+
 - [ ] All tests passing locally
 - [ ] Code formatted (clang-format)
 - [ ] SBOM generated and clean
@@ -1252,6 +1330,7 @@ Pre-release:
 - [ ] Migration guide added (if breaking changes)
 
 Version updates:
+
 - [ ] `Cargo.toml` updated
 - [ ] `include/videostream.h` updated (VSL_VERSION)
 - [ ] `pyproject.toml` updated
@@ -1260,16 +1339,19 @@ Version updates:
 - [ ] All files show **same version** (verified with grep)
 
 Commit and push:
+
 - [ ] Release commit created (`Prepare Version X.Y.Z`)
 - [ ] Pushed to main branch
 - [ ] CI/CD all green (build, test, SBOM, quality checks)
 
 Tagging:
+
 - [ ] Git tag created (`git tag -a -m "Version X.Y.Z" X.Y.Z`)
 - [ ] Tag pushed to remote
 - [ ] Release workflow triggered and succeeded
 
 Post-release:
+
 - [ ] GitHub Release created automatically
 - [ ] PyPI package published
 - [ ] crates.io packages published
@@ -1291,6 +1373,7 @@ Post-release:
 | `CHANGELOG.md` | `## [X.Y.Z] - YYYY-MM-DD` | After `[Unreleased]` section | Release notes |
 
 **Automated checks** (in CI/CD):
+
 - `CMakeLists.txt` - Parses `VSL_VERSION` from `include/videostream.h` automatically (no manual update needed)
 - `crates/*/Cargo.toml` - Use `version.workspace = true`, inherits from workspace `Cargo.toml` (no manual update needed)
 
