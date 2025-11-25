@@ -47,6 +47,10 @@ jobs:
           chmod +x ~/.local/bin/cyclonedx
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Install cargo-cyclonedx
+        run: |
+          cargo install cargo-cyclonedx
+
       - name: Generate SBOM
         run: |
           .github/scripts/generate_sbom.sh
