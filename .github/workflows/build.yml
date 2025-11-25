@@ -52,6 +52,7 @@ jobs:
             tex-gyre
           python3 -m pip install --upgrade pip
           python3 -m pip install -r doc/requirements.txt
+          sudo npm install -g @mermaid-js/mermaid-cli
 
       - name: Build HTML documentation
         run: |
@@ -112,8 +113,8 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Create ZIP package
+        working-directory: build
         run: |
-          cd build
           cpack
 
       - name: List package contents

@@ -16,6 +16,7 @@ VideoStream delivers essential video I/O capabilities for embedded vision applic
 VideoStream Library provides three core capabilities for embedded Linux video applications:
 
 ### 1. Video4Linux2 Camera Capture
+
 - **V4L2 device interface** for camera frame acquisition
 - **DmaBuf export** for zero-copy capture from camera drivers (required for DMA operation)
 - **Format negotiation** and capability detection
@@ -24,6 +25,7 @@ VideoStream Library provides three core capabilities for embedded Linux video ap
 - **Hardware compatibility** with MIPI CSI-2, USB cameras, and other V4L2 devices
 
 ### 2. Hardware H.264/H.265 Encoding
+
 - **Hantro VPU integration** for hardware-accelerated encoding on NXP i.MX8 platforms
 - **Zero-copy input** from DmaBuf or camera buffers
 - **H.264/H.265 codec support** with configurable bitrate profiles
@@ -31,6 +33,7 @@ VideoStream Library provides three core capabilities for embedded Linux video ap
 - **Direct DmaBuf encoding** for efficient pipeline integration
 
 ### 3. Inter-Process Frame Sharing
+
 - **Zero-copy buffer sharing** via Linux DmaBuf and POSIX shared memory
 - **UNIX domain socket IPC** with file descriptor passing (SCM_RIGHTS)
 - **Thread-safe reference counting** for multi-consumer frame access
@@ -45,6 +48,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 ## Features
 
 ### Inter-Process Frame Sharing
+
 - **Zero-Copy Transfer** - DmaBuf and POSIX shared memory for efficient frame sharing
 - **UNIX Socket IPC** - File descriptor passing via SCM_RIGHTS ancillary data
 - **Multi-Consumer Support** - Multiple clients can access same frame pool concurrently
@@ -53,6 +57,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 - **Timeout Management** - Configurable frame lifespans and client timeouts
 
 ### V4L2 Camera Capture
+
 - **Standard V4L2 Interface** - Compatible with any Video4Linux2 camera driver
 - **DmaBuf Export** - Zero-copy frame acquisition via VIDIOC_EXPBUF (required for DMA operation)
 - **Format Support** - YUV (420, 422, 444), RGB variants, Bayer patterns
@@ -61,6 +66,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 - **DMA-Capable Buffers** - Uses DmaBuf for hardware accelerator compatibility (VPU, NPU)
 
 ### Hardware H.264/H.265 Encoding
+
 - **Hantro VPU** - Hardware-accelerated encoding on NXP i.MX8 platforms
 - **Codec Support** - H.264 (AVC) and H.265 (HEVC) with profile/level configuration
 - **Rate Control** - CBR, VBR, and fixed QP encoding modes
@@ -69,6 +75,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 - **Multi-Stream** - Support for concurrent encoding streams
 
 ### Platform Support
+
 - **NXP i.MX8M Plus** - Full support (G2D, VPU, V4L2 DmaBuf)
 - **NXP i.MX8M** - DmaBuf and basic hardware acceleration
 - **Generic ARM64/ARMv7** - POSIX shared memory fallback
@@ -81,6 +88,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 ### Installation
 
 #### Prerequisites
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install -y \
@@ -96,6 +104,7 @@ sudo dnf install -y \
 ```
 
 #### Build from Source
+
 ```bash
 git clone https://github.com/EdgeFirstAI/videostream.git
 cd videostream
@@ -105,6 +114,7 @@ sudo cmake --install build
 ```
 
 #### Cross-Compile for ARM64 (NXP Yocto SDK)
+
 ```bash
 source /opt/fsl-imx-xwayland/5.4-zeus/environment-setup-aarch64-poky-linux
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -138,6 +148,7 @@ int main(int argc, char *argv[])
 
     if (vsl_camera_init_device(camera, &width, &height, &buf_count, &fourcc)) {
         fprintf(stderr, "Failed to init camera\n");
+        vsl_camera_close_device(camera);
         return 1;
     }
 
@@ -200,9 +211,9 @@ int main(int argc, char *argv[])
         // Create output frame for encoded data
         VSLFrame* dest = vsl_encoder_new_output_frame(encoder,
                                                        1920, 1080,
-                                                       33333333,  // duration (ns)
-                                                       i * 33333333,  // pts
-                                                       i * 33333333); // dts
+                                                       33333333LL,  // duration (ns)
+                                                       i * 33333333LL,  // pts
+                                                       i * 33333333LL); // dts
 
         // Encode frame
         int keyframe = 0;
@@ -233,6 +244,7 @@ int main(int argc, char *argv[])
 This example demonstrates sharing camera frames between processes using vslsink and vslsrc.
 
 **Terminal 1 - Producer (Camera Host):**
+
 ```bash
 # Capture from V4L2 camera and share frames via VideoStream
 # The path can be explicit or auto-generated from element name
@@ -242,17 +254,20 @@ gst-launch-1.0 v4l2src device=/dev/video0 ! \
 ```
 
 **Socket Path Convention:**
+
 - Filesystem paths start with `/` (e.g., `/tmp/vsl_camera`)
 - Abstract sockets don't start with `/` (e.g., `vsl_camera`)
 - If no path specified, vslsink auto-generates: `/tmp/<element_name>.<thread_id>`
 
 **Terminal 2 - Consumer 1 (Display):**
+
 ```bash
 # Receive frames and display
 gst-launch-1.0 vslsrc path=/tmp/vsl_camera ! autovideosink
 ```
 
 **Terminal 3 - Consumer 2 (Recording):**
+
 ```bash
 # Simultaneously record to file (both consumers share same frames)
 gst-launch-1.0 vslsrc path=/tmp/vsl_camera ! \
@@ -428,6 +443,7 @@ VideoStream provides low-level camera and codec APIs used by the edgefirst-camer
    - Zenoh middleware distributes to perception pipeline
 
 **VideoStream Does NOT Handle:**
+
 - Network transport (handled by Zenoh middleware)
 - Inter-service messaging (handled by Zenoh)
 - Frame sharing between perception services (EdgeFirst uses Zenoh + `pidfd_getfd`)
@@ -445,6 +461,7 @@ VideoStream includes an optional IPC mechanism for non-EdgeFirst applications:
 **Standalone Use Cases**
 
 VideoStream can be used independently for:
+
 - V4L2 camera capture applications
 - Hardware-accelerated encoding applications
 - GStreamer-based vision systems
@@ -458,18 +475,21 @@ VideoStream can be used independently for:
 VideoStream is organized into three main functional areas:
 
 ### 1. Frame Sharing Architecture
+
 - **Host/Client Model**: One process hosts frame pool, multiple clients consume
 - **Threading**: Multi-threaded host with GStreamer task thread for client servicing
 - **IPC Protocol**: UNIX domain sockets with file descriptor passing (SCM_RIGHTS)
 - **Memory Management**: DmaBuf zero-copy or POSIX shared memory fallback
 
 ### 2. V4L2 Camera Interface
+
 - **Direct kernel interface** via ioctl() calls
 - **Buffer management**: MMAP, USERPTR, or DmaBuf buffer types
 - **Format negotiation**: Automatic capability detection and format selection
 - **Camera controls**: Full access to V4L2 control interface
 
 ### 3. Hardware Encoding Pipeline
+
 - **VPU wrapper**: Abstraction layer for Hantro VPU hardware
 - **Zero-copy encoding**: Direct encoding from DmaBuf or camera buffers
 - **Buffer recycling**: Efficient frame buffer reuse for low latency
@@ -519,6 +539,7 @@ while (running) {
 ### For Application Developers
 
 **When to use VideoStream:**
+
 - Need V4L2 camera capture with DmaBuf export for DMA operation
 - Require hardware H.264/H.265 encoding (NXP i.MX8 platforms)
 - Building standalone applications needing camera + codec APIs
@@ -526,30 +547,30 @@ while (running) {
 - Need local inter-process frame sharing without network transport
 
 **When to use alternatives:**
+
 - **EdgeFirst Perception middleware messaging**: For distributed perception services (uses Zenoh + `pidfd_getfd`)
 - **GStreamer native elements**: For standard video processing pipelines
 - **Direct V4L2 API**: For simple camera access without VideoStream abstractions
-
 
 ## Documentation
 
 - 📖 **[Architecture Guide](ARCHITECTURE.md)** - Threading model, data flow, internal design
 - 🔧 **[API Reference](https://doc.edgefirst.ai/test/perception/videostream/api/)** - Complete C/C++ API documentation
-- 🎥 **[Camera Capture Guide](doc/camera-capture.md)** - V4L2 interface and best practices
-- 🎬 **[Encoding Guide](doc/vpu-encoding.md)** - Hardware encoding configuration
-- 🎓 **[GStreamer Plugin Guide](doc/gstreamer-plugins.md)** - vslsink and vslsrc usage
 - 🏗️ **[EdgeFirst Perception](https://doc.edgefirst.ai/test/perception/)** - Full perception middleware docs
-
+- 📝 **[Contributing Guide](CONTRIBUTING.md)** - Development setup and guidelines
+- 🔒 **[Security Policy](SECURITY.md)** - Vulnerability reporting and security practices
 
 ## Contributing
 
 We welcome contributions, especially for:
+
 - Additional camera driver support and V4L2 controls
 - Software encoding fallbacks (libx264, openh264)
 - Platform support (Raspberry Pi, NVIDIA Jetson)
 - Performance optimizations for 4K/8K capture and encoding
 
 **Get Started:**
+
 1. Check [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
 2. Check [GitHub Issues](https://github.com/EdgeFirstAI/videostream/issues) for tasks
 3. Review [ARCHITECTURE.md](ARCHITECTURE.md) to understand internals
@@ -560,18 +581,22 @@ We welcome contributions, especially for:
 ## Support
 
 ### Community Resources
+
 - 📒 **[Documentation](https://doc.edgefirst.ai/test/perception/videostream/)**
 - 💬 **[GitHub Discussions](https://github.com/EdgeFirstAI/videostream/discussions)**
 - 🐛 **[Issue Tracker](https://github.com/EdgeFirstAI/videostream/issues)**
 
 ### EdgeFirst Ecosystem
+
 - **[EdgeFirst Perception](https://doc.edgefirst.ai/test/perception/)** - Complete perception middleware
 - **[edgefirst-camera](https://doc.edgefirst.ai/test/perception/camera/)** - Camera service using VideoStream
 - **[EdgeFirst Studio](https://edgefirst.studio)** - MLOps platform for edge AI deployment
 - **[EdgeFirst Modules](https://www.edgefirst.ai/edgefirstmodules)** - Maivin, Raivin hardware platforms
 
 ### Commercial Support
+
 Au-Zone Technologies offers professional services:
+
 - Camera driver development and V4L2 integration
 - Custom hardware encoding implementation
 - Performance optimization for specific platforms
