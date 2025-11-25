@@ -665,4 +665,4 @@ License
 
 GStreamer plugins are licensed under Apache License 2.0, same as VideoStream Library.
 
-Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
+Copyright (C) 2025 Au-Zone Technologies. All Rights Reserved.
