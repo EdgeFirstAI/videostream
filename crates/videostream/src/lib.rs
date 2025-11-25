@@ -4,52 +4,134 @@
 //! VideoStream Library for Rust
 //!
 //! Safe Rust bindings for the VideoStream Library, providing zero-copy video
-//! frame management and distribution across processes and containers.
+//! frame management and distribution across processes and containers on embedded Linux.
 //!
 //! The VideoStream Library enables efficient frame sharing through DMA buffers
 //! or shared-memory with signaling over UNIX Domain Sockets, optimized for
 //! edge AI and computer vision applications on resource-constrained embedded
-//! devices.
+//! devices like NXP i.MX8M Plus.
+//!
+//! # Architecture
+//!
+//! VideoStream uses a **Host/Client** pattern for inter-process communication:
+//!
+//! - **Host**: Publishes video frames to a UNIX socket
+//! - **Clients**: Subscribe to frames by connecting to the socket
+//! - **Frames**: Zero-copy shared memory (DmaBuf or POSIX shm) with metadata
 //!
 //! # Quick Start
 //!
 //! ## Publishing Frames (Host)
 //!
 //! ```no_run
-//! use videostream::host::Host;
-//! use videostream::frame::Frame;
+//! use videostream::{host::Host, frame::Frame, Error};
 //!
-//! let host = Host::new("/tmp/video.sock")?;
-//! let frame = Frame::new(1920, 1080, 1920 * 2, "YUYV")?;
-//! frame.alloc(None)?;
-//! // Register and publish frame to clients
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! fn publish_frames() -> Result<(), Error> {
+//!     // Create host on UNIX socket
+//!     let host = Host::new("/tmp/video.sock")?;
+//!     
+//!     // Create and allocate a frame
+//!     let frame = Frame::new(1920, 1080, 1920 * 2, "YUYV")?;
+//!     frame.alloc(None)?; // DmaBuf or shared memory
+//!     
+//!     // Frame is now ready to be posted to clients
+//!     // (Posting requires additional host.post() - see host module)
+//!     Ok(())
+//! }
+//! # publish_frames().ok();
 //! ```
 //!
 //! ## Subscribing to Frames (Client)
 //!
 //! ```no_run
-//! use videostream::client::Client;
-//! use videostream::frame::Frame;
+//! use videostream::{client::Client, frame::Frame, Error};
 //!
-//! let client = Client::new("/tmp/video.sock", true)?;
-//! let frame = Frame::wait(&client, 1000)?;
-//! // Process the frame here
-//! println!("Received frame: {}x{}", frame.width()?, frame.height()?);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! fn subscribe_frames() -> Result<(), Error> {
+//!     // Connect to host socket (auto-reconnect on disconnect)
+//!     let client = Client::new("/tmp/video.sock", true)?;
+//!     
+//!     // Wait for next frame (blocking)
+//!     let frame = Frame::wait(&client, 0)?;
+//!     
+//!     // Lock frame before accessing
+//!     frame.trylock()?;
+//!     println!("Frame: {}x{}", frame.width()?, frame.height()?);
+//!     frame.unlock()?;
+//!     
+//!     Ok(())
+//! }
+//! # subscribe_frames().ok();
+//! ```
+//!
+//! ## Camera Capture
+//!
+//! ```no_run
+//! use videostream::{camera::create_camera, fourcc::FourCC, Error};
+//!
+//! fn capture_camera() -> Result<(), Error> {
+//!     // Configure and open camera
+//!     let cam = create_camera()
+//!         .with_device("/dev/video0")
+//!         .with_resolution(1920, 1080)
+//!         .with_format(FourCC(*b"YUYV"))
+//!         .open()?;
+//!     
+//!     cam.start()?;
+//!     let buffer = cam.read()?;
+//!     println!("Captured: {}", buffer);
+//!     
+//!     Ok(())
+//! }
+//! # capture_camera().ok();
+//! ```
+//!
+//! ## Hardware Encoding
+//!
+//! ```no_run
+//! use videostream::{encoder::{Encoder, VSLEncoderProfileEnum}, Error};
+//!
+//! fn encode_video() -> Result<(), Error> {
+//!     // Create H.264 encoder (Hantro VPU on i.MX8)
+//!     let encoder = Encoder::create(
+//!         VSLEncoderProfileEnum::Kbps25000 as u32,
+//!         u32::from_le_bytes(*b"H264"),
+//!         30 // fps
+//!     )?;
+//!     
+//!     // Source and destination frames required for encoding
+//!     // (See encoder module for complete example)
+//!     Ok(())
+//! }
+//! # encode_video().ok();
 //! ```
 //!
 //! # Features
 //!
-//! - Zero-copy frame sharing across process boundaries
-//! - DMA buffer support for hardware-accelerated access
-//! - Hardware video encoding/decoding (H.264, H.265)
-//! - V4L2 camera capture integration
-//! - Multi-subscriber support (one publisher, many subscribers)
+//! - **Zero-copy sharing**: DmaBuf or POSIX shared memory for minimal overhead
+//! - **Hardware acceleration**: G2D format conversion, VPU encoding/decoding
+//! - **Multi-subscriber**: One host can serve many clients simultaneously
+//! - **V4L2 camera**: Native Linux camera capture with DmaBuf export
+//! - **Cross-process**: UNIX sockets enable containerized applications
+//!
+//! # Platform Support
+//!
+//! - **Primary**: NXP i.MX8M Plus (full hardware acceleration)
+//! - **Compatible**: Any Linux system with V4L2 (software fallback)
+//! - **Kernel**: Linux 4.14+ (5.6+ recommended for DmaBuf heap)
+//!
+//! # Error Handling
+//!
+//! All fallible operations return [`Result<T, Error>`]. The [`Error`] enum provides
+//! detailed error information including I/O errors (with errno), library loading
+//! failures, and type conversion errors.
+//!
+//! # Safety
+//!
+//! This crate wraps unsafe C FFI calls with safe Rust abstractions. All public
+//! APIs are safe to use. Unsafe blocks are carefully isolated in the FFI layer.
 //!
 //! # Support
 //!
-//! For questions and support:
 //! - Documentation: <https://docs.rs/videostream>
 //! - Repository: <https://github.com/EdgeFirstAI/videostream>
 //! - Professional support: support@au-zone.com
@@ -143,8 +225,14 @@ impl From<TryFromIntError> for Error {
     }
 }
 
-/// Helper macro for modules to get library reference and call functions
-/// All functions must return Result<T, Error> to use this macro
+/// Helper macro for calling C library functions safely.
+///
+/// This macro handles library initialization and wraps unsafe FFI calls.
+/// All functions must return `Result<T, Error>` to propagate library loading errors.
+///
+/// # Internal Use Only
+///
+/// This macro is exported for use by submodules but is not part of the public API.
 #[macro_export]
 macro_rules! vsl {
     ($fn_name:ident($($args:expr),*)) => {
@@ -159,39 +247,87 @@ macro_rules! vsl {
     };
 }
 
-/// The frame module provides the common frame handling functionality.
+/// Frame management for video data.
+///
+/// Provides the [`Frame`](frame::Frame) type for creating, allocating, and
+/// manipulating video frames. Frames can be free-standing or shared via Host/Client.
 pub mod frame;
 
-/// The client module provides the frame subscription functionality.
+/// Client API for subscribing to video frames.
+///
+/// Provides the [`Client`](client::Client) type for connecting to a
+/// [`Host`](host::Host) and receiving published frames.
 pub mod client;
 
-/// The host module provides the frame sharing functionality.
+/// Host API for publishing video frames.
+///
+/// Provides the [`Host`](host::Host) type for managing a UNIX socket server
+/// that publishes frames to connected clients.
 pub mod host;
 
-/// The encoder module provides accelerated video encoding to h.264 and h.265
+/// Hardware-accelerated video encoding (H.264/H.265).
+///
+/// Provides the [`Encoder`](encoder::Encoder) type for compressing video frames
+/// using the Hantro VPU on i.MX8 platforms.
 pub mod encoder;
 
-/// The encoder module provides accelerated video decoding from h.264 and h.265
+/// Hardware-accelerated video decoding (H.264/H.265).
+///
+/// Provides the [`Decoder`](decoder::Decoder) type for decompressing video streams
+/// using the Hantro VPU on i.MX8 platforms.
 pub mod decoder;
 
-/// The camera module provides camera capture capabilities.
+/// V4L2 camera capture with DmaBuf support.
+///
+/// Provides the [`Camera`](camera::Camera) and [`CameraReader`](camera::CameraReader)
+/// types for capturing frames from Linux V4L2 video devices.
 pub mod camera;
 
-/// The fourcc module provides portable handling of fourcc codes.
+/// FOURCC pixel format codes.
+///
+/// Provides the [`FourCC`](fourcc::FourCC) type for portable handling of
+/// four-character-code pixel formats (e.g., "YUYV", "NV12").
 pub mod fourcc;
 
-/// Get the VideoStream library version string
+/// Returns the VideoStream Library version string.
 ///
-/// Returns an error if the library is not loaded.
+/// The version follows semantic versioning (MAJOR.MINOR.PATCH).
+///
+/// # Errors
+///
+/// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+///
+/// # Example
+///
+/// ```no_run
+/// use videostream::version;
+///
+/// let ver = version().expect("Failed to get version");
+/// println!("VideoStream version: {}", ver);
+/// ```
 pub fn version() -> Result<String, Error> {
     let lib = ffi::init()?;
     let cstr = unsafe { CStr::from_ptr(lib.vsl_version()) };
     Ok(cstr.to_str()?.to_string())
 }
 
-/// Get the current timestamp in nanoseconds
+/// Returns the current monotonic timestamp in nanoseconds.
 ///
-/// Returns an error if the library is not loaded.
+/// Uses `CLOCK_MONOTONIC` for consistent timing across the system.
+/// This timestamp is used internally for frame timing and synchronization.
+///
+/// # Errors
+///
+/// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+///
+/// # Example
+///
+/// ```no_run
+/// use videostream::timestamp;
+///
+/// let ts = timestamp().expect("Failed to get timestamp");
+/// println!("Current time: {} ns", ts);
+/// ```
 pub fn timestamp() -> Result<i64, Error> {
     let lib = ffi::init()?;
     Ok(unsafe { lib.vsl_timestamp() })

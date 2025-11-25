@@ -11,55 +11,52 @@ Base Functions
 
 .. doxygenfunction:: vsl_version
 .. doxygenfunction:: vsl_timestamp
+.. doxygenfunction:: vsl_fourcc_from_string
 
-Frame
------
-
-The Frame API provides access to video frames.  They can be used free-standing
-for cases where the user requires access to the Frame API without the need for
-the sharing mechanism.  When sharing is required then frames must be accessed
-through the Client API or published through the Host API.
-
-.. doxygenstruct:: VSLFrame
-
-.. doxygenfunction:: vsl_frame_init
-.. doxygenfunction:: vsl_frame_release
-
-Client
-------
-
-The Client API allows the user to receive frames published by the Host API.
-
-.. doxygenstruct:: VSLClient
-
-.. doxygenfunction:: vsl_client_init
-.. doxygenfunction:: vsl_client_release
-
-Host
-----
-
-The Host API allows the user to publish frames to be retreived by the Client
-API.
+Types and Structures
+--------------------
 
 .. doxygenstruct:: VSLHost
+   :members:
 
-.. doxygenfunction:: vsl_host_init
-.. doxygenfunction:: vsl_host_release
+.. doxygenstruct:: VSLClient
+   :members:
 
-Encoder
--------
-
-The Encoder API provides access to the platform's video codec to encode video
-as H.264 or H.265.
+.. doxygenstruct:: VSLFrame
+   :members:
 
 .. doxygenstruct:: VSLEncoder
+   :members:
 
+.. doxygenstruct:: VSLDecoder
+   :members:
 
-Versions
-~~~~~~~~
+.. doxygenstruct:: VSLCamera
+   :members:
 
+.. doxygenstruct:: VSLRect
+   :members:
+
+.. doxygentypedef:: vsl_frame_cleanup
+
+Enumerations
+~~~~~~~~~~~~
+
+.. doxygenenum:: VSLEncoderProfile
+.. doxygenenum:: VSLDecoderRetCode
+
+Version Constants
+-----------------
+
+.. doxygendefine:: VSL_VERSION
 .. doxygendefine:: VSL_TARGET_VERSION
 .. doxygendefine:: VSL_VERSION_1_0
 .. doxygendefine:: VSL_VERSION_1_1
 .. doxygendefine:: VSL_VERSION_1_2
 .. doxygendefine:: VSL_VERSION_1_3
+.. doxygendefine:: VSL_VERSION_1_4
+
+Macros
+------
+
+.. doxygendefine:: VSL_FOURCC

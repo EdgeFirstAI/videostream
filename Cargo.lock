@@ -541,7 +541,7 @@ checksum = "4cf5fd32fe602f27c0db508ffab4a845120fdb7474ea78c01e5c483ac1b09951"
 
 [[package]]
 name = "videostream"
-version = "1.5.3"
+version = "1.5.4"
 dependencies = [
  "dma-buf",
  "rand",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "videostream-sys"
-version = "1.5.3"
+version = "1.5.4"
 dependencies = [
  "bindgen",
  "libloading",
