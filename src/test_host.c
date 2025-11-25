@@ -42,7 +42,9 @@
 #define FRAME_HEIGHT 1080
 #define FRAME_LIFESPAN_NS 1000000000LL // 1 second
 #define FRAME_DURATION_NS 33333333LL   // ~30fps
-#define SEPARATOR "==========================================================================="
+#define SEPARATOR                                                              \
+    "========================================================================" \
+    "==="
 
 static volatile bool g_running = true;
 
@@ -83,9 +85,7 @@ create_frame(void** data_out)
         return NULL;
     }
 
-    if (data_out) {
-        *data_out = data;
-    }
+    if (data_out) { *data_out = data; }
     return frame;
 }
 
@@ -221,8 +221,8 @@ main(int argc, char* argv[])
 
     const char* frame_path = vsl_frame_path(frame);
     if (frame_path) {
-        const char* mem_type = strstr(frame_path, "/dev/") 
-                                   ? "DMA heap (zero-copy)" 
+        const char* mem_type = strstr(frame_path, "/dev/")
+                                   ? "DMA heap (zero-copy)"
                                    : "POSIX shared memory";
         printf("  Memory type: %s\n", mem_type);
         printf("  Path: %s\n", frame_path);
