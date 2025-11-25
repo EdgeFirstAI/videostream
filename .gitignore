@@ -25,7 +25,7 @@ cppcheck.xml
 
 scancode.json
 scancode.sqlite
-sbom*.json
+*sbom*.json
 *.cdx.json
 
 .DS_Store

@@ -40,7 +40,9 @@
 
 #define DEFAULT_SOCKET_PATH "/tmp/videostream_test.sock"
 #define DEFAULT_NUM_FRAMES 100
-#define SEPARATOR "==========================================================================="
+#define SEPARATOR                                                              \
+    "========================================================================" \
+    "==="
 
 static volatile bool g_running = true;
 
