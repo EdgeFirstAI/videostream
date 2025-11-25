@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.6] - 2025-11-25
+
+### Fixed
+
+- GitHub Actions: Fixed release workflow to properly include PDF documentation in release assets
+- GitHub Actions: Improved artifact detection and copying with better error messages
+
+### Added
+
+- Rust crates: Added README.md for `videostream` crate with Rust-specific quick start guide
+- Rust crates: Added README.md for `videostream-sys` crate with FFI binding documentation
+- Documentation: Added comprehensive examples and usage guides for Rust developers
+
+---
+
 ## [1.5.5] - 2025-11-25
 
 ### Changed

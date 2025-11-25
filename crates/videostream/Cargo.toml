@@ -1,6 +1,7 @@
 [package]
 name = "videostream"
 description = "Safe Rust bindings for VideoStream Library - zero-copy video frame management and distribution"
+readme = "README.md"
 version.workspace = true
 authors.workspace = true
 license.workspace = true

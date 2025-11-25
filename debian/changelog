@@ -1,3 +1,11 @@
+videostream (1.5.6-1) stable; urgency=medium
+
+  * GitHub Actions: Fixed release workflow to include PDF documentation in release assets
+  * Rust crates: Added README.md files for videostream and videostream-sys crates
+  * Documentation: Improved crates.io presentation with Rust-specific guides
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Mon, 25 Nov 2025 00:00:00 +0000
+
 videostream (1.5.5-1) stable; urgency=medium
 
   * Makefile improvements and documentation updates
