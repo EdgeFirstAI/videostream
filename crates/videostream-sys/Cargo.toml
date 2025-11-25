@@ -1,6 +1,7 @@
 [package]
 name = "videostream-sys"
 description = "Low-level FFI bindings for VideoStream Library - unsafe bindings to libvideostream"
+readme = "README.md"
 version.workspace = true
 authors.workspace = true
 license.workspace = true

@@ -261,49 +261,32 @@ jobs:
         run: |
           mkdir -p release-assets
           
-          # Documentation PDF
-          if [ -f artifacts/documentation/doc/_build/latex/VideoStream.pdf ]; then
-            cp artifacts/documentation/doc/_build/latex/VideoStream.pdf \
+          # Debug: Show artifact structure
+          echo "=== Artifact directory structure ==="
+          find artifacts -type f || echo "No artifacts found"
+          echo ""
+          
+          # Documentation PDF (primary artifact to include)
+          PDF_PATH=$(find artifacts/documentation -name "VideoStream.pdf" -type f 2>/dev/null | head -1)
+          if [ -n "$PDF_PATH" ] && [ -f "$PDF_PATH" ]; then
+            cp "$PDF_PATH" \
                release-assets/videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf
-          fi
-          
-          # ZIP packages
-          if [ -f artifacts/zip-package-x86_64/videostream-*.zip ]; then
-            cp artifacts/zip-package-x86_64/videostream-*.zip \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-x86_64.zip
-          fi
-          
-          if [ -f artifacts/zip-package-aarch64/videostream-*.zip ]; then
-            cp artifacts/zip-package-aarch64/videostream-*.zip \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-aarch64.zip
-          fi
-          
-          # Debian packages (x86_64)
-          if [ -d artifacts/debian-packages-x86_64 ]; then
-            for deb in artifacts/debian-packages-x86_64/*.deb; do
-              if [ -f "$deb" ]; then
-                BASENAME=$(basename "$deb")
-                cp "$deb" "release-assets/${BASENAME%.deb}-x86_64.deb"
-              fi
-            done
-          fi
-          
-          # Debian packages (aarch64)
-          if [ -d artifacts/debian-packages-aarch64 ]; then
-            for deb in artifacts/debian-packages-aarch64/*.deb; do
-              if [ -f "$deb" ]; then
-                BASENAME=$(basename "$deb")
-                cp "$deb" "release-assets/${BASENAME%.deb}-aarch64.deb"
-              fi
-            done
+            echo "✓ Documentation PDF copied"
+          else
+            echo "ERROR: Documentation PDF not found"
+            exit 1
           fi
           
           # SBOM
           if [ -f artifacts/sbom/sbom.json ]; then
             cp artifacts/sbom/sbom.json \
                release-assets/videostream-${{ needs.prepare-release.outputs.version }}-sbom.json
+            echo "✓ SBOM copied"
+          else
+            echo "⚠ SBOM not found (non-critical)"
           fi
           
+          echo ""
           echo "Release assets prepared:"
           ls -lh release-assets/
 
@@ -328,14 +311,7 @@ jobs:
             ```
             
             ### Debian Package
-            Download the appropriate `.deb` file for your architecture (x86_64 or aarch64) and install:
-            ```bash
-            sudo dpkg -i videostream-*.deb
-            sudo apt-get install -f  # Install dependencies
-            ```
-            
-            ### Binary Release (ZIP)
-            Download the ZIP archive for your architecture and extract to desired location.
+            Available through standard apt repository or download `.deb` files from build artifacts.
             
             ---
             
@@ -345,12 +321,12 @@ jobs:
             
             ---
             
-            ## Assets
+            ## Release Assets
             
-            - **Documentation**: `videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf`
-            - **SBOM**: `videostream-${{ needs.prepare-release.outputs.version }}-sbom.json` (CycloneDX format)
-            - **Linux x86_64**: ZIP and DEB packages
-            - **Linux ARM64**: ZIP and DEB packages
+            - **Documentation PDF**: Complete reference documentation
+            - **SBOM**: Software Bill of Materials in CycloneDX format
+            
+            **Note**: ZIP and DEB packages include HTML documentation. Build artifacts are available in the Actions tab.
             
             ## Links
             
