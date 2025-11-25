@@ -42,6 +42,7 @@
 #define FRAME_HEIGHT 1080
 #define FRAME_LIFESPAN_NS 1000000000LL // 1 second
 #define FRAME_DURATION_NS 33333333LL   // ~30fps
+#define SEPARATOR "==========================================================================="
 
 static volatile bool g_running = true;
 
@@ -50,6 +51,42 @@ signal_handler(int sig)
 {
     (void) sig;
     g_running = false;
+}
+
+/**
+ * Create and allocate a new frame
+ */
+static VSLFrame*
+create_frame(void** data_out)
+{
+    VSLFrame* frame = vsl_frame_init(FRAME_WIDTH,
+                                     FRAME_HEIGHT,
+                                     0,
+                                     VSL_FOURCC('N', 'V', '1', '2'),
+                                     NULL,
+                                     NULL);
+    if (!frame) {
+        fprintf(stderr, "ERROR: Failed to create frame\n");
+        return NULL;
+    }
+
+    if (vsl_frame_alloc(frame, NULL) < 0) {
+        fprintf(stderr, "ERROR: Failed to allocate frame\n");
+        vsl_frame_release(frame);
+        return NULL;
+    }
+
+    void* data = vsl_frame_mmap(frame, NULL);
+    if (!data) {
+        fprintf(stderr, "ERROR: Failed to map frame\n");
+        vsl_frame_release(frame);
+        return NULL;
+    }
+
+    if (data_out) {
+        *data_out = data;
+    }
+    return frame;
 }
 
 /**
@@ -143,16 +180,13 @@ main(int argc, char* argv[])
     // Parse command-line arguments
     if (argc > 1) { socket_path = argv[1]; }
 
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("VideoStream Host Test - Frame Producer\n");
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("Version: %s\n", vsl_version());
     printf("Socket:  %s\n", socket_path);
     printf("Format:  %dx%d NV12\n", FRAME_WIDTH, FRAME_HEIGHT);
-    printf("==================================================================="
-           "==========\n\n");
+    printf("%s\n\n", SEPARATOR);
 
     // Check DMA heap access
     printf("Checking system requirements...\n");
@@ -176,56 +210,29 @@ main(int argc, char* argv[])
 
     // Create a 1920x1080 NV12 frame
     printf("Creating frame: %dx%d NV12\n", FRAME_WIDTH, FRAME_HEIGHT);
-    frame = vsl_frame_init(FRAME_WIDTH,                    // width
-                           FRAME_HEIGHT,                   // height
-                           0,                              // stride (0=auto)
-                           VSL_FOURCC('N', 'V', '1', '2'), // format
-                           NULL,                           // userptr
-                           NULL);                          // cleanup callback
-
-    if (!frame) {
-        fprintf(stderr, "ERROR: Failed to create frame: %s\n", strerror(errno));
-        goto cleanup;
-    }
-    printf("✓ Frame created successfully\n");
-
-    // Allocate backing memory (DmaBuf or shared memory)
-    printf("Allocating frame memory...\n");
-    if (dma_status > 0) { printf("  Attempting DMA heap allocation...\n"); }
-    if (vsl_frame_alloc(frame, NULL) < 0) {
-        fprintf(stderr,
-                "ERROR: Failed to allocate frame: %s\n",
-                strerror(errno));
-        goto cleanup;
-    }
-    printf("✓ Frame allocated: %dx%d, %d bytes\n",
+    void* data = NULL;
+    frame      = create_frame(&data);
+    if (!frame) { goto cleanup; }
+    printf("✓ Frame created and allocated successfully\n");
+    printf("  Size: %dx%d, %d bytes\n",
            vsl_frame_width(frame),
            vsl_frame_height(frame),
            vsl_frame_size(frame));
 
     const char* frame_path = vsl_frame_path(frame);
     if (frame_path) {
-        printf("  Memory type: %s\n",
-               strstr(frame_path, "/dev/") ? "DMA heap (zero-copy)"
-                                           : "POSIX shared memory");
+        const char* mem_type = strstr(frame_path, "/dev/") 
+                                   ? "DMA heap (zero-copy)" 
+                                   : "POSIX shared memory";
+        printf("  Memory type: %s\n", mem_type);
         printf("  Path: %s\n", frame_path);
     }
     printf("\n");
 
-    // Map frame for writing
-    void* data = vsl_frame_mmap(frame, NULL);
-    if (!data) {
-        fprintf(stderr, "ERROR: Failed to map frame: %s\n", strerror(errno));
-        goto cleanup;
-    }
-    printf("✓ Frame mapped for access\n\n");
-
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("Waiting for clients to connect...\n");
     printf("Press Ctrl+C to stop\n");
-    printf("==================================================================="
-           "==========\n\n");
+    printf("%s\n\n", SEPARATOR);
 
     // Main loop: publish frames to clients
     while (g_running) {
@@ -242,26 +249,8 @@ main(int argc, char* argv[])
             fprintf(stderr,
                     "ERROR: Failed to post frame: %s\n",
                     strerror(errno));
-            // Recreate frame for next iteration
-            frame = vsl_frame_init(FRAME_WIDTH,
-                                   FRAME_HEIGHT,
-                                   0,
-                                   VSL_FOURCC('N', 'V', '1', '2'),
-                                   NULL,
-                                   NULL);
-            if (!frame) {
-                fprintf(stderr, "ERROR: Failed to recreate frame\n");
-                break;
-            }
-            if (vsl_frame_alloc(frame, NULL) < 0) {
-                fprintf(stderr, "ERROR: Failed to reallocate frame\n");
-                break;
-            }
-            data = vsl_frame_mmap(frame, NULL);
-            if (!data) {
-                fprintf(stderr, "ERROR: Failed to remap frame\n");
-                break;
-            }
+            frame = create_frame(&data);
+            if (!frame) { break; }
         } else {
             frame_count++;
             if (frame_count % 30 == 0) {
@@ -272,25 +261,8 @@ main(int argc, char* argv[])
 
             // Recreate frame for next iteration (previous one was posted to
             // host)
-            frame = vsl_frame_init(FRAME_WIDTH,
-                                   FRAME_HEIGHT,
-                                   0,
-                                   VSL_FOURCC('N', 'V', '1', '2'),
-                                   NULL,
-                                   NULL);
-            if (!frame) {
-                fprintf(stderr, "ERROR: Failed to recreate frame\n");
-                break;
-            }
-            if (vsl_frame_alloc(frame, NULL) < 0) {
-                fprintf(stderr, "ERROR: Failed to reallocate frame\n");
-                break;
-            }
-            data = vsl_frame_mmap(frame, NULL);
-            if (!data) {
-                fprintf(stderr, "ERROR: Failed to remap frame\n");
-                break;
-            }
+            frame = create_frame(&data);
+            if (!frame) { break; }
         }
 
         // Process host events (accept clients, expire frames)
@@ -300,12 +272,10 @@ main(int argc, char* argv[])
         usleep(33333);
     }
 
-    printf("\n================================================================="
-           "============\n");
+    printf("\n%s\n", SEPARATOR);
     printf("Shutting down...\n");
     printf("Published %d total frames\n", frame_count);
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
 
     ret = 0;
 

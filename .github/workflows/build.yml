@@ -117,9 +117,9 @@ jobs:
           cmake --build build -j$(nproc)
 
       - name: Create ZIP package
-        working-directory: build
         run: |
           cpack
+        working-directory: build
 
       - name: List package contents
         run: |

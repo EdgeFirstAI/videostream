@@ -40,6 +40,7 @@
 
 #define DEFAULT_SOCKET_PATH "/tmp/videostream_test.sock"
 #define DEFAULT_NUM_FRAMES 100
+#define SEPARATOR "==========================================================================="
 
 static volatile bool g_running = true;
 
@@ -110,21 +111,17 @@ main(int argc, char* argv[])
     if (argc > 1) { socket_path = argv[1]; }
     if (argc > 2) { num_frames = atoi(argv[2]); }
 
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("VideoStream Client Test - Frame Consumer\n");
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("Version:      %s\n", vsl_version());
     printf("Socket:       %s\n", socket_path);
-    printf("Target frames: %s\n",
-           num_frames == 0 ? "infinite"
-                           : (snprintf(NULL, 0, "%d", num_frames),
-                              (char[64]) {0},
-                              sprintf((char[64]) {0}, "%d", num_frames),
-                              (char[64]) {0}));
-    printf("==================================================================="
-           "==========\n\n");
+    if (num_frames == 0) {
+        printf("Target frames: infinite\n");
+    } else {
+        printf("Target frames: %d\n", num_frames);
+    }
+    printf("%s\n\n", SEPARATOR);
 
     // Set up signal handlers for clean shutdown
     signal(SIGINT, signal_handler);
@@ -149,12 +146,10 @@ main(int argc, char* argv[])
     printf("✓ Connected to host\n");
     printf("  Path: %s\n\n", vsl_client_path(client));
 
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("Receiving frames...\n");
     printf("Press Ctrl+C to stop\n");
-    printf("==================================================================="
-           "==========\n\n");
+    printf("%s\n\n", SEPARATOR);
 
     start_time = vsl_timestamp();
 
@@ -173,35 +168,35 @@ main(int argc, char* argv[])
         }
 
         if (frame_count == 0) { first_frame_time = vsl_timestamp(); }
-
         frame_count++;
 
         // Lock frame for access
-        if (vsl_frame_trylock(frame) == 0) {
-            // Map frame data
-            size_t size = 0;
-            void*  data = vsl_frame_mmap(frame, &size);
-            if (data) {
-                // Calculate checksum for validation
-                unsigned long checksum = calculate_checksum(data, size);
-
-                // Print detailed stats for first frame and every 30th frame
-                if (frame_count == 1 || frame_count % 30 == 0) {
-                    print_frame_stats(frame, frame_count, checksum);
-                }
-
-                vsl_frame_munmap(frame);
-            } else {
-                fprintf(stderr,
-                        "WARNING: Failed to map frame %d\n",
-                        frame_count);
-            }
-
-            vsl_frame_unlock(frame);
-        } else {
+        if (vsl_frame_trylock(frame) != 0) {
             fprintf(stderr, "WARNING: Failed to lock frame %d\n", frame_count);
+            vsl_frame_release(frame);
+            continue;
         }
 
+        // Map frame data
+        size_t size = 0;
+        void*  data = vsl_frame_mmap(frame, &size);
+        if (!data) {
+            fprintf(stderr, "WARNING: Failed to map frame %d\n", frame_count);
+            vsl_frame_unlock(frame);
+            vsl_frame_release(frame);
+            continue;
+        }
+
+        // Calculate checksum for validation
+        unsigned long checksum = calculate_checksum(data, size);
+
+        // Print detailed stats for first frame and every 30th frame
+        if (frame_count == 1 || frame_count % 30 == 0) {
+            print_frame_stats(frame, frame_count, checksum);
+        }
+
+        vsl_frame_munmap(frame);
+        vsl_frame_unlock(frame);
         vsl_frame_release(frame);
     }
 
@@ -209,19 +204,16 @@ main(int argc, char* argv[])
     double  total_duration   = (end_time - start_time) / 1e9;
     double  receive_duration = (end_time - first_frame_time) / 1e9;
 
-    printf("\n================================================================="
-           "============\n");
+    printf("\n%s\n", SEPARATOR);
     printf("Statistics\n");
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
     printf("Frames received:  %d\n", frame_count);
     printf("Total time:       %.2f seconds\n", total_duration);
     printf("Receive time:     %.2f seconds\n", receive_duration);
     if (receive_duration > 0) {
         printf("Average FPS:      %.2f\n", frame_count / receive_duration);
     }
-    printf("==================================================================="
-           "==========\n");
+    printf("%s\n", SEPARATOR);
 
     ret = 0;
 
