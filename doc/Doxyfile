@@ -26,13 +26,21 @@ WARN_IF_DOC_ERROR       = YES
 ENABLE_PREPROCESSING    = YES
 MACRO_EXPANSION         = YES
 EXPAND_ONLY_PREDEF      = YES
-PREDEFINED              = "VSL_API" \
-                          "VSL_WARN_UNUSED_RESULT" \
-                          "VSL_AVAILABLE_SINCE_1_0" \
-                          "VSL_DEPRECATED_SINCE_1_0" \
-                          "VSL_AVAILABLE_SINCE_1_1" \
-                          "VSL_DEPRECATED_SINCE_1_1" \
-                          "VSL_AVAILABLE_SINCE_1_2" \
-                          "VSL_DEPRECATED_SINCE_1_2" \
-                          "VSL_AVAILABLE_SINCE_1_3" \
-                          "VSL_DEPRECATED_SINCE_1_3"
+PREDEFINED              = VSL_API= \
+                          VSL_WARN_UNUSED_RESULT= \
+                          VSL_AVAILABLE_SINCE_1_0= \
+                          VSL_DEPRECATED_SINCE_1_0= \
+                          VSL_AVAILABLE_SINCE_1_1= \
+                          VSL_DEPRECATED_SINCE_1_1= \
+                          VSL_AVAILABLE_SINCE_1_2= \
+                          VSL_DEPRECATED_SINCE_1_2= \
+                          VSL_AVAILABLE_SINCE_1_3= \
+                          VSL_DEPRECATED_SINCE_1_3= \
+                          VSL_AVAILABLE_SINCE_1_4= \
+                          VSL_DEPRECATED_SINCE_1_4= \
+                          VSL_AVAILABLE_SINCE_1_5= \
+                          VSL_DEPRECATED_SINCE_1_5=
+
+EXTRACT_ALL             = YES
+EXTRACT_PRIVATE         = NO
+EXTRACT_STATIC          = NO

@@ -1,0 +1,145 @@
+name: Bug Report
+description: Report a bug in VideoStream Library
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug in VideoStream Library!
+        
+        Please provide as much detail as possible to help us investigate and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear and concise description of the bug
+      placeholder: Describe what happened vs. what you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the issue
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages, logs)
+      placeholder: Paste error messages, logs, or stack traces here
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: VideoStream Version
+      description: Which version are you using? (run `vsl_version` or check `include/videostream.h`)
+      placeholder: "1.5.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Which platform are you running on?
+      options:
+        - NXP i.MX8M Plus
+        - NXP i.MX8M
+        - NXP i.MX8
+        - Generic ARM64
+        - Generic ARMv7
+        - x86_64
+        - Other (specify below)
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Linux Kernel Version
+      description: Output of `uname -r`
+      placeholder: "5.15.0"
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - Camera Capture (V4L2)
+        - Hardware Encoding (H.264/H.265)
+        - IPC Frame Sharing (Host/Client)
+        - GStreamer Plugin (vslsink/vslsrc)
+        - Python Bindings
+        - Build System
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: acceleration
+    attributes:
+      label: Hardware Acceleration
+      description: Are you using hardware acceleration?
+      options:
+        - DmaBuf (zero-copy)
+        - G2D (format conversion)
+        - VPU (encoding)
+        - None (software only)
+        - Unknown
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: Additional environment information (GStreamer version, camera model, etc.)
+      placeholder: |
+        - GStreamer: 1.18.5
+        - Camera: IMX219 (MIPI CSI-2)
+        - Python: 3.8.10
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Debug Output
+      description: Relevant logs (set `GST_DEBUG=3` for GStreamer, or enable debug logging)
+      placeholder: Paste logs here
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might help (screenshots, system configuration, etc.)
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I searched existing issues and didn't find a duplicate
+          required: true
+        - label: I tested with the latest version
+          required: false
+        - label: I can reproduce this consistently
+          required: false

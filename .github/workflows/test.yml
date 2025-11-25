@@ -10,7 +10,7 @@
 # - actions/upload-artifact@v4 (latest)
 # - dtolnay/rust-toolchain@stable (latest)
 # - Swatinem/rust-cache@v2 (latest)
-# - SonarSource/sonarcloud-github-action@master
+# - SonarSource/sonarqube-scan-action@v6 (latest)
 #
 # Runner Notes:
 # - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
@@ -159,10 +159,8 @@ jobs:
           # Generate native .gcov files in build/gcov directory
           # This captures coverage from Python tests, Rust tests, and any C tests
           mkdir -p build/gcov
-          cd build
-          find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true
-          mv *.gcov gcov/ 2>/dev/null || true
-          cd ..
+          (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
+          (cd build && mv *.gcov gcov/ 2>/dev/null || true)
           # Also generate Cobertura XML for artifacts/alternative analysis
           gcovr -r . --cobertura -o build/coverage_c.xml build/
 
