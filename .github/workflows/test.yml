@@ -265,6 +265,19 @@ jobs:
           venv/bin/pip install pytest slipcover pytest-timeout
           venv/bin/pip install -r requirements.txt
 
+      - name: Debug environment info
+        run: |
+          echo "=== User and groups ==="
+          whoami
+          id
+          groups
+          echo ""
+          echo "=== DMA heap devices ==="
+          ls -la /dev/dma_heap/ || echo "DMA heap directory not found"
+          echo ""
+          echo "=== Video devices ==="
+          ls -la /dev/video* 2>/dev/null || echo "No video devices found"
+
       - name: Run Python tests with coverage (hardware accelerated)
         run: |
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
