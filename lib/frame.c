@@ -500,9 +500,12 @@ vsl_frame_sync(const VSLFrame* frame, int enable, int mode)
     struct dma_buf_sync sync = {0};
 
     sync.flags |= enable ? DMA_BUF_SYNC_START : DMA_BUF_SYNC_END;
-    sync.flags |= mode & O_RDONLY ? DMA_BUF_SYNC_READ : 0;
-    sync.flags |= mode & O_WRONLY ? DMA_BUF_SYNC_WRITE : 0;
-    sync.flags |= mode & O_RDWR ? DMA_BUF_SYNC_RW : 0;
+
+    // O_RDONLY is 0, so bitwise AND doesn't work. Use equality checks instead.
+    // Set READ flag if mode is not write-only (i.e., RDONLY or RDWR)
+    // Set WRITE flag if mode is not read-only (i.e., WRONLY or RDWR)
+    if (mode != O_WRONLY) { sync.flags |= DMA_BUF_SYNC_READ; }
+    if (mode != O_RDONLY) { sync.flags |= DMA_BUF_SYNC_WRITE; }
 
 #ifndef NDEBUG
     printf("%s (%d %d) %d %s %s\n",
