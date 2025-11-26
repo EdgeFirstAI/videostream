@@ -9,10 +9,10 @@
 # - actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b (v5.3.0)
 # - actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 (v4.4.3)
 # - actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 (v4.1.8)
-# - dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a (stable)
-# - Swatinem/rust-cache@82a92a5b8b938b84d92384cb7f96219435c6f0e0 (v2.7.7)
+# - dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b (stable)
+# - Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 (v2.7.7)
 # - SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 (v6.0.0)
-# - EnricoMi/publish-unit-test-result-action@567cc7f8dcea3f8d4a602e63889c4a4f5e6d7e62 (v2.18.0)
+# - EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b (v2.18.0)
 #
 # Runner Notes:
 # - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
@@ -128,12 +128,12 @@ jobs:
           python3 -m pip install -r requirements.txt
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a  # stable
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
         with:
           components: llvm-tools-preview, clippy, rustfmt
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@82a92a5b8b938b84d92384cb7f96219435c6f0e0  # v2.7.7
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           shared-key: rust-${{ matrix.platform.name }}
           cache-on-failure: true
@@ -208,7 +208,7 @@ jobs:
           retention-days: 30
 
       - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@567cc7f8dcea3f8d4a602e63889c4a4f5e6d7e62  # v2.18.0
+        uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
         if: always()
         with:
           files: |
