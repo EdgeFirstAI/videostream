@@ -11,7 +11,7 @@
 # - actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 (v4.1.8)
 # - dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a (stable)
 # - Swatinem/rust-cache@82a92a5b8b938b84d92384cb7f96219435c6f0e0 (v2.7.7)
-# - SonarSource/sonarqube-scan-action@e44258b109568baa0df60ed515909fc6c72cba92 (v6)
+# - SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 (v6.0.0)
 # - EnricoMi/publish-unit-test-result-action@567cc7f8dcea3f8d4a602e63889c4a4f5e6d7e62 (v2.18.0)
 #
 # Runner Notes:
@@ -90,7 +90,7 @@ jobs:
             lcov gcovr
 
       - name: Install Build Wrapper
-        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@e44258b109568baa0df60ed515909fc6c72cba92  # v6
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602  # v6.0.0
 
       - name: Detect build wrapper binary
         id: build-wrapper
@@ -285,7 +285,7 @@ jobs:
           echo "RUST_COVERAGE_PATHS=$RUST_REPORTS" >> $GITHUB_ENV
 
       - name: Run SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@e44258b109568baa0df60ed515909fc6c72cba92  # v6
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602  # v6.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
