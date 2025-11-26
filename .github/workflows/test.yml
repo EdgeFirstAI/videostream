@@ -4,24 +4,32 @@
 # runs unit tests (C, Python, and Rust), collects coverage data, and 
 # performs static analysis including SonarCloud scanning.
 #
-# Action Versions (verified November 2025):
-# - actions/checkout@v4 (latest)
-# - actions/setup-python@v5 (latest)
-# - actions/upload-artifact@v4 (latest)
-# - dtolnay/rust-toolchain@stable (latest)
-# - Swatinem/rust-cache@v2 (latest)
-# - SonarSource/sonarqube-scan-action@v6 (latest)
+# Action Versions (hash-pinned per SPS v2.1):
+# - actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (v4.2.2)
+# - actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b (v5.3.0)
+# - actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 (v4.4.3)
+# - actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 (v4.1.8)
+# - dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a (stable)
+# - Swatinem/rust-cache@82a92a5b8b938b84d92384cb7f96219435c6f0e0 (v2.7.7)
+# - SonarSource/sonarqube-scan-action@e44258b109568baa0df60ed515909fc6c72cba92 (v6)
+# - EnricoMi/publish-unit-test-result-action@567cc7f8dcea3f8d4a602e63889c4a4f5e6d7e62 (v2.18.0)
 #
 # Runner Notes:
 # - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
 # - ubuntu-22.04-arm: Custom larger runner (ARM64) configured in organization settings
-# - Future: Custom runners for i.MX 8M Plus and other embedded devices
+# - nxp-imx8mp-latest: NXP i.MX 8M Plus EVK with hardware accelerators (BSP 6.12.34-2.1.0)
 #
 # Coverage Strategy:
 # - Each platform runs tests independently and generates coverage
 # - Coverage artifacts are uploaded from all platforms
 # - Dedicated sonarcloud job downloads and merges all coverage reports
 # - This scales to support additional embedded device runners
+#
+# Testing Strategy (SPS v2.1):
+# - Uses slipcover for Python coverage (faster than pytest-cov)
+# - Uses cargo-nextest for Rust tests with JUnit XML output
+# - Captures test performance metrics with /usr/bin/time -v
+# - Publishes test results with EnricoMi/publish-unit-test-result-action
 
 name: Test
 
@@ -50,20 +58,19 @@ jobs:
           - name: aarch64
             runner: ubuntu-22.04-arm
             enable_hardware: false
-          # Future platforms:
-          # - name: imx8mp
-          #   runner: self-hosted-imx8mp
-          #   enable_hardware: true
+          - name: imx8mp
+            runner: nxp-imx8mp-latest
+            enable_hardware: true
       fail-fast: false
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0  # Full history for SonarCloud
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: '3.8'
 
@@ -83,7 +90,7 @@ jobs:
             lcov gcovr
 
       - name: Install Build Wrapper
-        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@v6
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@e44258b109568baa0df60ed515909fc6c72cba92  # v6
 
       - name: Detect build wrapper binary
         id: build-wrapper
@@ -117,22 +124,24 @@ jobs:
       - name: Install Python test dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install pytest pytest-cov pytest-timeout
+          python3 -m pip install pytest slipcover pytest-timeout
           python3 -m pip install -r requirements.txt
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a  # stable
         with:
           components: llvm-tools-preview, clippy, rustfmt
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@82a92a5b8b938b84d92384cb7f96219435c6f0e0  # v2.7.7
         with:
           shared-key: rust-${{ matrix.platform.name }}
           cache-on-failure: true
 
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --version 0.6.16
+      - name: Install cargo tools
+        run: |
+          cargo install cargo-llvm-cov --version 0.6.16
+          cargo install cargo-nextest --locked
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -144,15 +153,18 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          python3 -m pytest tests -v \
-            --junitxml=build/pytest_results.xml \
-            --cov --cov-report=xml:build/coverage_python.xml
+          /usr/bin/time -v python3 -m slipcover -m pytest tests -v \
+            --junitxml=build/pytest_results.xml 2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
+
+          # slipcover generates .coverage file, convert to XML for SonarCloud
+          python3 -m coverage xml -o build/coverage_python.xml
 
       - name: Run Rust tests with coverage
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
-          cargo llvm-cov --workspace --lib --cobertura --output-path build/coverage_rust.xml
+          /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
+            --cobertura --output-path build/coverage_rust.xml 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
         run: |
@@ -165,7 +177,7 @@ jobs:
           gcovr -r . --cobertura -o build/coverage_c.xml build/
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
         if: always()
         with:
           name: coverage-${{ matrix.platform.name }}
@@ -176,22 +188,34 @@ jobs:
           retention-days: 30
 
       - name: Upload test results and metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
         if: always()
         with:
           name: test-results-${{ matrix.platform.name }}
           path: |
             build/pytest_results.xml
             build/coverage_c.xml
+            target/nextest/default/test-results.xml
+            build/test-metrics-*-${{ matrix.platform.name }}.txt
           retention-days: 30
 
       - name: Upload build wrapper output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
         if: always()
         with:
           name: build-wrapper-output-${{ matrix.platform.name }}
           path: ${{ env.BUILD_WRAPPER_OUT_DIR }}
           retention-days: 30
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@567cc7f8dcea3f8d4a602e63889c4a4f5e6d7e62  # v2.18.0
+        if: always()
+        with:
+          files: |
+            build/pytest_results.xml
+            target/nextest/default/test-results.xml
+          check_name: Test Results (${{ matrix.platform.name }})
+          comment_mode: always
 
   sonarcloud:
     name: SonarCloud Analysis
@@ -204,18 +228,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0  # Full history for SonarCloud blame data
 
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           pattern: coverage-*
           path: coverage/
 
       - name: Download all build wrapper outputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           pattern: build-wrapper-output-*
           path: build-wrapper/
@@ -261,7 +285,7 @@ jobs:
           echo "RUST_COVERAGE_PATHS=$RUST_REPORTS" >> $GITHUB_ENV
 
       - name: Run SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@e44258b109568baa0df60ed515909fc6c72cba92  # v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

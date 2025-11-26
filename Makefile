@@ -3,15 +3,38 @@
 .PHONY: help
 help:
 	@echo "Available targets:"
+	@echo "  make build          - Build with coverage enabled for testing (C + Rust + Python)"
 	@echo "  make format         - Format source code (C, Rust, Python)"
 	@echo "  make lint           - Run linters (clippy for Rust)"
-	@echo "  make test           - Run test suite"
+	@echo "  make test           - Run test suite with coverage"
 	@echo "  make test-ipc       - Run host/client IPC integration test"
 	@echo "  make sbom           - Generate SBOM and check license policy"
 	@echo "  make verify-version - Verify version consistency across files"
 	@echo "  make pre-release    - Run all pre-release checks"
 	@echo "  make doc            - Generate HTML documentation (Sphinx + Doxygen)"
 	@echo "  make clean          - Clean build artifacts"
+
+# Build target: Build with coverage enabled for testing (SPS v2.1)
+# Purpose: Build native libraries with coverage instrumentation before running tests
+# This ensures Python tests capture native code coverage
+.PHONY: build
+build:
+	@echo "Building C library with coverage enabled..."
+	@cmake -S . -B build \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DENABLE_COVER=ON \
+		-DENABLE_VPU=OFF \
+		-DENABLE_G2D=OFF
+	@cmake --build build -j$$(nproc)
+	@echo "Building Rust crates..."
+	@cargo build --all-features
+	@echo "Installing Python package (editable mode with coverage-enabled native library)..."
+	@if [ -d "venv" ]; then \
+		bash -c "source venv/bin/activate && pip install -e ."; \
+	else \
+		pip install -e .; \
+	fi
+	@echo "✓ Build complete (coverage instrumentation enabled)"
 
 .PHONY: doc
 doc:
@@ -63,19 +86,27 @@ sbom:
 	@python3 .github/scripts/validate_notice.py NOTICE sbom-deps.json
 	@echo "✓ SBOM generated, license policy verified, and NOTICE validated"
 
+# Test target: Run all tests with coverage (SPS v2.1)
+# Uses slipcover for Python and cargo-nextest for Rust
 .PHONY: test
-test:
-	@echo "Running tests with library..."
-	@if [ ! -f "build/libvideostream.so.1" ]; then \
-		echo "ERROR: Library not built. Run: cmake -S . -B build && cmake --build build"; \
-		exit 1; \
-	fi
+test: build
+	@echo "Running Rust tests with coverage (cargo-nextest)..."
+	@cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/rust-coverage.lcov
+
+	@echo "Running Python tests with coverage (slipcover)..."
 	@if [ -f env.sh ]; then \
-		echo "Sourcing env.sh..."; \
-		bash -c "source env.sh && source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"; \
+		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=./build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && python3 -m slipcover -m pytest tests/ --junitxml=test-results.xml && python3 -m coverage xml -o coverage_python.xml"; \
 	else \
-		bash -c "source venv/bin/activate && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && pytest tests/"; \
+		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=./build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && python3 -m slipcover -m pytest tests/ --junitxml=test-results.xml && python3 -m coverage xml -o coverage_python.xml"; \
 	fi
+
+	@echo "Generating C/C++ coverage reports..."
+	@mkdir -p build/gcov
+	@(cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
+	@(cd build && mv *.gcov gcov/ 2>/dev/null || true)
+	@gcovr -r . --cobertura -o coverage_c.xml build/
+
+	@echo "✓ All tests complete with coverage"
 
 .PHONY: test-ipc
 test-ipc:
@@ -99,7 +130,7 @@ verify-version:
 	echo "All version files verified ✓"
 
 .PHONY: pre-release
-pre-release: format lint verify-version test sbom
+pre-release: clean build format lint verify-version test sbom
 	@echo "Updating Cargo.lock..."
 	@cargo update --workspace
 	@echo "✓ Cargo.lock updated"
