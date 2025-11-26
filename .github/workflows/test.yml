@@ -160,11 +160,9 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          /usr/bin/time -v venv/bin/python -m slipcover -m pytest tests -v \
-            --junitxml=build/pytest_results.xml 2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
-
-          # slipcover generates .coverage file, convert to XML for SonarCloud
-          venv/bin/python -m coverage xml -o build/coverage_python.xml
+          /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
+            -m pytest tests -v --junitxml=build/pytest_results.xml \
+            2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
 
       - name: Run Rust tests with coverage
         env:
@@ -271,11 +269,9 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          /usr/bin/time -v venv/bin/python -m slipcover -m pytest tests -v \
-            --junitxml=build/pytest_results.xml 2>&1 | tee build/test-metrics-python-imx8mp.txt
-
-          # slipcover generates .coverage file, convert to XML for SonarCloud
-          venv/bin/python -m coverage xml -o build/coverage_python.xml
+          /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
+            -m pytest tests -v --junitxml=build/pytest_results.xml \
+            2>&1 | tee build/test-metrics-python-imx8mp.txt
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
