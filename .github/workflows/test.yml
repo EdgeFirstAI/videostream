@@ -16,14 +16,18 @@
 #
 # Runner Notes:
 # - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
-# - ubuntu-22.04-arm: Custom larger runner (ARM64) configured in organization settings
-# - nxp-imx8mp-latest: NXP i.MX 8M Plus EVK with hardware accelerators (BSP 6.12.34-2.1.0)
+# - ubuntu-22.04-arm: GitHub-hosted ARM64 runner for building aarch64 binaries
+# - nxp-imx8mp-latest: NXP i.MX 8M Plus EVK - test-only runner (no toolchain)
+#
+# Build Strategy:
+# - x86_64 and aarch64 builds happen on GitHub-hosted runners
+# - imx8mp runner downloads aarch64 artifacts and runs tests only
+# - This allows hardware-accelerated testing without requiring a full toolchain
 #
 # Coverage Strategy:
 # - Each platform runs tests independently and generates coverage
 # - Coverage artifacts are uploaded from all platforms
 # - Dedicated sonarcloud job downloads and merges all coverage reports
-# - This scales to support additional embedded device runners
 #
 # Testing Strategy (SPS v2.1):
 # - Uses slipcover for Python coverage (faster than pytest-cov)
@@ -40,8 +44,11 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    name: Test and Coverage (${{ matrix.platform.name }})
+  # ===========================================================================
+  # Build and Test on GitHub-hosted runners (x86_64 and aarch64)
+  # ===========================================================================
+  build-and-test:
+    name: Build & Test (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -54,13 +61,8 @@ jobs:
         platform:
           - name: x86_64
             runner: ubuntu-22.04
-            enable_hardware: false
           - name: aarch64
             runner: ubuntu-22.04-arm
-            enable_hardware: false
-          - name: imx8mp
-            runner: nxp-imx8mp-latest
-            enable_hardware: true
       fail-fast: false
 
     steps:
@@ -74,10 +76,15 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Create Python virtual environment
+        run: |
+          python3 -m venv venv
+          echo "${{ github.workspace }}/venv/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get remove libunwind-*
+          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config \
             libgstreamer1.0-dev \
@@ -85,7 +92,7 @@ jobs:
             gstreamer1.0-tools \
             gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad \
-            python3 python3-pip python3-dev \
+            python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev \
             lcov gcovr
 
@@ -112,8 +119,8 @@ jobs:
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DENABLE_COVER=ON \
-                -DENABLE_VPU=${{ matrix.platform.enable_hardware && 'ON' || 'OFF' }} \
-                -DENABLE_G2D=${{ matrix.platform.enable_hardware && 'ON' || 'OFF' }} \
+                -DENABLE_VPU=OFF \
+                -DENABLE_G2D=OFF \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build with SonarCloud build wrapper
@@ -123,9 +130,9 @@ jobs:
 
       - name: Install Python test dependencies
         run: |
-          python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install pytest slipcover pytest-timeout
-          python3 -m pip install -r requirements.txt
+          venv/bin/pip install --upgrade pip setuptools wheel
+          venv/bin/pip install pytest slipcover pytest-timeout
+          venv/bin/pip install -r requirements.txt
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
@@ -153,11 +160,11 @@ jobs:
         run: |
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          /usr/bin/time -v python3 -m slipcover -m pytest tests -v \
+          /usr/bin/time -v venv/bin/python -m slipcover -m pytest tests -v \
             --junitxml=build/pytest_results.xml 2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
 
           # slipcover generates .coverage file, convert to XML for SonarCloud
-          python3 -m coverage xml -o build/coverage_python.xml
+          venv/bin/python -m coverage xml -o build/coverage_python.xml
 
       - name: Run Rust tests with coverage
         env:
@@ -207,6 +214,16 @@ jobs:
           path: ${{ env.BUILD_WRAPPER_OUT_DIR }}
           retention-days: 30
 
+      - name: Upload build artifacts for hardware testing (aarch64 only)
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: matrix.platform.name == 'aarch64'
+        with:
+          name: build-aarch64
+          path: |
+            build/libvideostream.so*
+            build/vsl-*
+          retention-days: 7
+
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
         if: always()
@@ -217,9 +234,83 @@ jobs:
           check_name: Test Results (${{ matrix.platform.name }})
           comment_mode: always
 
+  # ===========================================================================
+  # Hardware Testing on NXP i.MX8M Plus (test-only, no build)
+  # ===========================================================================
+  hardware-test:
+    name: Hardware Test (imx8mp)
+    needs: build-and-test
+    runs-on: nxp-imx8mp-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Download aarch64 build artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: build-aarch64
+          path: build/
+
+      - name: Create Python virtual environment
+        run: |
+          python3 -m venv venv
+          echo "${{ github.workspace }}/venv/bin" >> $GITHUB_PATH
+
+      - name: Install Python test dependencies
+        run: |
+          venv/bin/pip install --upgrade pip setuptools wheel
+          venv/bin/pip install pytest slipcover pytest-timeout
+          venv/bin/pip install -r requirements.txt
+
+      - name: Run Python tests with coverage (hardware accelerated)
+        run: |
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+          export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
+          /usr/bin/time -v venv/bin/python -m slipcover -m pytest tests -v \
+            --junitxml=build/pytest_results.xml 2>&1 | tee build/test-metrics-python-imx8mp.txt
+
+          # slipcover generates .coverage file, convert to XML for SonarCloud
+          venv/bin/python -m coverage xml -o build/coverage_python.xml
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: always()
+        with:
+          name: coverage-imx8mp
+          path: |
+            build/coverage_python.xml
+          retention-days: 30
+
+      - name: Upload test results and metadata
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: always()
+        with:
+          name: test-results-imx8mp
+          path: |
+            build/pytest_results.xml
+            build/test-metrics-*-imx8mp.txt
+          retention-days: 30
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
+        if: always()
+        with:
+          files: |
+            build/pytest_results.xml
+          check_name: Test Results (imx8mp)
+          comment_mode: always
+
+  # ===========================================================================
+  # SonarCloud Analysis (aggregates coverage from all platforms)
+  # ===========================================================================
   sonarcloud:
     name: SonarCloud Analysis
-    needs: test
+    needs: [build-and-test, hardware-test]
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
