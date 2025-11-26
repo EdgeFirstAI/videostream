@@ -165,7 +165,7 @@ class Frame:
         """
         lib.vsl_frame_munmap(self._ptr)
 
-    def sync(self, enable: bool, mode: Sync) -> None:
+    def sync(self, enable: bool, mode: "Frame.Sync") -> None:
         """
         Cache synchronization session control for when using DMA-backed
         buffers.
