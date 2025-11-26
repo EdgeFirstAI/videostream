@@ -1,56 +1,5 @@
 # cargo-nextest configuration
-#
-# This configuration enables JUnit XML output for test result publishing
-# Reference: SPS v2.1 Section 07-software-quality-assurance.md
-#
-# SPS v2.1 Requirement: JUnit XML test reporting for EnricoMi/publish-unit-test-result-action
 
 [profile.default]
-# JUnit XML output for GitHub Actions test result publishing
+# JUnit XML output for CI test result publishing
 junit.path = "test-results.xml"
-junit.store-success-output = true
-junit.store-failure-output = true
-
-# Test execution settings
-retries = 0  # Don't retry failed tests by default
-fail-fast = false  # Run all tests even if some fail
-
-# Test threads (0 = number of logical CPUs)
-test-threads = 0
-
-# Timeout settings
-slow-timeout = { period = "60s", terminate-after = 2 }
-# leak-timeout = "100ms"  # Uncomment for async runtime leak detection
-
-# CI-specific profile for stricter settings
-[profile.ci]
-# Inherit from default
-inherits = "default"
-
-# Stricter timeout in CI
-slow-timeout = { period = "30s", terminate-after = 1 }
-
-# Don't capture output in CI for better debugging
-success-output = "immediate"
-failure-output = "immediate"
-
-# Hardware-in-loop profile for embedded testing (NXP i.MX 8M Plus)
-[profile.hil]
-inherits = "default"
-
-# Longer timeouts for hardware tests
-slow-timeout = { period = "120s", terminate-after = 3 }
-
-# Run tests serially for hardware access
-test-threads = 1
-
-# Filter settings for hardware-dependent tests
-[[profile.hil.overrides]]
-filter = 'test(hardware)'
-test-threads = 1
-
-# Example: Platform-specific test configuration
-# [[profile.default.overrides]]
-# platform = 'aarch64-unknown-linux-gnu'
-# filter = 'test(arm)'
-# test-threads = 1
