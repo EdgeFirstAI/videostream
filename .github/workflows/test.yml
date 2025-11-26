@@ -247,6 +247,12 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Clean workspace (self-hosted runner)
+        run: |
+          # Self-hosted runners persist state between runs
+          rm -rf build/ venv/ coverage/ 2>/dev/null || true
+          find . -name "*.gcda" -delete 2>/dev/null || true
+
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
