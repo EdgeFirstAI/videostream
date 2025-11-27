@@ -265,16 +265,9 @@ jobs:
             target/tests/
           retention-days: 7
 
-      - name: Upload Rust coverage artifacts for hardware testing (aarch64 only)
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
-        if: matrix.platform.name == 'aarch64'
-        with:
-          name: rust-llvm-cov-aarch64
-          # Upload the instrumented build artifacts needed for cargo llvm-cov report
-          # These are required to process profraw files from imx8mp hardware tests
-          path: |
-            target/llvm-cov-target/
-          retention-days: 7
+      # Note: We no longer upload target/llvm-cov-target/ because cargo llvm-cov report
+      # needs locally-built instrumented binaries. The process-hardware-coverage job
+      # rebuilds them from source to generate coverage from imx8mp profraw files.
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
@@ -489,17 +482,11 @@ jobs:
           name: build-aarch64
           path: build/
 
-      - name: Download Rust test binaries (contains llvm-cov env)
+      - name: Download Rust test binaries (for reference, not used for coverage)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           name: rust-tests-aarch64
           path: rust-tests/
-
-      - name: Download Rust llvm-cov artifacts (instrumented build for coverage)
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
-        with:
-          name: rust-llvm-cov-aarch64
-          path: target/llvm-cov-target/
 
       - name: Download imx8mp coverage artifacts (contains gcda and profraw files)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
@@ -511,6 +498,7 @@ jobs:
         uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
         with:
           toolchain: stable
+          components: llvm-tools-preview
 
       - name: Install coverage tools
         uses: taiki-e/install-action@1ee706eb04986370fc60419ba172594c51067f29  # v2.62.58
@@ -522,18 +510,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcovr
 
+      - name: Build instrumented Rust binaries for coverage
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          # cargo llvm-cov report needs instrumented binaries built locally
+          # We rebuild them here to ensure object files are in the expected location
+          echo "=== Building instrumented Rust binaries ==="
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo build --workspace --all-features
+          echo "Build complete"
+
       - name: Process Rust profraw files into coverage report
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
-          echo "=== Instrumented Rust build artifacts ==="
-          find target/llvm-cov-target/ -type f | head -20 || echo "No llvm-cov-target files found"
-          
-          echo ""
           echo "=== Profraw files from imx8mp ==="
           find coverage-imx8mp/ -name "*.profraw" -type f || echo "No profraw files found"
           
-          # Copy profraw files to where cargo-llvm-cov expects them (alongside the instrumented build)
+          # Copy profraw files to the llvm-cov target directory
+          mkdir -p target/llvm-cov-target
           find coverage-imx8mp/ -name "*.profraw" -type f -exec cp {} target/llvm-cov-target/ \;
           
           PROFRAW_COUNT=$(find target/llvm-cov-target/ -name "*.profraw" | wc -l)
@@ -543,7 +539,7 @@ jobs:
             echo ""
             echo "=== Generating Rust coverage report ==="
             # Generate coverage from the profraw files
-            # This uses the instrumented build artifacts downloaded from aarch64
+            # Uses the locally-built instrumented binaries
             cargo llvm-cov report \
               --ignore-filename-regex='/.cargo/registry|/rustc/' \
               --lcov --output-path build/coverage_rust_imx8mp.lcov
