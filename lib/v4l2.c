@@ -462,7 +462,9 @@ vsl_camera_enum_fmts(const vsl_camera* ctx, u_int32_t* codes, int size)
 {
     struct v4l2_fmtdesc fmtdesc;
     CLEAR(fmtdesc);
-    fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    // Use multiplanar type for multiplanar devices, single-planar otherwise
+    fmtdesc.type = ctx->not_plane ? V4L2_BUF_TYPE_VIDEO_CAPTURE
+                                  : V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     int i        = 0;
     while (i < size) {
         fmtdesc.index = i;

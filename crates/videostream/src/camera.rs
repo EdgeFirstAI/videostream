@@ -423,27 +423,35 @@ mod tests {
     use serial_test::serial;
     use std::time::Instant;
 
-    #[ignore = "test requires maivin 2 hardware (run with --include-ignored to enable)"]
+    /// Get the camera device path from environment variable or use default.
+    /// Set VSL_CAMERA_DEVICE to override (e.g., "/dev/video0" on i.MX8MP EVK).
+    fn get_camera_device() -> String {
+        std::env::var("VSL_CAMERA_DEVICE").unwrap_or_else(|_| "/dev/video3".to_string())
+    }
+
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
     fn test_formats() -> Result<(), Error> {
-        let device = "/dev/video3";
+        let device = get_camera_device();
+        println!("Using camera device: {}", device);
 
-        let fmts = create_camera().with_device(device).formats()?;
+        let fmts = create_camera().with_device(&device).formats()?;
         println!("camera formats: {:?}", fmts);
-        assert_ne!(fmts.len(), 0);
+        assert_ne!(fmts.len(), 0, "Camera device {} returned no formats", device);
 
         Ok(())
     }
 
-    #[ignore = "test requires maivin 2 hardware (run with --include-ignored to enable)"]
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
     fn test_resolutions() -> Result<(), Error> {
-        let device = "/dev/video3";
+        let device = get_camera_device();
+        println!("Using camera device: {}", device);
 
         let cam = create_camera()
-            .with_device(device)
+            .with_device(&device)
             .with_resolution(640, 480)
             .open()?;
         println!(
@@ -459,14 +467,15 @@ mod tests {
         Ok(())
     }
 
-    #[ignore = "test requires maivin 2 hardware (run with --include-ignored to enable)"]
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
     fn test_capture() -> Result<(), Error> {
-        let device = "/dev/video3";
+        let device = get_camera_device();
+        println!("Using camera device: {}", device);
 
         let cam = create_camera()
-            .with_device(device)
+            .with_device(&device)
             .with_format(FourCC(*b"YUYV"))
             .open()?;
         println!(

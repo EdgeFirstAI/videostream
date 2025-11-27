@@ -334,6 +334,13 @@ jobs:
           echo ""
           echo "=== Video devices ==="
           ls -la /dev/video* 2>/dev/null || echo "No video devices found"
+          v4l2-ctl --list-devices 2>/dev/null || echo "v4l2-ctl not available"
+          echo ""
+          echo "=== Camera device /dev/video3 details ==="
+          v4l2-ctl --device=/dev/video3 --all 2>&1 || echo "Could not query /dev/video3"
+          echo ""
+          echo "=== Camera formats on /dev/video3 ==="
+          v4l2-ctl --device=/dev/video3 --list-formats-ext 2>&1 || echo "Could not list formats"
           echo ""
           echo "=== Downloaded Rust test binaries ==="
           ls -la rust-tests/
@@ -371,8 +378,10 @@ jobs:
           # Make test binaries executable
           chmod +x rust-tests/*
           
+          # Track overall test status
+          TEST_FAILED=0
+          
           # Run each test binary and collect results
-          # Test binaries are exported with their original names
           echo "Running pre-built Rust test binaries..."
           for test_bin in rust-tests/*; do
             if [ -x "$test_bin" ] && [ -f "$test_bin" ]; then
@@ -380,14 +389,23 @@ jobs:
               echo "=== Running $test_name ==="
               # --include-ignored runs tests marked with #[ignore] (camera tests need real hardware)
               # --test-threads=1 for deterministic execution on hardware
-              # Use || true to continue even if some tests fail
-              /usr/bin/time -v "$test_bin" --include-ignored --test-threads=1 2>&1 | tee "build/rust-test-results/${test_name}.txt" || true
+              if ! /usr/bin/time -v "$test_bin" --include-ignored --test-threads=1 2>&1 | tee "build/rust-test-results/${test_name}.txt"; then
+                echo "FAILED: $test_name"
+                TEST_FAILED=1
+              fi
             fi
           done
           
           echo ""
           echo "=== Profraw files generated ==="
           ls -la build/profraw/ || echo "No profraw files generated"
+          
+          # Fail the step if any test failed
+          if [ $TEST_FAILED -ne 0 ]; then
+            echo ""
+            echo "ERROR: One or more Rust tests failed!"
+            exit 1
+          fi
 
       - name: Collect gcda files for processing
         if: always()
