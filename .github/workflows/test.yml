@@ -477,16 +477,64 @@ jobs:
           name: build-aarch64
           path: build/
 
-      - name: Download imx8mp coverage artifacts (contains gcda files)
+      - name: Download Rust test binaries (contains llvm-cov env)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: rust-tests-aarch64
+          path: rust-tests/
+
+      - name: Download imx8mp coverage artifacts (contains gcda and profraw files)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           name: coverage-imx8mp
           path: coverage-imx8mp/
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
+        with:
+          toolchain: stable
+
+      - name: Install coverage tools
+        uses: taiki-e/install-action@1ee706eb04986370fc60419ba172594c51067f29  # v2.62.58
+        with:
+          tool: cargo-llvm-cov
+
       - name: Install gcov tools
         run: |
           sudo apt-get update
           sudo apt-get install -y gcovr
+
+      - name: Process Rust profraw files into coverage report
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          echo "=== Profraw files from imx8mp ==="
+          find coverage-imx8mp/ -name "*.profraw" -type f || echo "No profraw files found"
+          
+          # Copy profraw files to where cargo-llvm-cov expects them
+          mkdir -p target/llvm-cov-target
+          find coverage-imx8mp/ -name "*.profraw" -type f -exec cp {} target/llvm-cov-target/ \;
+          
+          PROFRAW_COUNT=$(find target/llvm-cov-target/ -name "*.profraw" | wc -l)
+          echo "Found $PROFRAW_COUNT profraw files"
+          
+          if [ "$PROFRAW_COUNT" -gt 0 ]; then
+            echo ""
+            echo "=== Generating Rust coverage report ==="
+            # Generate coverage from the profraw files
+            # Note: This requires the same source code that was used to build the tests
+            cargo llvm-cov report \
+              --ignore-filename-regex='/.cargo/registry|/rustc/' \
+              --cobertura --output-path build/coverage_rust_imx8mp.xml \
+              || echo "WARNING: Could not generate Rust coverage report"
+            
+            if [ -f build/coverage_rust_imx8mp.xml ]; then
+              echo "Generated build/coverage_rust_imx8mp.xml"
+              head -20 build/coverage_rust_imx8mp.xml
+            fi
+          else
+            echo "No profraw files to process"
+          fi
 
       - name: Process gcda files into gcov format
         run: |
@@ -535,6 +583,8 @@ jobs:
           name: coverage-imx8mp-processed
           path: |
             build/gcov/
+            build/coverage_rust_imx8mp.xml
+            coverage-imx8mp/build/coverage_python.xml
           retention-days: 30
 
   # ===========================================================================
@@ -570,17 +620,22 @@ jobs:
       - name: Organize coverage files for SonarCloud
         run: |
           # List all downloaded artifacts for debugging
-          echo "Downloaded coverage artifacts:"
+          echo "=== Downloaded coverage artifacts ==="
           find coverage/ -type f
-          echo "Downloaded build wrapper outputs:"
+          echo ""
+          echo "=== Downloaded build wrapper outputs ==="
           find build-wrapper/ -type f | head -20
           
           # Create consolidated directory structure
-          mkdir -p merged-coverage/gcov
+          mkdir -p build/gcov
           mkdir -p build/sonar
           
-          # Merge all gcov files from all platforms
-          find coverage/ -name "*.gcov" -exec cp {} merged-coverage/gcov/ \;
+          # Merge all gcov files from all platforms into build/gcov
+          # (SonarCloud expects gcov files in path relative to sources)
+          echo ""
+          echo "=== Collecting gcov files ==="
+          find coverage/ -name "*.gcov" -exec cp {} build/gcov/ \;
+          echo "Total gcov files: $(find build/gcov/ -name '*.gcov' | wc -l)"
           
           # Use x86_64 build wrapper output (all platforms produce similar data)
           # Build wrapper generates compile_commands.json in its output directory
@@ -596,12 +651,23 @@ jobs:
           fi
           
           # Create comma-separated lists for coverage report paths
+          # Look for both coverage_python.xml patterns
           PYTHON_REPORTS=$(find coverage/ -name "coverage_python.xml" | tr '\n' ',' | sed 's/,$//')
-          RUST_REPORTS=$(find coverage/ -name "coverage_rust.xml" | tr '\n' ',' | sed 's/,$//')
+          # Look for all Rust coverage XMLs (coverage_rust.xml and coverage_rust_imx8mp.xml)
+          RUST_REPORTS=$(find coverage/ -name "coverage_rust*.xml" | tr '\n' ',' | sed 's/,$//')
           
+          echo ""
+          echo "=== Coverage report paths ==="
           echo "Python coverage reports: $PYTHON_REPORTS"
           echo "Rust coverage reports: $RUST_REPORTS"
-          echo "C/C++ gcov files: $(find merged-coverage/gcov/ -name '*.gcov' | wc -l) files"
+          echo "C/C++ gcov directory: build/gcov ($(find build/gcov/ -name '*.gcov' | wc -l) files)"
+          
+          # Show sample of gcov files to verify format
+          if [ -f "$(find build/gcov/ -name '*.gcov' | head -1)" ]; then
+            echo ""
+            echo "=== Sample gcov file (first 20 lines) ==="
+            head -20 "$(find build/gcov/ -name '*.gcov' | head -1)"
+          fi
           
           # Export for next step
           echo "PYTHON_COVERAGE_PATHS=$PYTHON_REPORTS" >> $GITHUB_ENV
@@ -616,5 +682,5 @@ jobs:
           args: >
             -Dsonar.python.coverage.reportPaths=${{ env.PYTHON_COVERAGE_PATHS }}
             -Dsonar.rust.cobertura.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
-            -Dsonar.cfamily.gcov.reportsPath=merged-coverage/gcov
+            -Dsonar.cfamily.gcov.reportsPath=build/gcov
             -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
