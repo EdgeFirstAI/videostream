@@ -421,6 +421,71 @@ jobs:
             exit 1
           fi
 
+      - name: Generate JUnit XML from Rust test results
+        if: always()
+        run: |
+          # Parse Rust test output and generate JUnit XML for the publish action
+          # This allows hardware Rust tests to appear in the test results summary
+          python3 << 'JUNIT_SCRIPT'
+          import os
+          import re
+          import glob
+          from datetime import datetime
+
+          results_dir = "build/rust-test-results"
+          output_file = "build/rust_hardware_results.xml"
+          
+          tests = []
+          total_passed = 0
+          total_failed = 0
+          total_time = 0.0
+          
+          for txt_file in glob.glob(f"{results_dir}/*.txt"):
+              test_binary = os.path.basename(txt_file).replace('.txt', '')
+              with open(txt_file, 'r') as f:
+                  content = f.read()
+              
+              # Parse test result line: "test result: ok. X passed; Y failed; Z ignored"
+              match = re.search(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored', content)
+              if match:
+                  status = match.group(1)
+                  passed = int(match.group(2))
+                  failed = int(match.group(3))
+                  ignored = int(match.group(4))
+                  total_passed += passed
+                  total_failed += failed
+                  
+                  # Parse individual test lines: "test name ... ok/FAILED"
+                  for test_match in re.finditer(r'test ([\w:]+) \.\.\. (ok|FAILED|ignored)', content):
+                      test_name = test_match.group(1)
+                      test_status = test_match.group(2)
+                      tests.append({
+                          'name': test_name,
+                          'classname': test_binary,
+                          'status': test_status,
+                          'time': '0.001'  # Individual times not available
+                      })
+          
+          # Generate JUnit XML
+          timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+          with open(output_file, 'w') as f:
+              f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+              f.write(f'<testsuites name="rust-hardware" tests="{len(tests)}" failures="{total_failed}" errors="0" timestamp="{timestamp}">\n')
+              f.write(f'  <testsuite name="rust-hardware" tests="{len(tests)}" failures="{total_failed}" errors="0">\n')
+              for test in tests:
+                  f.write(f'    <testcase name="{test["name"]}" classname="{test["classname"]}" time="{test["time"]}"')
+                  if test['status'] == 'FAILED':
+                      f.write('>\n      <failure message="Test failed"/>\n    </testcase>\n')
+                  elif test['status'] == 'ignored':
+                      f.write('>\n      <skipped/>\n    </testcase>\n')
+                  else:
+                      f.write('/>\n')
+              f.write('  </testsuite>\n')
+              f.write('</testsuites>\n')
+          
+          print(f"Generated {output_file} with {len(tests)} tests ({total_passed} passed, {total_failed} failed)")
+          JUNIT_SCRIPT
+
       - name: Collect gcda files for processing
         if: always()
         run: |
@@ -466,6 +531,7 @@ jobs:
         with:
           files: |
             build/pytest_results.xml
+            build/rust_hardware_results.xml
           check_name: Test Results (imx8mp)
           comment_mode: always
           # ignore_runs helps avoid double-counting when tests report multiple runs
