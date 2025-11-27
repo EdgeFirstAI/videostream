@@ -1,10 +1,8 @@
 # Note: Dockerfile installs from a hardcoded list of packages copied from here.
 # If you change this list make sure you change the list in Dockerfile too!
-# SPS v2.1: Using slipcover instead of pytest-cov for faster Python coverage
 gcovr
 numpy
 pytest
-slipcover
-coverage  # For converting .coverage to XML for SonarCloud
+pytest-cov  # For Python coverage (more reliable than slipcover)
 pytest-benchmark
 typeguard

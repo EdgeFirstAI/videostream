@@ -87,25 +87,32 @@ sbom:
 	@echo "✓ SBOM generated, license policy verified, and NOTICE validated"
 
 # Test target: Run all tests with coverage (SPS v2.1)
-# Uses slipcover for Python and cargo-nextest for Rust
+# Uses pytest-cov for Python and cargo-llvm-cov for Rust
+# Note: LD_LIBRARY_PATH must be set for both Rust and Python tests to find libvideostream.so
 .PHONY: test
 test: build
-	@echo "Running Rust tests with coverage (cargo-nextest)..."
-	@cargo llvm-cov nextest --workspace --all-features --lcov --output-path target/rust-coverage.lcov
+	@echo "Running Rust tests with coverage (cargo-llvm-cov)..."
+	@LD_LIBRARY_PATH=$(CURDIR)/build:$$LD_LIBRARY_PATH VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 \
+		cargo llvm-cov nextest --workspace --all-features --lcov --output-path build/coverage_rust.lcov
 
-	@echo "Running Python tests with coverage (slipcover)..."
+	@echo "Running Python tests with coverage (pytest-cov)..."
 	@if [ -f env.sh ]; then \
-		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=./build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && python3 -m slipcover -m pytest tests/ --junitxml=test-results.xml && python3 -m coverage xml -o coverage_python.xml"; \
+		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=deepview --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	else \
-		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=./build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=./build/libvideostream.so.1 && python3 -m slipcover -m pytest tests/ --junitxml=test-results.xml && python3 -m coverage xml -o coverage_python.xml"; \
+		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=deepview --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	fi
 
 	@echo "Generating C/C++ coverage reports..."
 	@mkdir -p build/gcov
 	@(cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
 	@(cd build && mv *.gcov gcov/ 2>/dev/null || true)
-	@gcovr -r . --cobertura -o coverage_c.xml build/
+	@gcovr -r . --sonarqube -o build/coverage_c_sonar.xml build/
 
+	@echo ""
+	@echo "=========================================="
+	@venv/bin/python scripts/coverage_summary.py --build-dir build
+	@echo "=========================================="
+	@echo ""
 	@echo "✓ All tests complete with coverage"
 
 .PHONY: test-ipc

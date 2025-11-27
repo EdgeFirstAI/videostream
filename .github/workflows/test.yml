@@ -31,7 +31,7 @@
 # - Dedicated sonarcloud job downloads and merges all coverage reports
 #
 # Testing Strategy (SPS v2.1):
-# - Uses slipcover for Python coverage (faster than pytest-cov)
+# - Uses pytest-cov for Python coverage (more reliable than slipcover)
 # - Uses cargo-nextest for Rust tests with JUnit XML output
 # - Captures test performance metrics with /usr/bin/time -v
 # - Publishes test results with EnricoMi/publish-unit-test-result-action
@@ -132,7 +132,7 @@ jobs:
       - name: Install Python test dependencies
         run: |
           venv/bin/pip install --upgrade pip setuptools wheel
-          venv/bin/pip install pytest slipcover pytest-timeout
+          venv/bin/pip install pytest pytest-cov pytest-timeout
           venv/bin/pip install -r requirements.txt
 
       - name: Set up Rust toolchain
@@ -162,8 +162,9 @@ jobs:
           set -o pipefail
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
-            -m pytest tests -v --junitxml=build/pytest_results.xml \
+          /usr/bin/time -v venv/bin/pytest tests -v \
+            --cov=deepview --cov-report=xml:build/coverage_python.xml \
+            --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
 
       - name: Run Rust tests with coverage
@@ -331,7 +332,7 @@ jobs:
       - name: Install Python test dependencies
         run: |
           venv/bin/pip install --upgrade pip setuptools wheel
-          venv/bin/pip install pytest slipcover pytest-timeout
+          venv/bin/pip install pytest pytest-cov pytest-timeout
           venv/bin/pip install -r requirements.txt
 
       - name: Debug environment info
@@ -369,8 +370,9 @@ jobs:
           set -o pipefail
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
-            -m pytest tests -v --junitxml=build/pytest_results.xml \
+          /usr/bin/time -v venv/bin/pytest tests -v \
+            --cov=deepview --cov-report=xml:build/coverage_python.xml \
+            --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-imx8mp.txt
 
       - name: Run pre-built Rust tests with hardware access
@@ -808,125 +810,8 @@ jobs:
           echo "| NXP i.MX8M Plus | aarch64 | Real Hardware | C, Rust, Python (camera, DmaBuf) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # =====================================================================
-          # C Coverage by File (from SonarQube XML)
-          # =====================================================================
-          echo "## 🔷 C Coverage by File" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Lines | Covered | Coverage |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|---------|----------|" >> $GITHUB_STEP_SUMMARY
-          
-          # Aggregate C coverage from all platforms
-          declare -A c_lines c_covered
-          for xml in $(echo "$C_COVERAGE_PATHS" | tr ',' ' '); do
-            if [ -f "$xml" ]; then
-              # Parse SonarQube XML format: <file path="..."><lineToCover lineNumber="..." covered="true|false"/>
-              while IFS= read -r line; do
-                if [[ "$line" =~ \<file\ path=\"([^\"]+)\" ]]; then
-                  current_file="${BASH_REMATCH[1]}"
-                  # Normalize path - extract just filename for lib/ and gst/ files
-                  current_file=$(echo "$current_file" | sed 's|.*/lib/|lib/|; s|.*/gst/|gst/|')
-                fi
-                if [[ "$line" =~ \<lineToCover.*covered=\"(true|false)\" ]]; then
-                  c_lines["$current_file"]=$((${c_lines["$current_file"]:-0} + 1))
-                  if [[ "${BASH_REMATCH[1]}" == "true" ]]; then
-                    c_covered["$current_file"]=$((${c_covered["$current_file"]:-0} + 1))
-                  fi
-                fi
-              done < "$xml"
-            fi
-          done
-          
-          # Output C coverage sorted by coverage percentage
-          for file in $(echo "${!c_lines[@]}" | tr ' ' '\n' | sort); do
-            lines=${c_lines["$file"]}
-            covered=${c_covered["$file"]:-0}
-            if [ "$lines" -gt 0 ]; then
-              pct=$((covered * 100 / lines))
-              echo "| \`$file\` | $lines | $covered | ${pct}% |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # =====================================================================
-          # Rust Coverage by File (from LCOV)
-          # =====================================================================
-          echo "## 🦀 Rust Coverage by File" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Lines | Covered | Coverage |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|---------|----------|" >> $GITHUB_STEP_SUMMARY
-          
-          # Aggregate Rust coverage from all platforms
-          declare -A rust_lines rust_covered
-          for lcov in $(echo "$RUST_COVERAGE_PATHS" | tr ',' ' '); do
-            if [ -f "$lcov" ]; then
-              current_file=""
-              while IFS= read -r line; do
-                if [[ "$line" =~ ^SF:(.+)$ ]]; then
-                  current_file="${BASH_REMATCH[1]}"
-                  # Normalize path
-                  current_file=$(echo "$current_file" | sed 's|.*/crates/|crates/|')
-                elif [[ "$line" =~ ^DA:([0-9]+),([0-9]+) ]] && [ -n "$current_file" ]; then
-                  rust_lines["$current_file"]=$((${rust_lines["$current_file"]:-0} + 1))
-                  if [ "${BASH_REMATCH[2]}" -gt 0 ]; then
-                    rust_covered["$current_file"]=$((${rust_covered["$current_file"]:-0} + 1))
-                  fi
-                fi
-              done < "$lcov"
-            fi
-          done
-          
-          # Output Rust coverage sorted by filename
-          for file in $(echo "${!rust_lines[@]}" | tr ' ' '\n' | sort); do
-            lines=${rust_lines["$file"]}
-            covered=${rust_covered["$file"]:-0}
-            if [ "$lines" -gt 0 ]; then
-              pct=$((covered * 100 / lines))
-              echo "| \`$file\` | $lines | $covered | ${pct}% |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # =====================================================================
-          # Python Coverage by File (from Cobertura XML)
-          # =====================================================================
-          echo "## 🐍 Python Coverage by File" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Lines | Covered | Coverage |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|---------|----------|" >> $GITHUB_STEP_SUMMARY
-          
-          # Aggregate Python coverage from all platforms
-          declare -A py_lines py_covered
-          for xml in $(echo "$PYTHON_COVERAGE_PATHS" | tr ',' ' '); do
-            if [ -f "$xml" ]; then
-              # Parse Cobertura XML: <class filename="..."><lines><line number="..." hits="..."/>
-              current_file=""
-              while IFS= read -r line; do
-                if [[ "$line" =~ filename=\"([^\"]+)\" ]]; then
-                  current_file="${BASH_REMATCH[1]}"
-                  # Normalize path
-                  current_file=$(echo "$current_file" | sed 's|.*/deepview/|deepview/|')
-                fi
-                if [[ "$line" =~ \<line.*number=\"[0-9]+\".*hits=\"([0-9]+)\" ]] && [ -n "$current_file" ]; then
-                  py_lines["$current_file"]=$((${py_lines["$current_file"]:-0} + 1))
-                  if [ "${BASH_REMATCH[1]}" -gt 0 ]; then
-                    py_covered["$current_file"]=$((${py_covered["$current_file"]:-0} + 1))
-                  fi
-                fi
-              done < "$xml"
-            fi
-          done
-          
-          # Output Python coverage sorted by filename
-          for file in $(echo "${!py_lines[@]}" | tr ' ' '\n' | sort); do
-            lines=${py_lines["$file"]}
-            covered=${py_covered["$file"]:-0}
-            if [ "$lines" -gt 0 ]; then
-              pct=$((covered * 100 / lines))
-              echo "| \`$file\` | $lines | $covered | ${pct}% |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
+          # Use standalone coverage summary script (also used by `make test`)
+          python3 scripts/coverage_summary.py --build-dir coverage >> $GITHUB_STEP_SUMMARY
           
           # =====================================================================
           # SonarCloud Links
