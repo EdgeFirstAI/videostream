@@ -175,6 +175,46 @@ jobs:
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
+      - name: Add skipped Rust tests to JUnit XML
+        run: |
+          # nextest doesn't include ignored tests in JUnit output
+          # Add them as skipped entries so test counts match hardware (46 total)
+          python3 << 'PATCH_JUNIT'
+          import xml.etree.ElementTree as ET
+          
+          junit_file = "target/nextest/default/test-results.xml"
+          tree = ET.parse(junit_file)
+          root = tree.getroot()
+          
+          # Ignored tests that run on hardware but are skipped on CI
+          ignored_tests = [
+              ("camera::tests::test_camera_start_stop", "videostream"),
+              ("camera::tests::test_camera_enum", "videostream"),
+              ("camera::tests::test_camera_invalid", "videostream"),
+          ]
+          
+          # Find the testsuite and add skipped tests
+          for testsuite in root.findall('.//testsuite'):
+              for test_name, classname in ignored_tests:
+                  testcase = ET.SubElement(testsuite, 'testcase')
+                  testcase.set('name', test_name)
+                  testcase.set('classname', classname)
+                  testcase.set('time', '0.000')
+                  skipped = ET.SubElement(testcase, 'skipped')
+                  skipped.set('message', 'Test requires camera hardware (run with --include-ignored)')
+              
+              # Update test count
+              current_tests = int(testsuite.get('tests', 0))
+              testsuite.set('tests', str(current_tests + len(ignored_tests)))
+          
+          # Update root testsuites count
+          current_total = int(root.get('tests', 0))
+          root.set('tests', str(current_total + len(ignored_tests)))
+          
+          tree.write(junit_file, encoding='UTF-8', xml_declaration=True)
+          print(f"Added {len(ignored_tests)} skipped tests to {junit_file}")
+          PATCH_JUNIT
+
       - name: Build instrumented Rust test binaries for hardware testing (aarch64 only)
         if: matrix.platform.name == 'aarch64'
         env:
