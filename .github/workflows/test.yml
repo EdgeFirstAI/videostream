@@ -371,9 +371,10 @@ jobs:
             if [ -x "$test_bin" ] && [ -f "$test_bin" ]; then
               test_name=$(basename "$test_bin")
               echo "=== Running $test_name ==="
-              # Run with unstable-options to get JUnit output where supported
+              # --include-ignored runs tests marked with #[ignore] (camera tests need real hardware)
+              # --test-threads=1 for deterministic execution on hardware
               # Use || true to continue even if some tests fail
-              /usr/bin/time -v "$test_bin" --test-threads=1 2>&1 | tee "build/rust-test-results/${test_name}.txt" || true
+              /usr/bin/time -v "$test_bin" --include-ignored --test-threads=1 2>&1 | tee "build/rust-test-results/${test_name}.txt" || true
             fi
           done
           
