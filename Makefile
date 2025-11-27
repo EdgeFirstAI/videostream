@@ -73,8 +73,14 @@ lint:
 .PHONY: sbom
 sbom:
 	@echo "Generating SBOM..."
-	@if [ ! -f "venv/bin/scancode" ]; then \
-		echo "ERROR: scancode not found. Please install:"; \
+	@if [ -d "venv" ]; then \
+		if [ ! -f "venv/bin/scancode" ]; then \
+			echo "Installing scancode-toolkit in venv..."; \
+			venv/bin/pip install scancode-toolkit; \
+		fi; \
+	elif ! command -v scancode >/dev/null 2>&1; then \
+		echo "ERROR: scancode not found and no venv present."; \
+		echo "Please create a venv and install scancode-toolkit:"; \
 		echo "  python3 -m venv venv"; \
 		echo "  venv/bin/pip install scancode-toolkit"; \
 		exit 1; \
