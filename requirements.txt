@@ -5,5 +5,4 @@ numpy
 pytest
 pytest-cov  # For Python coverage (more reliable than slipcover)
 pytest-benchmark
-scancode-toolkit
 typeguard
