@@ -573,12 +573,17 @@ jobs:
           fi
           echo "Created build/imx8mp.profdata"
           
-          # Find all instrumented binaries (executables and .so files)
+          # Find all instrumented binaries (ELF files in deps directory)
+          # Note: Execute permissions are lost during artifact upload/download,
+          # so we use 'file' command to identify ELF binaries by content
           echo ""
           echo "=== Finding instrumented binaries ==="
+          echo "Contents of debug/deps:"
+          ls -la target/llvm-cov-target/debug/deps/ 2>/dev/null | head -30
+          
           OBJECT_FILES=""
-          for obj in $(find target/llvm-cov-target/debug -type f \( -executable -o -name "*.so" \) 2>/dev/null); do
-            # Skip .d files and other non-binary files
+          # Look for test binaries (videostream-* without extension) and library
+          for obj in $(find target/llvm-cov-target/debug/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
             if file "$obj" | grep -q "ELF"; then
               if [ -z "$OBJECT_FILES" ]; then
                 OBJECT_FILES="$obj"
@@ -589,13 +594,14 @@ jobs:
           done
           
           if [ -z "$OBJECT_FILES" ]; then
-            echo "ERROR: No ELF binaries found in target/llvm-cov-target/"
-            find target/llvm-cov-target/ -type f | head -20
+            echo "ERROR: No ELF binaries found in target/llvm-cov-target/debug/deps/"
+            echo "All files in debug/deps:"
+            find target/llvm-cov-target/debug/deps -type f 2>/dev/null | head -30
             exit 1
           fi
           
           echo "Found binaries:"
-          echo "$OBJECT_FILES" | tr ' ' '\n' | grep -v "^$" | head -10
+          echo "$OBJECT_FILES" | tr ' ' '\n' | grep -v "^$" | head -20
           
           # The profraw files were generated on imx8mp where workspace was at /home/runner/work/videostream/videostream
           # Here on ubuntu-22.04-arm, it's at /home/runner/work/videostream/videostream too (same path!)
