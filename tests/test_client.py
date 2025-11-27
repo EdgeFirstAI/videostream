@@ -1,5 +1,5 @@
 import pytest
-from deepview.videostream import Client
+from videostream import Client
 
 
 def test_client():

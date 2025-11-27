@@ -130,11 +130,9 @@ def parse_python_cobertura(xml_paths: str) -> dict:
                 filename = cls.get('filename', '')
                 if not filename:
                     continue
-                # Normalize path - pytest-cov uses videostream/ but we want deepview/videostream/
-                if filename.startswith('videostream/'):
-                    filename = 'deepview/' + filename
-                elif not filename.startswith('deepview/') and not filename.startswith('__init__'):
-                    filename = 'deepview/videostream/' + filename
+                # Normalize path - ensure videostream/ prefix for Python files
+                if not filename.startswith('videostream/') and not filename.startswith('__init__'):
+                    filename = 'videostream/' + filename
                 # Skip root __init__.py
                 if filename == '__init__.py':
                     continue

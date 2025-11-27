@@ -1,5 +1,5 @@
 import pytest
-from deepview.videostream import Host
+from videostream import Host
 from pathlib import Path
 from socket import socket, AF_UNIX, SOCK_SEQPACKET
 from time import process_time

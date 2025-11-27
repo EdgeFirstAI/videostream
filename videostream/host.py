@@ -3,7 +3,7 @@
 
 from ctypes import \
     byref, c_int, c_int64, c_size_t, c_void_p, py_object, pythonapi
-from deepview.videostream.library import lib, errmsg
+from videostream.library import lib, errmsg
 from enum import IntEnum
 from pathlib import Path
 from typing import Optional, Union

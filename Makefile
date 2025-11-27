@@ -55,7 +55,7 @@ format:
 	@cargo +nightly fmt --all || echo "Warning: cargo +nightly fmt failed (nightly toolchain may not be installed)"
 	@if [ -d "venv" ] && [ -f "venv/bin/autopep8" ]; then \
 		echo "Formatting Python code..."; \
-		bash -c "source venv/bin/activate && find deepview tests -name '*.py' -exec autopep8 --in-place --aggressive --aggressive {} \;"; \
+		bash -c "source venv/bin/activate && find videostream tests -name '*.py' -exec autopep8 --in-place --aggressive --aggressive {} \;"; \
 	else \
 		echo "Skipping Python formatting (venv not found or autopep8 not installed)"; \
 	fi
@@ -97,9 +97,9 @@ test: build
 
 	@echo "Running Python tests with coverage (pytest-cov)..."
 	@if [ -f env.sh ]; then \
-		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=deepview --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
+		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	else \
-		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=deepview --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
+		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	fi
 
 	@echo "Generating C/C++ coverage reports..."
@@ -130,6 +130,7 @@ verify-version:
 	@VERSION=$$(grep '^#define VSL_VERSION "' include/videostream.h | cut -d'"' -f2); \
 	echo "Expected version: $$VERSION"; \
 	echo -n "Cargo.toml: "; grep "^version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
+	echo -n "Cargo.toml (videostream-sys dep): "; grep "videostream-sys = { version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "pyproject.toml: "; grep "^version = \"$$VERSION\"" pyproject.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "doc/conf.py: "; grep "^version = '$$VERSION'" doc/conf.py && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "debian/changelog: "; grep "^videostream ($$VERSION-1)" debian/changelog && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
@@ -156,7 +157,7 @@ pre-release: clean build format lint verify-version test sbom
 .PHONY: clean
 clean:
 	@echo "Cleaning build artifacts..."
-	@rm -rf build/ target/ venv/ __pycache__/ .pytest_cache/
+	@rm -rf build/ target/ __pycache__/ .pytest_cache/
 	@rm -f sbom.json *-sbom.json *.cdx.json
 	@rm -f README.pdf DESIGN.pdf
 	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

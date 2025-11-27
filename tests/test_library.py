@@ -1,5 +1,5 @@
 import pytest
-import deepview.videostream as vsl
+import videostream as vsl
 
 
 def test_version():

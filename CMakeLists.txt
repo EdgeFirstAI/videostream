@@ -393,7 +393,7 @@ install(TARGETS videostream
 add_subdirectory(src)
 
 # Install Python package
-install(DIRECTORY deepview 
+install(DIRECTORY videostream 
     COMPONENT python 
     DESTINATION ${PYTHON_INSTALL_DIR}
 )
