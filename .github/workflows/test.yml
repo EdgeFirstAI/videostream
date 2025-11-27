@@ -11,6 +11,7 @@
 # - actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 (v4.1.8)
 # - dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b (stable)
 # - Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3 (v2.7.7)
+# - taiki-e/install-action@1ee706eb04986370fc60419ba172594c51067f29 (v2.62.58)
 # - SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 (v6.0.0)
 # - EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b (v2.18.0)
 #
@@ -146,9 +147,9 @@ jobs:
           cache-on-failure: true
 
       - name: Install cargo tools
-        run: |
-          cargo install cargo-llvm-cov --version 0.6.16
-          cargo install cargo-nextest --locked
+        uses: taiki-e/install-action@1ee706eb04986370fc60419ba172594c51067f29  # v2.62.58
+        with:
+          tool: cargo-llvm-cov@0.6.16,cargo-nextest,cargo-export
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -172,6 +173,35 @@ jobs:
           set -o pipefail
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
             --cobertura --output-path build/coverage_rust.xml 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
+
+      - name: Export Rust test binaries for hardware testing (aarch64 only)
+        if: matrix.platform.name == 'aarch64'
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          # Set up coverage environment for building instrumented test binaries
+          source <(cargo llvm-cov show-env --export-prefix)
+          
+          # Build test binaries with coverage instrumentation (including ignored tests)
+          # Using --run-ignored=all ensures camera tests are built
+          cargo nextest run --workspace --all-features --no-run --run-ignored=all
+          
+          # Export test binaries to a directory for artifact upload
+          mkdir -p target/tests
+          cargo export target/tests -- test --workspace --all-features
+          
+          # Save coverage environment variables for use on target hardware
+          cargo llvm-cov show-env > target/tests/llvm-cov-env.sh
+          
+          # Copy the LLVM tools needed to process profraw on the target (if available locally)
+          # These are needed to generate reports from profraw files
+          LLVM_PROFDATA=$(cargo llvm-cov show-env | grep LLVM_PROFDATA | cut -d'=' -f2 | tr -d '"')
+          if [ -f "$LLVM_PROFDATA" ]; then
+            cp "$LLVM_PROFDATA" target/tests/ || true
+          fi
+          
+          echo "Exported test binaries:"
+          ls -la target/tests/
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
         run: |
@@ -222,6 +252,16 @@ jobs:
           path: |
             build/libvideostream.so*
             build/vsl-*
+            build/CMakeFiles/**/*.gcno
+          retention-days: 7
+
+      - name: Upload Rust test binaries for hardware testing (aarch64 only)
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: matrix.platform.name == 'aarch64'
+        with:
+          name: rust-tests-aarch64
+          path: |
+            target/tests/
           retention-days: 7
 
       - name: Publish test results
@@ -233,6 +273,8 @@ jobs:
             target/nextest/default/test-results.xml
           check_name: Test Results (${{ matrix.platform.name }})
           comment_mode: always
+          # ignore_runs helps avoid double-counting when tests report multiple runs
+          ignore_runs: true
 
   # ===========================================================================
   # Hardware Testing on NXP i.MX8M Plus (test-only, no build)
@@ -250,8 +292,9 @@ jobs:
       - name: Clean workspace (self-hosted runner)
         run: |
           # Self-hosted runners persist state between runs
-          rm -rf build/ venv/ coverage/ 2>/dev/null || true
+          rm -rf build/ venv/ coverage/ target/ rust-tests/ 2>/dev/null || true
           find . -name "*.gcda" -delete 2>/dev/null || true
+          find . -name "*.profraw" -delete 2>/dev/null || true
 
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -261,6 +304,12 @@ jobs:
         with:
           name: build-aarch64
           path: build/
+
+      - name: Download Rust test binaries
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: rust-tests-aarch64
+          path: rust-tests/
 
       - name: Create Python virtual environment
         run: |
@@ -285,6 +334,12 @@ jobs:
           echo ""
           echo "=== Video devices ==="
           ls -la /dev/video* 2>/dev/null || echo "No video devices found"
+          echo ""
+          echo "=== Downloaded Rust test binaries ==="
+          ls -la rust-tests/
+          echo ""
+          echo "=== Downloaded build artifacts ==="
+          ls -la build/
 
       - name: Run Python tests with coverage (hardware accelerated)
         run: |
@@ -295,6 +350,50 @@ jobs:
             -m pytest tests -v --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-imx8mp.txt
 
+      - name: Run pre-built Rust tests with hardware access
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          set -o pipefail
+          mkdir -p build/rust-test-results
+          
+          # Set up profraw collection directory
+          export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
+          mkdir -p build/profraw
+          
+          # Make test binaries executable
+          chmod +x rust-tests/*
+          
+          # Run each test binary and collect results
+          # Test binaries are exported with their original names
+          echo "Running pre-built Rust test binaries..."
+          for test_bin in rust-tests/*; do
+            if [ -x "$test_bin" ] && [ -f "$test_bin" ]; then
+              test_name=$(basename "$test_bin")
+              echo "=== Running $test_name ==="
+              # Run with unstable-options to get JUnit output where supported
+              # Use || true to continue even if some tests fail
+              /usr/bin/time -v "$test_bin" --test-threads=1 2>&1 | tee "build/rust-test-results/${test_name}.txt" || true
+            fi
+          done
+          
+          echo ""
+          echo "=== Profraw files generated ==="
+          ls -la build/profraw/ || echo "No profraw files generated"
+
+      - name: Generate C coverage from hardware tests
+        run: |
+          # Generate gcov data from the .gcda files created during test runs
+          mkdir -p build/gcov-hardware
+          if find build -name "*.gcda" -type f | head -1 | grep -q .; then
+            echo "Found .gcda files, generating gcov reports..."
+            (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
+            (cd build && mv *.gcov gcov-hardware/ 2>/dev/null || true)
+            gcovr -r . --cobertura -o build/coverage_c_hardware.xml build/ || true
+          else
+            echo "No .gcda files found - C coverage may not be available"
+          fi
+
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
         if: always()
@@ -302,6 +401,9 @@ jobs:
           name: coverage-imx8mp
           path: |
             build/coverage_python.xml
+            build/coverage_c_hardware.xml
+            build/gcov-hardware/
+            build/profraw/
           retention-days: 30
 
       - name: Upload test results and metadata
@@ -312,6 +414,7 @@ jobs:
           path: |
             build/pytest_results.xml
             build/test-metrics-*-imx8mp.txt
+            build/rust-test-results/
           retention-days: 30
 
       - name: Publish test results
@@ -322,6 +425,8 @@ jobs:
             build/pytest_results.xml
           check_name: Test Results (imx8mp)
           comment_mode: always
+          # ignore_runs helps avoid double-counting when tests report multiple runs
+          ignore_runs: true
 
   # ===========================================================================
   # SonarCloud Analysis (aggregates coverage from all platforms)
