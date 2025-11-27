@@ -342,16 +342,14 @@ jobs:
           ls -la build/
 
       - name: Run Python tests with coverage (hardware accelerated)
+        env:
+          # Redirect gcda files to workspace (processed by ubuntu-22.04-arm job)
+          GCOV_PREFIX: ${{ github.workspace }}
+          GCOV_PREFIX_STRIP: 5
         run: |
           set -o pipefail
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
-          
-          # Redirect gcov output to local path (compiled paths point to /home/runner/work/...)
-          # GCOV_PREFIX_STRIP removes leading path components, GCOV_PREFIX adds new prefix
-          export GCOV_PREFIX="${{ github.workspace }}"
-          export GCOV_PREFIX_STRIP=5
-          
           /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
             -m pytest tests -v --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-imx8mp.txt
@@ -359,7 +357,7 @@ jobs:
       - name: Run pre-built Rust tests with hardware access
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
-          # Redirect gcov output for any C code called from Rust tests
+          # Redirect gcda files to workspace (processed by ubuntu-22.04-arm job)
           GCOV_PREFIX: ${{ github.workspace }}
           GCOV_PREFIX_STRIP: 5
         run: |
@@ -391,29 +389,21 @@ jobs:
           echo "=== Profraw files generated ==="
           ls -la build/profraw/ || echo "No profraw files generated"
 
-      - name: Generate C coverage from hardware tests
+      - name: Collect gcda files for processing
+        if: always()
         run: |
-          # Generate gcov data from the .gcda files created during test runs
-          # GCOV_PREFIX redirected .gcda files to $GITHUB_WORKSPACE/build/...
-          mkdir -p build/gcov-hardware
+          # Find all gcda files generated during testing
+          echo "=== GCDA files generated ==="
+          find build/ -name "*.gcda" -type f 2>/dev/null | head -20 || echo "No gcda files found"
           
-          echo "=== Searching for .gcda files ==="
-          find . -name "*.gcda" -type f 2>/dev/null || true
+          # Create directory structure for gcov processing
+          mkdir -p build/gcda-imx8mp
           
-          echo ""
-          echo "=== Searching for .gcno files ==="
-          find build -name "*.gcno" -type f 2>/dev/null | head -10 || true
-          
-          if find build -name "*.gcda" -type f 2>/dev/null | head -1 | grep -q .; then
-            echo ""
-            echo "Found .gcda files, generating gcov reports..."
-            (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
-            (cd build && mv *.gcov gcov-hardware/ 2>/dev/null || true)
-            gcovr -r . --cobertura -o build/coverage_c_hardware.xml build/ || true
-          else
-            echo ""
-            echo "No .gcda files found in build/ - C coverage not available from hardware tests"
-            echo "This is expected if the library was built without GCOV instrumentation"
+          # Copy gcda files preserving directory structure
+          if find build/ -name "*.gcda" -type f | head -1 | grep -q .; then
+            echo "Copying gcda files..."
+            find build/ -name "*.gcda" -type f -exec cp --parents {} build/gcda-imx8mp/ \;
+            echo "Copied $(find build/gcda-imx8mp -name '*.gcda' | wc -l) gcda files"
           fi
 
       - name: Upload coverage artifacts
@@ -423,9 +413,8 @@ jobs:
           name: coverage-imx8mp
           path: |
             build/coverage_python.xml
-            build/coverage_c_hardware.xml
-            build/gcov-hardware/
             build/profraw/
+            build/gcda-imx8mp/
           retention-days: 30
 
       - name: Upload test results and metadata
@@ -451,11 +440,91 @@ jobs:
           ignore_runs: true
 
   # ===========================================================================
+  # Process Hardware Coverage (gcda -> gcov on ubuntu-22.04-arm)
+  # ===========================================================================
+  process-hardware-coverage:
+    name: Process Hardware Coverage
+    needs: [build-and-test, hardware-test]
+    runs-on: ubuntu-22.04-arm
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Download aarch64 build artifacts (contains gcno files)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: build-aarch64
+          path: build/
+
+      - name: Download imx8mp coverage artifacts (contains gcda files)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: coverage-imx8mp
+          path: coverage-imx8mp/
+
+      - name: Install gcov tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcovr
+
+      - name: Process gcda files into gcov format
+        run: |
+          echo "=== Build artifacts (gcno files) ==="
+          find build/ -name "*.gcno" -type f | head -20 || echo "No gcno files found"
+          
+          echo ""
+          echo "=== Coverage artifacts from imx8mp ==="
+          find coverage-imx8mp/ -name "*.gcda" -type f | head -20 || echo "No gcda files found"
+          
+          # Move gcda files to match gcno file locations
+          if find coverage-imx8mp/ -name "*.gcda" -type f | head -1 | grep -q .; then
+            echo ""
+            echo "=== Relocating gcda files to match gcno locations ==="
+            # The gcda files need to be in the same directory as their corresponding gcno files
+            find coverage-imx8mp/ -name "*.gcda" -type f | while read gcda; do
+              # Extract the relative path from the gcda file
+              gcda_name=$(basename "$gcda")
+              # Find matching gcno file
+              gcno_path=$(find build/ -name "${gcda_name%.gcda}.gcno" -type f | head -1)
+              if [ -n "$gcno_path" ]; then
+                gcno_dir=$(dirname "$gcno_path")
+                echo "Copying $gcda_name to $gcno_dir/"
+                cp "$gcda" "$gcno_dir/"
+              else
+                echo "WARNING: No matching gcno for $gcda_name"
+              fi
+            done
+          fi
+          
+          # Generate gcov files
+          echo ""
+          echo "=== Generating gcov files ==="
+          mkdir -p build/gcov
+          (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
+          (cd build && mv *.gcov gcov/ 2>/dev/null || true)
+          
+          echo ""
+          echo "=== Generated gcov files ==="
+          ls -la build/gcov/ | head -20 || echo "No gcov files generated"
+          echo "Total: $(find build/gcov/ -name '*.gcov' | wc -l) gcov files"
+
+      - name: Upload processed coverage
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        with:
+          name: coverage-imx8mp-processed
+          path: |
+            build/gcov/
+          retention-days: 30
+
+  # ===========================================================================
   # SonarCloud Analysis (aggregates coverage from all platforms)
   # ===========================================================================
   sonarcloud:
     name: SonarCloud Analysis
-    needs: [build-and-test, hardware-test]
+    needs: [build-and-test, hardware-test, process-hardware-coverage]
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
