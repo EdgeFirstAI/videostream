@@ -205,13 +205,18 @@ jobs:
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
         run: |
-          # Generate native .gcov files in build/gcov directory
+          # Generate SonarQube-compatible XML coverage report using gcovr
           # This captures coverage from Python tests, Rust tests, and any C tests
+          # Note: gcovr --sonarqube produces the format expected by sonar.coverageReportPaths
+          gcovr -r . --sonarqube -o build/coverage_c_sonar.xml build/
+          
+          # Also generate legacy gcov files (for debugging)
           mkdir -p build/gcov
           (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
           (cd build && mv *.gcov gcov/ 2>/dev/null || true)
-          # Also generate Cobertura XML for artifacts/alternative analysis
-          gcovr -r . --cobertura -o build/coverage_c.xml build/
+          
+          echo "=== C coverage report generated ==="
+          head -30 build/coverage_c_sonar.xml || echo "No coverage report generated"
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
@@ -220,6 +225,7 @@ jobs:
           name: coverage-${{ matrix.platform.name }}
           path: |
             build/gcov/
+            build/coverage_c_sonar.xml
             build/coverage_python.xml
             build/coverage_rust.xml
           retention-days: 30
@@ -536,7 +542,7 @@ jobs:
             echo "No profraw files to process"
           fi
 
-      - name: Process gcda files into gcov format
+      - name: Process gcda files into SonarQube coverage format
         run: |
           echo "=== Build artifacts (gcno files) ==="
           find build/ -name "*.gcno" -type f | head -20 || echo "No gcno files found"
@@ -565,24 +571,24 @@ jobs:
             done
           fi
           
-          # Generate gcov files
+          # Generate SonarQube-compatible XML coverage report
           echo ""
-          echo "=== Generating gcov files ==="
-          mkdir -p build/gcov
-          (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
-          (cd build && mv *.gcov gcov/ 2>/dev/null || true)
+          echo "=== Generating SonarQube coverage report ==="
+          gcovr -r . --sonarqube -o build/coverage_c_imx8mp_sonar.xml build/ || echo "gcovr failed"
           
-          echo ""
-          echo "=== Generated gcov files ==="
-          ls -la build/gcov/ | head -20 || echo "No gcov files generated"
-          echo "Total: $(find build/gcov/ -name '*.gcov' | wc -l) gcov files"
+          if [ -f build/coverage_c_imx8mp_sonar.xml ]; then
+            echo "Generated build/coverage_c_imx8mp_sonar.xml"
+            head -30 build/coverage_c_imx8mp_sonar.xml
+          else
+            echo "WARNING: No C coverage report generated"
+          fi
 
       - name: Upload processed coverage
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
         with:
           name: coverage-imx8mp-processed
           path: |
-            build/gcov/
+            build/coverage_c_imx8mp_sonar.xml
             build/coverage_rust_imx8mp.xml
             coverage-imx8mp/build/coverage_python.xml
           retention-days: 30
@@ -627,15 +633,7 @@ jobs:
           find build-wrapper/ -type f | head -20
           
           # Create consolidated directory structure
-          mkdir -p build/gcov
           mkdir -p build/sonar
-          
-          # Merge all gcov files from all platforms into build/gcov
-          # (SonarCloud expects gcov files in path relative to sources)
-          echo ""
-          echo "=== Collecting gcov files ==="
-          find coverage/ -name "*.gcov" -exec cp {} build/gcov/ \;
-          echo "Total gcov files: $(find build/gcov/ -name '*.gcov' | wc -l)"
           
           # Use x86_64 build wrapper output (all platforms produce similar data)
           # Build wrapper generates compile_commands.json in its output directory
@@ -650,28 +648,47 @@ jobs:
             echo "WARNING: compile_commands.json not found in build wrapper output"
           fi
           
-          # Create comma-separated lists for coverage report paths
-          # Look for both coverage_python.xml patterns
+          # Fix source paths in coverage XML files
+          # Coverage files contain absolute source paths from different CI runners
+          # We need to normalize them to the current workspace path
+          echo ""
+          echo "=== Normalizing coverage file source paths ==="
+          WORKSPACE="${{ github.workspace }}"
+          for xml_file in $(find coverage/ -name "*.xml" -type f); do
+            echo "Processing: $xml_file"
+            # Replace any absolute source path with the current workspace
+            # Common patterns: /home/runner/work/videostream/videostream, /github/workspace, etc.
+            sed -i "s|<source>[^<]*</source>|<source>$WORKSPACE</source>|g" "$xml_file"
+          done
+          
+          # Collect all coverage reports
+          # Python coverage (Cobertura XML format)
           PYTHON_REPORTS=$(find coverage/ -name "coverage_python.xml" | tr '\n' ',' | sed 's/,$//')
-          # Look for all Rust coverage XMLs (coverage_rust.xml and coverage_rust_imx8mp.xml)
+          
+          # Rust coverage (Cobertura XML format)
           RUST_REPORTS=$(find coverage/ -name "coverage_rust*.xml" | tr '\n' ',' | sed 's/,$//')
+          
+          # C/C++ coverage (SonarQube XML format from gcovr --sonarqube)
+          C_REPORTS=$(find coverage/ -name "coverage_c*_sonar.xml" | tr '\n' ',' | sed 's/,$//')
           
           echo ""
           echo "=== Coverage report paths ==="
           echo "Python coverage reports: $PYTHON_REPORTS"
           echo "Rust coverage reports: $RUST_REPORTS"
-          echo "C/C++ gcov directory: build/gcov ($(find build/gcov/ -name '*.gcov' | wc -l) files)"
+          echo "C/C++ coverage reports: $C_REPORTS"
           
-          # Show sample of gcov files to verify format
-          if [ -f "$(find build/gcov/ -name '*.gcov' | head -1)" ]; then
+          # Show sample of coverage report to verify source path normalization
+          SAMPLE_REPORT=$(find coverage/ -name "*.xml" | head -1)
+          if [ -n "$SAMPLE_REPORT" ] && [ -f "$SAMPLE_REPORT" ]; then
             echo ""
-            echo "=== Sample gcov file (first 20 lines) ==="
-            head -20 "$(find build/gcov/ -name '*.gcov' | head -1)"
+            echo "=== Sample coverage report (first 15 lines) ==="
+            head -15 "$SAMPLE_REPORT"
           fi
           
           # Export for next step
           echo "PYTHON_COVERAGE_PATHS=$PYTHON_REPORTS" >> $GITHUB_ENV
           echo "RUST_COVERAGE_PATHS=$RUST_REPORTS" >> $GITHUB_ENV
+          echo "C_COVERAGE_PATHS=$C_REPORTS" >> $GITHUB_ENV
 
       - name: Run SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602  # v6.0.0
@@ -682,5 +699,5 @@ jobs:
           args: >
             -Dsonar.python.coverage.reportPaths=${{ env.PYTHON_COVERAGE_PATHS }}
             -Dsonar.rust.cobertura.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
-            -Dsonar.cfamily.gcov.reportsPath=build/gcov
+            -Dsonar.coverageReportPaths=${{ env.C_COVERAGE_PATHS }}
             -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
