@@ -811,7 +811,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Use standalone coverage summary script (also used by `make test`)
-          python3 scripts/coverage_summary.py --build-dir coverage >> $GITHUB_STEP_SUMMARY
+          # Use --github-actions flag to read paths from environment variables
+          python3 scripts/coverage_summary.py --github-actions >> $GITHUB_STEP_SUMMARY
           
           # =====================================================================
           # SonarCloud Links
