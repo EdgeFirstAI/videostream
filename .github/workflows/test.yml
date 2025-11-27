@@ -149,7 +149,7 @@ jobs:
       - name: Install cargo tools
         uses: taiki-e/install-action@1ee706eb04986370fc60419ba172594c51067f29  # v2.62.58
         with:
-          tool: cargo-llvm-cov@0.6.16,cargo-nextest,cargo-export
+          tool: cargo-llvm-cov@0.6.16,cargo-nextest
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -174,23 +174,25 @@ jobs:
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
-      - name: Export Rust test binaries for hardware testing (aarch64 only)
+      - name: Build instrumented Rust test binaries for hardware testing (aarch64 only)
         if: matrix.platform.name == 'aarch64'
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
           # Set up coverage environment for building instrumented test binaries
+          # This sets RUSTFLAGS with -C instrument-coverage and CARGO_LLVM_COV_TARGET_DIR
           source <(cargo llvm-cov show-env --export-prefix)
           
           # Build test binaries with coverage instrumentation (including ignored tests)
-          # Using --run-ignored=all ensures camera tests are built
+          # Binaries are placed in target/llvm-cov-target/debug/deps/
           cargo nextest run --workspace --all-features --no-run --run-ignored=all
           
-          # Export test binaries to a directory for artifact upload
+          # Copy instrumented test binaries to target/tests for artifact upload
           mkdir -p target/tests
-          cargo export target/tests -- test --workspace --all-features
+          find target/llvm-cov-target/debug/deps/ -maxdepth 1 -type f -executable \
+            -name "videostream*" -exec cp {} target/tests/ \;
           
-          echo "Exported test binaries:"
+          echo "Instrumented test binaries:"
           ls -la target/tests/
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
@@ -265,9 +267,14 @@ jobs:
             target/tests/
           retention-days: 7
 
-      # Note: We no longer upload target/llvm-cov-target/ because cargo llvm-cov report
-      # needs locally-built instrumented binaries. The process-hardware-coverage job
-      # rebuilds them from source to generate coverage from imx8mp profraw files.
+      - name: Upload Rust llvm-cov target directory for coverage processing (aarch64 only)
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: matrix.platform.name == 'aarch64'
+        with:
+          name: rust-llvm-cov-aarch64
+          path: |
+            target/llvm-cov-target/
+          retention-days: 7
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
@@ -488,6 +495,12 @@ jobs:
           name: rust-tests-aarch64
           path: rust-tests/
 
+      - name: Download Rust llvm-cov target directory (instrumented binaries for coverage)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: rust-llvm-cov-aarch64
+          path: target/llvm-cov-target/
+
       - name: Download imx8mp coverage artifacts (contains gcda and profraw files)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
@@ -510,26 +523,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcovr
 
-      - name: Build instrumented Rust binaries for coverage
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
-        run: |
-          # cargo llvm-cov report needs instrumented binaries built locally
-          # We rebuild them here to ensure object files are in the expected location
-          echo "=== Building instrumented Rust binaries ==="
-          source <(cargo llvm-cov show-env --export-prefix)
-          cargo build --workspace --all-features
-          echo "Build complete"
-
       - name: Process Rust profraw files into coverage report
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
+          echo "=== Downloaded llvm-cov-target directory ==="
+          ls -la target/llvm-cov-target/ || echo "Directory not found"
+          
+          echo ""
           echo "=== Profraw files from imx8mp ==="
           find coverage-imx8mp/ -name "*.profraw" -type f || echo "No profraw files found"
           
-          # Copy profraw files to the llvm-cov target directory
-          mkdir -p target/llvm-cov-target
+          # Copy profraw files to the llvm-cov target directory (alongside the instrumented binaries)
           find coverage-imx8mp/ -name "*.profraw" -type f -exec cp {} target/llvm-cov-target/ \;
           
           PROFRAW_COUNT=$(find target/llvm-cov-target/ -name "*.profraw" | wc -l)
@@ -539,7 +544,7 @@ jobs:
             echo ""
             echo "=== Generating Rust coverage report ==="
             # Generate coverage from the profraw files
-            # Uses the locally-built instrumented binaries
+            # Uses the downloaded instrumented binaries from aarch64 build
             cargo llvm-cov report \
               --ignore-filename-regex='/.cargo/registry|/rustc/' \
               --lcov --output-path build/coverage_rust_imx8mp.lcov
