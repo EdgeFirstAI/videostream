@@ -190,16 +190,6 @@ jobs:
           mkdir -p target/tests
           cargo export target/tests -- test --workspace --all-features
           
-          # Save coverage environment variables for use on target hardware
-          cargo llvm-cov show-env > target/tests/llvm-cov-env.sh
-          
-          # Copy the LLVM tools needed to process profraw on the target (if available locally)
-          # These are needed to generate reports from profraw files
-          LLVM_PROFDATA=$(cargo llvm-cov show-env | grep LLVM_PROFDATA | cut -d'=' -f2 | tr -d '"')
-          if [ -f "$LLVM_PROFDATA" ]; then
-            cp "$LLVM_PROFDATA" target/tests/ || true
-          fi
-          
           echo "Exported test binaries:"
           ls -la target/tests/
 
@@ -210,13 +200,18 @@ jobs:
           # Note: gcovr --sonarqube produces the format expected by sonar.coverageReportPaths
           gcovr -r . --sonarqube -o build/coverage_c_sonar.xml build/
           
+          if [ ! -f build/coverage_c_sonar.xml ]; then
+            echo "ERROR: Failed to generate C coverage report"
+            exit 1
+          fi
+          
           # Also generate legacy gcov files (for debugging)
           mkdir -p build/gcov
           (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
           (cd build && mv *.gcov gcov/ 2>/dev/null || true)
           
           echo "=== C coverage report generated ==="
-          head -30 build/coverage_c_sonar.xml || echo "No coverage report generated"
+          head -30 build/coverage_c_sonar.xml
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
@@ -268,6 +263,17 @@ jobs:
           name: rust-tests-aarch64
           path: |
             target/tests/
+          retention-days: 7
+
+      - name: Upload Rust coverage artifacts for hardware testing (aarch64 only)
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: matrix.platform.name == 'aarch64'
+        with:
+          name: rust-llvm-cov-aarch64
+          # Upload the instrumented build artifacts needed for cargo llvm-cov report
+          # These are required to process profraw files from imx8mp hardware tests
+          path: |
+            target/llvm-cov-target/
           retention-days: 7
 
       - name: Publish test results
@@ -489,6 +495,12 @@ jobs:
           name: rust-tests-aarch64
           path: rust-tests/
 
+      - name: Download Rust llvm-cov artifacts (instrumented build for coverage)
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: rust-llvm-cov-aarch64
+          path: target/llvm-cov-target/
+
       - name: Download imx8mp coverage artifacts (contains gcda and profraw files)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
@@ -514,11 +526,14 @@ jobs:
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
+          echo "=== Instrumented Rust build artifacts ==="
+          find target/llvm-cov-target/ -type f | head -20 || echo "No llvm-cov-target files found"
+          
+          echo ""
           echo "=== Profraw files from imx8mp ==="
           find coverage-imx8mp/ -name "*.profraw" -type f || echo "No profraw files found"
           
-          # Copy profraw files to where cargo-llvm-cov expects them
-          mkdir -p target/llvm-cov-target
+          # Copy profraw files to where cargo-llvm-cov expects them (alongside the instrumented build)
           find coverage-imx8mp/ -name "*.profraw" -type f -exec cp {} target/llvm-cov-target/ \;
           
           PROFRAW_COUNT=$(find target/llvm-cov-target/ -name "*.profraw" | wc -l)
@@ -528,18 +543,20 @@ jobs:
             echo ""
             echo "=== Generating Rust coverage report ==="
             # Generate coverage from the profraw files
-            # Note: This requires the same source code that was used to build the tests
+            # This uses the instrumented build artifacts downloaded from aarch64
             cargo llvm-cov report \
               --ignore-filename-regex='/.cargo/registry|/rustc/' \
-              --lcov --output-path build/coverage_rust_imx8mp.lcov \
-              || echo "WARNING: Could not generate Rust coverage report"
+              --lcov --output-path build/coverage_rust_imx8mp.lcov
             
-            if [ -f build/coverage_rust_imx8mp.lcov ]; then
-              echo "Generated build/coverage_rust_imx8mp.lcov"
-              head -20 build/coverage_rust_imx8mp.lcov
+            if [ ! -f build/coverage_rust_imx8mp.lcov ]; then
+              echo "ERROR: Failed to generate Rust coverage report"
+              exit 1
             fi
+            echo "Generated build/coverage_rust_imx8mp.lcov"
+            head -20 build/coverage_rust_imx8mp.lcov
           else
-            echo "No profraw files to process"
+            echo "ERROR: No profraw files found from imx8mp hardware tests"
+            exit 1
           fi
 
       - name: Process gcda files into SonarQube coverage format
@@ -574,14 +591,14 @@ jobs:
           # Generate SonarQube-compatible XML coverage report
           echo ""
           echo "=== Generating SonarQube coverage report ==="
-          gcovr -r . --sonarqube -o build/coverage_c_imx8mp_sonar.xml build/ || echo "gcovr failed"
+          gcovr -r . --sonarqube -o build/coverage_c_imx8mp_sonar.xml build/
           
-          if [ -f build/coverage_c_imx8mp_sonar.xml ]; then
-            echo "Generated build/coverage_c_imx8mp_sonar.xml"
-            head -30 build/coverage_c_imx8mp_sonar.xml
-          else
-            echo "WARNING: No C coverage report generated"
+          if [ ! -f build/coverage_c_imx8mp_sonar.xml ]; then
+            echo "ERROR: Failed to generate C coverage report for imx8mp"
+            exit 1
           fi
+          echo "Generated build/coverage_c_imx8mp_sonar.xml"
+          head -30 build/coverage_c_imx8mp_sonar.xml
 
       - name: Upload processed coverage
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
