@@ -172,7 +172,7 @@ jobs:
         run: |
           set -o pipefail
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
-            --cobertura --output-path build/coverage_rust.xml 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
+            --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
       - name: Export Rust test binaries for hardware testing (aarch64 only)
         if: matrix.platform.name == 'aarch64'
@@ -227,7 +227,7 @@ jobs:
             build/gcov/
             build/coverage_c_sonar.xml
             build/coverage_python.xml
-            build/coverage_rust.xml
+            build/coverage_rust.lcov
           retention-days: 30
 
       - name: Upload test results and metadata
@@ -531,12 +531,12 @@ jobs:
             # Note: This requires the same source code that was used to build the tests
             cargo llvm-cov report \
               --ignore-filename-regex='/.cargo/registry|/rustc/' \
-              --cobertura --output-path build/coverage_rust_imx8mp.xml \
+              --lcov --output-path build/coverage_rust_imx8mp.lcov \
               || echo "WARNING: Could not generate Rust coverage report"
             
-            if [ -f build/coverage_rust_imx8mp.xml ]; then
-              echo "Generated build/coverage_rust_imx8mp.xml"
-              head -20 build/coverage_rust_imx8mp.xml
+            if [ -f build/coverage_rust_imx8mp.lcov ]; then
+              echo "Generated build/coverage_rust_imx8mp.lcov"
+              head -20 build/coverage_rust_imx8mp.lcov
             fi
           else
             echo "No profraw files to process"
@@ -589,7 +589,7 @@ jobs:
           name: coverage-imx8mp-processed
           path: |
             build/coverage_c_imx8mp_sonar.xml
-            build/coverage_rust_imx8mp.xml
+            build/coverage_rust_imx8mp.lcov
             coverage-imx8mp/build/coverage_python.xml
           retention-days: 30
 
@@ -665,8 +665,8 @@ jobs:
           # Python coverage (Cobertura XML format)
           PYTHON_REPORTS=$(find coverage/ -name "coverage_python.xml" | tr '\n' ',' | sed 's/,$//')
           
-          # Rust coverage (Cobertura XML format)
-          RUST_REPORTS=$(find coverage/ -name "coverage_rust*.xml" | tr '\n' ',' | sed 's/,$//')
+          # Rust coverage (LCOV format)
+          RUST_REPORTS=$(find coverage/ -name "coverage_rust*.lcov" | tr '\n' ',' | sed 's/,$//')
           
           # C/C++ coverage (SonarQube XML format from gcovr --sonarqube)
           C_REPORTS=$(find coverage/ -name "coverage_c*_sonar.xml" | tr '\n' ',' | sed 's/,$//')
@@ -698,6 +698,6 @@ jobs:
         with:
           args: >
             -Dsonar.python.coverage.reportPaths=${{ env.PYTHON_COVERAGE_PATHS }}
-            -Dsonar.rust.cobertura.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
+            -Dsonar.rust.lcov.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
             -Dsonar.coverageReportPaths=${{ env.C_COVERAGE_PATHS }}
             -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
