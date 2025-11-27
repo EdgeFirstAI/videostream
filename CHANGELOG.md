@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.0.0] - 2025-11-27
+
+### Changed
+
+- **BREAKING**: Python package namespace changed from `deepview.videostream` to `videostream`
+  - Update imports: `from deepview.videostream import Frame` → `from videostream import Frame`
+  - Update imports: `import deepview.videostream as vsl` → `import videostream as vsl`
 
 ---
 

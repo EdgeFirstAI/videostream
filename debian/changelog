@@ -1,3 +1,11 @@
+videostream (2.0.0-1) stable; urgency=medium
+
+  * BREAKING: Python package namespace changed from deepview.videostream to videostream
+  * Update imports: from deepview.videostream import Frame → from videostream import Frame
+  * Update imports: import deepview.videostream as vsl → import videostream as vsl
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Thu, 27 Nov 2025 00:00:00 +0000
+
 videostream (1.5.6-1) stable; urgency=medium
 
   * GitHub Actions: Fixed release workflow to include PDF documentation in release assets
@@ -44,7 +52,7 @@ videostream (1.5.1-1) stable; urgency=medium
   * BREAKING: All Rust APIs now return Result types
   * Zero-copy IPC frame sharing library for embedded vision
   * GStreamer plugins: vslsink and vslsrc
-  * Python bindings via deepview.videostream package
+  * Python bindings via videostream package
   * Support for DmaBuf, G2D acceleration, and Hantro VPU
   * Complete documentation and samples
 

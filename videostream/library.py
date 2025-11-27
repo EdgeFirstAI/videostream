@@ -49,7 +49,7 @@ def load_library(libname: Optional[str] = None) -> CDLL:
     """
     Internal function used to load and configure the VideoStream library. This
     function should not be called directly but instead is called automatically
-    when the deepview.videostream library is first loaded.
+    when the videostream library is first loaded.
 
     The environment variable ``VIDEOSTREAM_LIBRARY`` can be used to point to
     the location of ``videostream.dll/dylib/so`` for cases where it cannot be
@@ -57,7 +57,7 @@ def load_library(libname: Optional[str] = None) -> CDLL:
 
     Note:
         The library is not part of the Python package but is installed
-        separately, typically as part of DeepView VisionPack installations.
+        separately, typically as part of EdgeFirst Perception installations.
 
     Returns:
         A ctypes.CDLL object containing the VideoStream library.

@@ -163,7 +163,7 @@ jobs:
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
           /usr/bin/time -v venv/bin/pytest tests -v \
-            --cov=deepview --cov-report=xml:build/coverage_python.xml \
+            --cov=videostream --cov-report=xml:build/coverage_python.xml \
             --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-${{ matrix.platform.name }}.txt
 
@@ -411,7 +411,7 @@ jobs:
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
           /usr/bin/time -v venv/bin/pytest tests -v \
-            --cov=deepview --cov-report=xml:build/coverage_python.xml \
+            --cov=videostream --cov-report=xml:build/coverage_python.xml \
             --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-imx8mp.txt
 

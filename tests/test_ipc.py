@@ -1,5 +1,5 @@
 import pytest
-from deepview.videostream import Client, Host, Frame
+from videostream import Client, Host, Frame
 from pathlib import Path
 
 

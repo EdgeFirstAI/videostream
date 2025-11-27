@@ -31,7 +31,7 @@ PROJECT_TYPE="library"  # Options: library, application, framework
 VERSION_FILE="include/videostream.h"  # Single source of truth for version
 
 # Source directories to scan (space-separated)
-SOURCE_DIRS="src lib include deepview gst"
+SOURCE_DIRS="src lib include videostream gst"
 
 # Package manifest files (for dependency parsing)
 MANIFEST_FILES="Cargo.toml Cargo.lock pyproject.toml requirements.txt package.json package-lock.json go.mod go.sum"

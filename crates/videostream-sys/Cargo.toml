@@ -16,11 +16,10 @@ categories = ["computer-vision", "multimedia::video", "external-ffi-bindings"]
 default = []
 
 [dependencies]
-libloading = "0.8"
+libloading.workspace = true
 
 [build-dependencies]
-# Build dependencies will be added when implementing bindgen
-bindgen = "0.70"
+bindgen.workspace = true
 
 [package.metadata.release]
 # Workspace-level files (pyproject.toml, include/videostream.h, debian/changelog)

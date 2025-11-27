@@ -2,7 +2,7 @@
 # Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
 
 from ctypes import byref, c_int, c_size_t, c_void_p, py_object, pythonapi
-from deepview.videostream.library import lib
+from videostream.library import lib
 from enum import IntEnum
 from typing import Optional
 from typeguard import typechecked

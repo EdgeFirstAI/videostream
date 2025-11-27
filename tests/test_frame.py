@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from deepview.videostream import Frame
+from videostream import Frame
 from pathlib import Path
 from random import randint
 from warnings import warn
