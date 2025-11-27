@@ -6,7 +6,7 @@ use dma_buf::DmaBuf;
 use std::{
     ffi::{c_int, CString},
     fmt, io,
-    os::fd::{BorrowedFd, FromRawFd, RawFd},
+    os::fd::{BorrowedFd, RawFd},
 };
 use unix_ts::Timestamp;
 use videostream_sys as ffi;
@@ -356,8 +356,14 @@ impl CameraBuffer<'_> {
         unsafe { BorrowedFd::borrow_raw(self.raw_fd) }
     }
 
-    pub fn dmabuf(&self) -> DmaBuf {
-        unsafe { DmaBuf::from_raw_fd(self.raw_fd) }
+    /// Create a DmaBuf from the camera buffer's file descriptor.
+    ///
+    /// This duplicates the file descriptor so that the DmaBuf can take ownership
+    /// of the duplicate without affecting the original V4L2 buffer fd.
+    pub fn dmabuf(&self) -> Result<DmaBuf, Error> {
+        // Duplicate the fd so DmaBuf can take ownership without affecting the original
+        let dup_fd = self.fd().try_clone_to_owned()?;
+        Ok(DmaBuf::from(dup_fd))
     }
 
     pub fn rawfd(&self) -> RawFd {
@@ -477,7 +483,7 @@ mod tests {
             let buf = cam.read()?;
 
             let now = Instant::now();
-            let dma = buf.dmabuf();
+            let dma = buf.dmabuf()?;
             let mem = dma.memory_map().map_err(|e| {
                 Error::Io(io::Error::new(
                     io::ErrorKind::Other,

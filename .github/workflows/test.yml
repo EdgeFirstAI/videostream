@@ -346,6 +346,12 @@ jobs:
           set -o pipefail
           export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
           export VIDEOSTREAM_LIBRARY=$(pwd)/build/libvideostream.so
+          
+          # Redirect gcov output to local path (compiled paths point to /home/runner/work/...)
+          # GCOV_PREFIX_STRIP removes leading path components, GCOV_PREFIX adds new prefix
+          export GCOV_PREFIX="${{ github.workspace }}"
+          export GCOV_PREFIX_STRIP=5
+          
           /usr/bin/time -v venv/bin/python -m slipcover --source deepview --xml --out build/coverage_python.xml \
             -m pytest tests -v --junitxml=build/pytest_results.xml \
             2>&1 | tee build/test-metrics-python-imx8mp.txt
@@ -353,6 +359,9 @@ jobs:
       - name: Run pre-built Rust tests with hardware access
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+          # Redirect gcov output for any C code called from Rust tests
+          GCOV_PREFIX: ${{ github.workspace }}
+          GCOV_PREFIX_STRIP: 5
         run: |
           set -o pipefail
           mkdir -p build/rust-test-results
@@ -385,14 +394,26 @@ jobs:
       - name: Generate C coverage from hardware tests
         run: |
           # Generate gcov data from the .gcda files created during test runs
+          # GCOV_PREFIX redirected .gcda files to $GITHUB_WORKSPACE/build/...
           mkdir -p build/gcov-hardware
-          if find build -name "*.gcda" -type f | head -1 | grep -q .; then
+          
+          echo "=== Searching for .gcda files ==="
+          find . -name "*.gcda" -type f 2>/dev/null || true
+          
+          echo ""
+          echo "=== Searching for .gcno files ==="
+          find build -name "*.gcno" -type f 2>/dev/null | head -10 || true
+          
+          if find build -name "*.gcda" -type f 2>/dev/null | head -1 | grep -q .; then
+            echo ""
             echo "Found .gcda files, generating gcov reports..."
             (cd build && find . -name "*.gcno" -exec gcov -p {} \; 2>/dev/null || true)
             (cd build && mv *.gcov gcov-hardware/ 2>/dev/null || true)
             gcovr -r . --cobertura -o build/coverage_c_hardware.xml build/ || true
           else
-            echo "No .gcda files found - C coverage may not be available"
+            echo ""
+            echo "No .gcda files found in build/ - C coverage not available from hardware tests"
+            echo "This is expected if the library was built without GCOV instrumentation"
           fi
 
       - name: Upload coverage artifacts
