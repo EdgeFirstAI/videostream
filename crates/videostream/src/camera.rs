@@ -438,7 +438,12 @@ mod tests {
 
         let fmts = create_camera().with_device(&device).formats()?;
         println!("camera formats: {:?}", fmts);
-        assert_ne!(fmts.len(), 0, "Camera device {} returned no formats", device);
+        assert_ne!(
+            fmts.len(),
+            0,
+            "Camera device {} returned no formats",
+            device
+        );
 
         Ok(())
     }
