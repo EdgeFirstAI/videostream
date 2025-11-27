@@ -1,5 +1,29 @@
 # cargo-nextest configuration
+# See: https://nexte.st/docs/configuration/reference/
 
 [profile.default]
 # JUnit XML output for CI test result publishing
+# Output to target/nextest/default/test-results.xml
 junit.path = "test-results.xml"
+# Report name shown in the XML
+junit.report-name = "cargo-nextest"
+# Only store output for failures to keep report size small
+junit.store-success-output = false
+junit.store-failure-output = true
+
+# CI profile - same as default but explicitly named for clarity
+[profile.ci]
+junit.path = "test-results.xml"
+junit.report-name = "cargo-nextest"
+junit.store-success-output = false
+junit.store-failure-output = true
+
+# Hardware profile - runs ALL tests including ignored ones
+# Use on real hardware (imx8mp) where camera/DMA tests can run
+[profile.hardware]
+junit.path = "test-results.xml"
+junit.report-name = "cargo-nextest-hardware"
+junit.store-success-output = false
+junit.store-failure-output = true
+# Run ignored tests on real hardware
+run-ignored = "all"
