@@ -846,17 +846,15 @@ jobs:
             echo "WARNING: compile_commands.json not found in build wrapper output"
           fi
           
-          # Fix source paths in coverage XML files
-          # Coverage files contain absolute source paths from different CI runners
-          # We need to normalize them to the current workspace path
+          # Fix Python coverage XML paths for Sonar
+          # The fix_coverage_paths.py script normalizes paths by:
+          # 1. Converting absolute <source> paths to relative package path
+          # 2. Adding package prefix to all filename attributes
           echo ""
-          echo "=== Normalizing coverage file source paths ==="
-          WORKSPACE="${{ github.workspace }}"
-          for xml_file in $(find coverage/ -name "*.xml" -type f); do
-            echo "Processing: $xml_file"
-            # Replace any absolute source path with the current workspace
-            # Common patterns: /home/runner/work/videostream/videostream, /github/workspace, etc.
-            sed -i "s|<source>[^<]*</source>|<source>$WORKSPACE</source>|g" "$xml_file"
+          echo "=== Fixing Python coverage report paths for SonarCloud ==="
+          for python_xml in $(find coverage/ -name "coverage_python.xml" -type f); do
+            echo "Fixing: $python_xml"
+            python3 scripts/fix_coverage_paths.py "$python_xml" videostream
           done
           
           # Collect all coverage reports
