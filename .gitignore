@@ -30,7 +30,12 @@ scancode.sqlite
 
 .DS_Store
 *.user*
-
+*.log
+*.bak
+*.swp
+*.tmp
+*.old
+*.orig
 *.uvguix.*
 
 *.psprj

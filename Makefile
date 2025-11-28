@@ -114,6 +114,9 @@ test: build
 	@(cd build && mv *.gcov gcov/ 2>/dev/null || true)
 	@gcovr -r . --sonarqube -o build/coverage_c_sonar.xml build/
 
+	@echo "Fixing Python coverage report paths for SonarCloud..."
+	@venv/bin/python scripts/fix_coverage_paths.py build/coverage_python.xml videostream
+
 	@echo ""
 	@echo "=========================================="
 	@venv/bin/python scripts/coverage_summary.py --build-dir build
