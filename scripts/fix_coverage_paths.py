@@ -27,15 +27,17 @@ def fix_coverage_xml(xml_file: str,
     # Track how many files were fixed
     fixed_count = 0
     
-    # Fix the <source> tags to use relative path instead of absolute
+    # Fix the <source> tags to use current directory (.)
+    # Sonar expects <source> to be the root directory where files are located
+    # If <source> is "." or empty, then filenames like "videostream/file.py"
+    # will be resolved correctly
     sources = root.findall(".//sources/source")
     if sources:
         for source_elem in sources:
             source_path = source_elem.text
             if source_path:
-                # Replace absolute path with relative source package path
-                if "/" in source_path:  # It's an absolute or relative path
-                    source_elem.text = source_package
+                # Set source to current directory
+                source_elem.text = "."
     
     # Find all class elements and fix their filename attributes
     for class_elem in root.findall(".//class"):
@@ -49,7 +51,7 @@ def fix_coverage_xml(xml_file: str,
     tree.write(xml_file, encoding="utf-8", xml_declaration=True)
     
     print(f"✓ Fixed {fixed_count} file paths in {xml_file}")
-    print(f"  Fixed <source> tag to use relative path: {source_package}")
+    print("  Set <source> tag to: .")
     print(f"  All filenames now properly prefixed with '{source_package}/'")
 
 
