@@ -834,16 +834,21 @@ jobs:
           mkdir -p build/sonar
           
           # Use x86_64 build wrapper output (all platforms produce similar data)
-          # Build wrapper generates compile_commands.json in its output directory
+          # Build wrapper generates build-wrapper-dump.json which SonarCloud uses
+          # for C/C++ analysis with sonar.cfamily.build-wrapper-output parameter
           if [ -d "build-wrapper/build-wrapper-output-x86_64" ]; then
             cp -r build-wrapper/build-wrapper-output-x86_64/* build/sonar/
           fi
           
-          # Verify compile_commands.json was generated
-          if [ -f "build/sonar/compile_commands.json" ]; then
-            echo "Found compile_commands.json from build wrapper"
+          # Verify build wrapper output files exist
+          if [ -f "build/sonar/build-wrapper-dump.json" ]; then
+            echo "Found build-wrapper-dump.json - build wrapper output is valid"
+            echo "Build wrapper version: $(head -20 build/sonar/build-wrapper-dump.json | grep version | head -1)"
           else
-            echo "WARNING: compile_commands.json not found in build wrapper output"
+            echo "ERROR: build-wrapper-dump.json not found in build wrapper output"
+            echo "Contents of build/sonar/:"
+            ls -la build/sonar/ || echo "Directory does not exist"
+            exit 1
           fi
           
           # Fix Python coverage XML paths for Sonar
@@ -896,7 +901,7 @@ jobs:
             -Dsonar.python.coverage.reportPaths=${{ env.PYTHON_COVERAGE_PATHS }}
             -Dsonar.rust.lcov.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
             -Dsonar.coverageReportPaths=${{ env.C_COVERAGE_PATHS }}
-            -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
+            -Dsonar.cfamily.build-wrapper-output=build/sonar
 
       - name: Generate test and coverage summary
         if: always()
