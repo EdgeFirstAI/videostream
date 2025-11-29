@@ -814,6 +814,7 @@ jobs:
           # SonarCloud needs system headers referenced in compile_commands.json
           # to properly analyze C/C++ code and resolve includes
           sudo apt-get update
+          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
