@@ -62,7 +62,8 @@ vsl_task(void* data)
     int64_t     last_frame = 0;
 
     while (run) {
-        usleep(1000);
+        struct timespec ts = {0, 1000000}; // 1000 microseconds = 1ms
+        nanosleep(&ts, NULL);
 
         if (pthread_mutex_lock(&vsl_mutex)) {
             fprintf(stderr,
@@ -168,7 +169,9 @@ vsl_task(void* data)
 }
 
 static void
-bus_message(GstBus* bus, GstMessage* message, gpointer userptr)
+bus_message(GstBus* bus __attribute__((unused)),
+            GstMessage* message,
+            gpointer    userptr)
 {
     GMainLoop* loop = userptr;
 

@@ -41,6 +41,8 @@ g2d_from_fourcc(uint32_t fourcc)
         return G2D_NV16;
     case VSL_FOURCC('N', 'V', '6', '1'):
         return G2D_NV61;
+    default:
+        break;
     }
 
     fprintf(stderr,
@@ -63,10 +65,8 @@ main(int argc, char** argv)
     g2d = g2d_initialize(NULL, NULL);
     if (!g2d) {
         printf(
-            "[WARNING] unable to inialize g2d, only RGB will be supported.\n");
-    }
-
-    if (g2d->open(&g2d_handle)) {
+            "[WARNING] unable to initialize g2d, only RGB will be supported.\n");
+    } else if (g2d->open(&g2d_handle)) {
         fprintf(stderr, "failed to open g2d library\n");
         return EXIT_FAILURE;
     }
