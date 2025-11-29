@@ -301,7 +301,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int                   totalDecConsumedBytes = 0; // stuffer + frame
 
     VpuBufferNode inData    = {};
-    inData.pVirAddr         = (unsigned char*) data;
+    inData.pVirAddr         = (unsigned char*) (uintptr_t) data;
     inData.nSize            = data_length;
     inData.pPhyAddr         = NULL;
     inData.sCodecData.pData = NULL;

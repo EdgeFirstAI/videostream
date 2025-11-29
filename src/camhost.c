@@ -160,13 +160,14 @@ host_process_wrapper(void* temp)
         prev_buffer_count = queued_bufs;
         pthread_mutex_unlock(&vsl_mutex);
 
-        // Runs at 5000Hz
-        usleep(1e6 / 5000);
+        // Runs at 5000Hz (200 microseconds = 200000 nanoseconds)
+        struct timespec ts = {0, 200000};
+        nanosleep(&ts, NULL);
     }
     return NULL;
 }
 
-const char* usage =
+static const char* const USAGE =
     "-h, --help\n"
     "    Display help information\n"
     "-v, --version\n"
@@ -193,119 +194,186 @@ const char* usage =
     "-f FOURCC, --fourcc FOURCC\n"
     "    Sets the fourcc video format. (default based on camera driver)\n";
 
-int
-main(int argc, char** argv)
-{
-    const char*          device_name = "/dev/video0";
-    bool                 mirror      = false;
-    bool                 mirror_v    = false;
-    int                  buf_count   = 6;
-    u_int32_t            cam_fourcc  = 0;
-    const char*          vsl_path    = "/tmp/camhost.0";
-    FILE*                log         = NULL;
-    static struct option options[] =
-        {{"help", no_argument, NULL, 'h'},
-         {"version", no_argument, NULL, 'v'},
-         {"verbose", no_argument, NULL, 'V'},
-         {"log", required_argument, NULL, 'L'},
-         {"capture_device", required_argument, NULL, 'd'},
-         {"mirror", no_argument, NULL, 'M'},
-         {"mirror_v", no_argument, NULL, 'H'},
-         {"camera_res", required_argument, NULL, 'r'},
-         {"path", required_argument, NULL, 'p'},
-         {"lifespan", required_argument, NULL, 'l'},
-         {"bufcount", required_argument, NULL, 'b'},
-         {"fourcc", required_argument, NULL, 'f'}};
+// Configuration struct to hold parsed arguments
+struct camhost_config {
+    const char* device_name;
+    const char* vsl_path;
+    FILE*       log;
+    int         buf_count;
+    uint32_t    cam_fourcc;
+    bool        mirror;
+    bool        mirror_v;
+};
 
-    for (int i = 0; i < 100; i++) {
-        int opt = getopt_long(argc, argv, "hvVL:d:MHr:p:l:b:f:", options, NULL);
-        if (opt == -1) break;
+// Return codes for argument parsing
+enum parse_result { PARSE_OK = 0, PARSE_EXIT_SUCCESS = 1, PARSE_EXIT_FAILURE = 2 };
+
+static void
+print_fourcc_warning(const char* optarg, uint32_t cam_fourcc)
+{
+    if (cam_fourcc == 0) {
+        printf("%s fourcc code was not 4 characters, using camera "
+               "default instead\n",
+               optarg);
+    } else {
+        printf("%s fourcc code was not 4 characters, using "
+               "%c%c%c%c instead\n",
+               optarg,
+               cam_fourcc,
+               cam_fourcc >> 8,
+               cam_fourcc >> 16,
+               cam_fourcc >> 24);
+    }
+}
+
+static void
+print_available_formats(vsl_camera* cam)
+{
+    uint32_t codes[100];
+    int      fmts = vsl_camera_enum_fmts(cam, codes, array_size(codes));
+    printf("Try one of the following video formats:\n");
+    for (int i = 0; i < fmts; i++) {
+        printf("\t%c%c%c%c\n",
+               codes[i],
+               codes[i] >> 8,
+               codes[i] >> 16,
+               codes[i] >> 24);
+    }
+
+    fmts = vsl_camera_enum_mplane_fmts(cam, codes, array_size(codes));
+    for (int i = 0; i < fmts; i++) {
+        printf("\tmultiplanar %c%c%c%c\n",
+               codes[i],
+               codes[i] >> 8,
+               codes[i] >> 16,
+               codes[i] >> 24);
+    }
+}
+
+static enum parse_result
+parse_arguments(int argc, char** argv, struct camhost_config* config)
+{
+    static struct option options[] = {
+        {"help", no_argument, NULL, 'h'},
+        {"version", no_argument, NULL, 'v'},
+        {"verbose", no_argument, NULL, 'V'},
+        {"log", required_argument, NULL, 'L'},
+        {"capture_device", required_argument, NULL, 'd'},
+        {"mirror", no_argument, NULL, 'M'},
+        {"mirror_v", no_argument, NULL, 'H'},
+        {"camera_res", required_argument, NULL, 'r'},
+        {"path", required_argument, NULL, 'p'},
+        {"lifespan", required_argument, NULL, 'l'},
+        {"bufcount", required_argument, NULL, 'b'},
+        {"fourcc", required_argument, NULL, 'f'},
+        {NULL, 0, NULL, 0}};
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "hvVL:d:MHr:p:l:b:f:", options, NULL))
+           != -1) {
         switch (opt) {
         case 'h':
-            printf("%s\n%s", argv[0], usage);
-            log ? fclose(log) : 0;
-            return EXIT_SUCCESS;
+            printf("%s\n%s", argv[0], USAGE);
+            return PARSE_EXIT_SUCCESS;
         case 'v':
             printf("%s\n", vsl_version());
-            log ? fclose(log) : 0;
-            return EXIT_SUCCESS;
+            return PARSE_EXIT_SUCCESS;
         case 'V':
             verbose = true;
             break;
         case 'L':
-            log = fopen(optarg, "w");
-            if (!log) {
+            config->log = fopen(optarg, "w");
+            if (!config->log) {
                 fprintf(stderr,
                         "failed to open log file: %s\n",
                         strerror(errno));
-                return EXIT_FAILURE;
+                return PARSE_EXIT_FAILURE;
             }
-            fprintf(log,
+            fprintf(config->log,
                     "event, start_time, end_time, duration, serial, "
                     "input_elapsed, model_elapsed, output_elapsed,\n");
             break;
         case 'd':
-            device_name = optarg;
+            config->device_name = optarg;
             break;
         case 'M':
-            mirror = true;
+            config->mirror = true;
             break;
         case 'H':
-            mirror_v = true;
+            config->mirror_v = true;
             break;
         case 'r': {
             const char* split = strchr(optarg, 'x');
-            if (split) {
-                cam_width  = atoi(optarg);
-                cam_height = atoi(split + 1);
-            } else {
+            if (!split) {
                 fprintf(stderr, "Resolution invalid: %s\n", optarg);
-                log ? fclose(log) : 0;
-                return EXIT_FAILURE;
+                return PARSE_EXIT_FAILURE;
             }
+            cam_width  = atoi(optarg);
+            cam_height = atoi(split + 1);
             break;
         }
         case 'p':
-            vsl_path = optarg;
+            config->vsl_path = optarg;
             break;
         case 'l':
             frame_lifespan = (int64_t) (atof(optarg) * 1e6);
             break;
         case 'b':
-            buf_count = atoi(optarg);
+            config->buf_count = atoi(optarg);
             break;
         case 'f':
             if (strlen(optarg) != 4) {
-                if (cam_fourcc == 0) {
-                    printf("%s fourcc code was not 4 characters, using camera "
-                           "default instead\n",
-                           optarg);
-                } else {
-                    printf("%s fourcc code was not 4 characters, using "
-                           "%c%c%c%c instead\n",
-                           optarg,
-                           cam_fourcc,
-                           cam_fourcc >> 8,
-                           cam_fourcc >> 16,
-                           cam_fourcc >> 24);
-                }
+                print_fourcc_warning(optarg, config->cam_fourcc);
                 break;
             }
-            cam_fourcc = VSL_FOURCC(optarg[0], optarg[1], optarg[2], optarg[3]);
+            config->cam_fourcc =
+                VSL_FOURCC(optarg[0], optarg[1], optarg[2], optarg[3]);
+            break;
+        default:
+            break;
         }
     }
+    return PARSE_OK;
+}
 
+int
+main(int argc, char** argv)
+{
+    // Initialize configuration with defaults
+    struct camhost_config config = {
+        .device_name = "/dev/video0",
+        .vsl_path    = "/tmp/camhost.0",
+        .log         = NULL,
+        .buf_count   = 6,
+        .cam_fourcc  = 0,
+        .mirror      = false,
+        .mirror_v    = false,
+    };
+
+    // Parse command line arguments
+    enum parse_result parse_res = parse_arguments(argc, argv, &config);
+    if (parse_res == PARSE_EXIT_SUCCESS) {
+        if (config.log) { fclose(config.log); }
+        return EXIT_SUCCESS;
+    }
+    if (parse_res == PARSE_EXIT_FAILURE) {
+        if (config.log) { fclose(config.log); }
+        return EXIT_FAILURE;
+    }
+
+    // Set up signal handlers
     signal(SIGHUP, sig_handler);
     signal(SIGINT, sig_handler);
     signal(SIGQUIT, sig_handler);
     signal(SIGTERM, sig_handler);
 
-    VSLHost* host = vsl_host_init(vsl_path);
+    // Initialize VSL host
+    VSLHost* host = vsl_host_init(config.vsl_path);
     if (!host) {
         fprintf(stderr,
                 "failed to create videostream host: %s\n",
                 strerror(errno));
-        log ? fclose(log) : 0;
+        if (config.log) { fclose(config.log); }
         return EXIT_FAILURE;
     }
 
@@ -313,82 +381,69 @@ main(int argc, char** argv)
     int listener;
     vsl_host_sockets(host, 1, &listener, NULL);
 
-    camera = vsl_camera_open_device(device_name);
+    // Open camera device
+    camera = vsl_camera_open_device(config.device_name);
     if (!camera) {
-        printf("%s device could not be opened\n", device_name);
+        printf("%s device could not be opened\n", config.device_name);
         vsl_host_release(host);
-        return -1;
+        if (config.log) { fclose(config.log); }
+        return EXIT_FAILURE;
     }
 
-    uint32_t requested_fourcc = cam_fourcc;
-
-    int err = vsl_camera_init_device(camera,
+    // Initialize camera device
+    uint32_t requested_fourcc = config.cam_fourcc;
+    int      err              = vsl_camera_init_device(camera,
                                      &cam_width,
                                      &cam_height,
-                                     &buf_count,
-                                     &cam_fourcc);
+                                     &config.buf_count,
+                                     &config.cam_fourcc);
     if (err) {
         printf("Could not initialize device to stream\n");
         vsl_camera_close_device(camera);
         vsl_host_release(host);
-        log ? fclose(log) : 0;
-        return -1;
+        if (config.log) { fclose(config.log); }
+        return EXIT_FAILURE;
     }
 
-    if (requested_fourcc != 0 && cam_fourcc != requested_fourcc) {
+    // Check if requested fourcc is supported
+    if (requested_fourcc != 0 && config.cam_fourcc != requested_fourcc) {
         printf("Could not initialize device to stream in %c%c%c%c\n",
                requested_fourcc,
                requested_fourcc >> 8,
                requested_fourcc >> 16,
                requested_fourcc >> 24);
-        u_int32_t codes[100];
-        int       fmts = vsl_camera_enum_fmts(camera, codes, array_size(codes));
-        printf("Try one of the following video formats:\n");
-        for (int i = 0; i < fmts; i++) {
-            printf("\t%c%c%c%c\n",
-                   codes[i],
-                   codes[i] >> 8,
-                   codes[i] >> 16,
-                   codes[i] >> 24);
-        }
-
-        fmts = vsl_camera_enum_mplane_fmts(camera, codes, array_size(codes));
-        for (int i = 0; i < fmts; i++) {
-            printf("\tmultiplanar %c%c%c%c\n",
-                   codes[i],
-                   codes[i] >> 8,
-                   codes[i] >> 16,
-                   codes[i] >> 24);
-        }
+        print_available_formats(camera);
         vsl_camera_close_device(camera);
         vsl_host_release(host);
-        log ? fclose(log) : 0;
-        return -1;
+        if (config.log) { fclose(config.log); }
+        return EXIT_FAILURE;
     }
 
-    vsl_camera_mirror(camera, mirror);
-    vsl_camera_mirror_v(camera, mirror_v);
+    // Apply mirror settings
+    vsl_camera_mirror(camera, config.mirror);
+    vsl_camera_mirror_v(camera, config.mirror_v);
 
+    // Start capturing
     vsl_camera_start_capturing(camera);
 
+    // Start host processing thread
     pthread_t threadID = 0;
     pthread_create(&threadID, NULL, host_process_wrapper, host);
 
+    // Main capture loop
     while (keep_running) {
         struct vsl_camera_buffer* buf = vsl_camera_get_data(camera);
-        if (buf) { new_sample_v4l2(buf, host, log); }
+        if (buf) { new_sample_v4l2(buf, host, config.log); }
     }
 
+    // Cleanup
     void* ret;
     pthread_join(threadID, &ret);
-
     vsl_host_release(host);
-
     vsl_camera_stop_capturing(camera);
     vsl_camera_uninit_device(camera);
     vsl_camera_close_device(camera);
+    if (config.log) { fclose(config.log); }
 
-    log ? fclose(log) : 0;
-
-    return 0;
+    return EXIT_SUCCESS;
 }

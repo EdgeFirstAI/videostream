@@ -41,6 +41,8 @@ g2d_from_fourcc(uint32_t fourcc)
         return G2D_NV16;
     case VSL_FOURCC('N', 'V', '6', '1'):
         return G2D_NV61;
+    default:
+        break;
     }
 
     fprintf(stderr,
@@ -52,18 +54,17 @@ g2d_from_fourcc(uint32_t fourcc)
     return 0;
 }
 
-const char* usage = "\
-\n\
-USAGE: \n\
-    %s\n\
-        -h, --help\n\
-            Display help information\n\
-        -c, --camera\n\
-            The path of the camera host (default /tmp/camera.vsl)\n\
-        -o, --out\n\
-            The file to save the image to (default ./frame.jpg)\n\
-\n\
-";
+static const char* const USAGE_FMT =
+    "\n"
+    "USAGE: \n"
+    "    %s\n"
+    "        -h, --help\n"
+    "            Display help information\n"
+    "        -c, --camera\n"
+    "            The path of the camera host (default /tmp/camera.vsl)\n"
+    "        -o, --out\n"
+    "            The file to save the image to (default ./frame.jpg)\n"
+    "\n";
 
 int
 main(int argc, char** argv)
@@ -87,7 +88,7 @@ main(int argc, char** argv)
         if (opt == -1) break;
         switch (opt) {
         case 'h': {
-            printf(usage, argv[0]);
+            printf(USAGE_FMT, argv[0]);
             return EXIT_SUCCESS;
         }
         case 'c': {
@@ -98,6 +99,8 @@ main(int argc, char** argv)
             file_path = optarg;
             break;
         }
+        default:
+            break;
         }
     }
 

@@ -60,7 +60,8 @@ vsl_task(void* data)
     int64_t     last_frame = 0;
 
     while (1) {
-        usleep(1000);
+        struct timespec ts = {0, 1000000}; // 1000 microseconds = 1ms
+        nanosleep(&ts, NULL);
 
         if (pthread_mutex_lock(&vsl_mutex)) {
             fprintf(stderr,
