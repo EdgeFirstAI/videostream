@@ -1,7 +1,9 @@
 # EdgeFirst VideoStream Library
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/test.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
-[![Coverage](https://img.shields.io/codecov/c/github/au-zone/videostream)](https://codecov.io/gh/au-zone/videostream)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=coverage)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![EdgeFirst Perception](https://img.shields.io/badge/EdgeFirst-Perception-green)](https://doc.edgefirst.ai/test/perception/)
 
