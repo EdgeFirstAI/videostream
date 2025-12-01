@@ -913,6 +913,8 @@ jobs:
             -Dsonar.rust.lcov.reportPaths=${{ env.RUST_COVERAGE_PATHS }}
             -Dsonar.coverageReportPaths=${{ env.C_COVERAGE_PATHS }}
             -Dsonar.cfamily.compile-commands=build/sonar/compile_commands.json
+            -Dsonar.cfamily.analysisCache.mode=fs
+            -Dsonar.cfamily.analysisCache.path=${{ runner.temp }}/cfamily-cache
 
       - name: Generate test and coverage summary
         if: always()
