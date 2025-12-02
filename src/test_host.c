@@ -117,37 +117,13 @@ check_dma_heap_access(void)
     // Check if we have read/write permissions
     if (access(dma_heap_path, R_OK | W_OK) != 0) {
         fprintf(stderr,
-                "ERROR: No access to DMA heap device: %s\n",
+                "INFO: No access to DMA heap device: %s\n",
                 dma_heap_path);
-        fprintf(stderr, "       Current permissions: ");
-
-        // Show current permissions
-        printf("%c%c%c%c%c%c%c%c%c\n",
-               (st.st_mode & S_IRUSR) ? 'r' : '-',
-               (st.st_mode & S_IWUSR) ? 'w' : '-',
-               (st.st_mode & S_IXUSR) ? 'x' : '-',
-               (st.st_mode & S_IRGRP) ? 'r' : '-',
-               (st.st_mode & S_IWGRP) ? 'w' : '-',
-               (st.st_mode & S_IXGRP) ? 'x' : '-',
-               (st.st_mode & S_IROTH) ? 'r' : '-',
-               (st.st_mode & S_IWOTH) ? 'w' : '-',
-               (st.st_mode & S_IXOTH) ? 'x' : '-');
-
-        fprintf(stderr, "\n");
-        fprintf(stderr, "SOLUTIONS:\n");
-        fprintf(stderr, "  1. Add your user to the 'video' group:\n");
-        fprintf(stderr, "     sudo usermod -a -G video $USER\n");
-        fprintf(stderr, "     (then log out and log back in)\n");
-        fprintf(stderr, "\n");
-        fprintf(stderr, "  2. Run with sudo:\n");
-        fprintf(stderr, "     sudo ./test_host\n");
-        fprintf(stderr, "\n");
-        fprintf(stderr,
-                "  3. Set permissions (not recommended for production):\n");
-        fprintf(stderr, "     sudo chmod 666 %s\n", dma_heap_path);
-        fprintf(stderr, "\n");
-
-        return -1;
+        fprintf(stderr, "      Will use POSIX shared memory instead.\n");
+        fprintf(stderr, "      For DMA heap access, you can:\n");
+        fprintf(stderr, "        - Add user to 'video' group: sudo usermod -a -G video $USER\n");
+        fprintf(stderr, "        - Run with sudo: sudo ./test_host\n\n");
+        return 0; // Fall back to shared memory
     }
 
     printf("✓ DMA heap access OK: %s\n", dma_heap_path);
