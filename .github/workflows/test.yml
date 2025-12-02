@@ -178,9 +178,10 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
           set -o pipefail
-          # Use profiling profile for optimized binaries with debug info
+          # Use Cargo profiling profile for optimized binaries with debug info
+          # Use nextest ci profile for CI-specific test configuration
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
-            --profile profiling \
+            --profile profiling -P ci \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
       - name: Add skipped Rust tests to JUnit XML
@@ -190,7 +191,7 @@ jobs:
           python3 << 'PATCH_JUNIT'
           import xml.etree.ElementTree as ET
 
-          junit_file = "target/nextest/default/test-results.xml"
+          junit_file = "target/nextest/ci/test-results.xml"
           tree = ET.parse(junit_file)
           root = tree.getroot()
 
@@ -280,9 +281,10 @@ jobs:
           # This sets RUSTFLAGS with -C instrument-coverage and CARGO_LLVM_COV_TARGET_DIR
           source <(cargo llvm-cov show-env --export-prefix)
 
-          # Build test binaries with coverage instrumentation using profiling profile
+          # Build test binaries with coverage instrumentation using Cargo profiling profile
           # (optimized with debug info) - binaries placed in target/llvm-cov-target/profiling/deps/
-          cargo nextest run --workspace --all-features --profile profiling --no-run --run-ignored=all
+          # --cargo-profile = Cargo build profile, -P = nextest profile (hardware runs ignored tests)
+          cargo nextest run --workspace --all-features --cargo-profile profiling -P hardware --no-run
 
           # Copy instrumented test binaries to target/tests for artifact upload
           mkdir -p target/tests
@@ -332,7 +334,7 @@ jobs:
           path: |
             build/pytest_results.xml
             build/coverage_c.xml
-            target/nextest/default/test-results.xml
+            target/nextest/ci/test-results.xml
             build/test-metrics-*-${{ matrix.platform.name }}.txt
           retention-days: 30
 
@@ -379,7 +381,7 @@ jobs:
         with:
           files: |
             build/pytest_results.xml
-            target/nextest/default/test-results.xml
+            target/nextest/ci/test-results.xml
           check_name: Test Results (${{ matrix.platform.name }})
           comment_mode: always
           # ignore_runs helps avoid double-counting when tests report multiple runs
