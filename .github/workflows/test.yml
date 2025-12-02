@@ -35,6 +35,9 @@
 # - Uses cargo-nextest for Rust tests with JUnit XML output
 # - Captures test performance metrics with /usr/bin/time -v
 # - Publishes test results with EnricoMi/publish-unit-test-result-action
+# - Host/Client IPC tests verify UNIX socket communication with shared memory
+# - On-target vsl-camhost tests verify camera streaming at multiple resolutions
+#   (640x480, 1280x720, 1920x1080) with DMA heap frame sharing
 
 name: Test
 
@@ -181,18 +184,18 @@ jobs:
           # Add them as skipped entries so test counts match hardware (46 total)
           python3 << 'PATCH_JUNIT'
           import xml.etree.ElementTree as ET
-          
+
           junit_file = "target/nextest/default/test-results.xml"
           tree = ET.parse(junit_file)
           root = tree.getroot()
-          
+
           # Ignored tests that run on hardware but are skipped on CI
           ignored_tests = [
               ("camera::tests::test_camera_start_stop", "videostream"),
               ("camera::tests::test_camera_enum", "videostream"),
               ("camera::tests::test_camera_invalid", "videostream"),
           ]
-          
+
           # Find the testsuite and add skipped tests
           for testsuite in root.findall('.//testsuite'):
               for test_name, classname in ignored_tests:
@@ -202,18 +205,65 @@ jobs:
                   testcase.set('time', '0.000')
                   skipped = ET.SubElement(testcase, 'skipped')
                   skipped.set('message', 'Test requires camera hardware (run with --include-ignored)')
-              
+
               # Update test count
               current_tests = int(testsuite.get('tests', 0))
               testsuite.set('tests', str(current_tests + len(ignored_tests)))
-          
+
           # Update root testsuites count
           current_total = int(root.get('tests', 0))
           root.set('tests', str(current_total + len(ignored_tests)))
-          
+
           tree.write(junit_file, encoding='UTF-8', xml_declaration=True)
           print(f"Added {len(ignored_tests)} skipped tests to {junit_file}")
           PATCH_JUNIT
+
+      - name: Run host/client IPC tests with coverage
+        run: |
+          set -o pipefail
+          export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
+
+          echo "=== VideoStream Host/Client IPC Test ==="
+          echo "Testing inter-process communication via UNIX socket"
+          echo ""
+
+          SOCKET_PATH="/tmp/videostream_ci_test_$$"
+          NUM_FRAMES=30
+
+          # Start host in background
+          echo "Starting host..."
+          ./build/src/vsl-test-host "$SOCKET_PATH" &
+          HOST_PID=$!
+
+          # Give host time to initialize
+          sleep 2
+
+          # Check host is running
+          if ! kill -0 $HOST_PID 2>/dev/null; then
+            echo "ERROR: Host failed to start"
+            exit 1
+          fi
+          echo "✓ Host started (PID: $HOST_PID)"
+
+          # Run client
+          echo ""
+          echo "Starting client to receive $NUM_FRAMES frames..."
+          if ./build/src/vsl-test-client "$SOCKET_PATH" "$NUM_FRAMES"; then
+            echo ""
+            echo "✓ Host/Client IPC test PASSED"
+            CLIENT_EXIT=0
+          else
+            echo ""
+            echo "✗ Host/Client IPC test FAILED"
+            CLIENT_EXIT=1
+          fi
+
+          # Cleanup
+          kill $HOST_PID 2>/dev/null || true
+          wait $HOST_PID 2>/dev/null || true
+          rm -f "$SOCKET_PATH"
+
+          exit $CLIENT_EXIT
 
       - name: Build instrumented Rust test binaries for hardware testing (aarch64 only)
         if: matrix.platform.name == 'aarch64'
@@ -295,7 +345,7 @@ jobs:
           name: build-aarch64
           path: |
             build/libvideostream.so*
-            build/vsl-*
+            build/src/vsl-*
             build/CMakeFiles/**/*.gcno
           retention-days: 7
 
@@ -525,6 +575,171 @@ jobs:
           
           print(f"Generated {output_file} with {len(tests)} tests ({total_passed} passed, {total_failed} failed)")
           JUNIT_SCRIPT
+
+      - name: Run host/client IPC tests with coverage (hardware)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+          GCOV_PREFIX: ${{ github.workspace }}
+          GCOV_PREFIX_STRIP: 5
+        run: |
+          set -o pipefail
+
+          echo "=== VideoStream Host/Client IPC Test (Hardware) ==="
+          echo "Testing inter-process communication with DMA heap on real hardware"
+          echo ""
+
+          SOCKET_PATH="/tmp/videostream_hw_test_$$"
+          NUM_FRAMES=30
+
+          # Start host in background
+          echo "Starting host..."
+          ./build/src/vsl-test-host "$SOCKET_PATH" &
+          HOST_PID=$!
+
+          # Give host time to initialize
+          sleep 2
+
+          # Check host is running
+          if ! kill -0 $HOST_PID 2>/dev/null; then
+            echo "ERROR: Host failed to start"
+            exit 1
+          fi
+          echo "✓ Host started (PID: $HOST_PID)"
+
+          # Run client
+          echo ""
+          echo "Starting client to receive $NUM_FRAMES frames..."
+          if ./build/src/vsl-test-client "$SOCKET_PATH" "$NUM_FRAMES"; then
+            echo ""
+            echo "✓ Host/Client IPC test PASSED"
+            CLIENT_EXIT=0
+          else
+            echo ""
+            echo "✗ Host/Client IPC test FAILED"
+            CLIENT_EXIT=1
+          fi
+
+          # Cleanup
+          kill $HOST_PID 2>/dev/null || true
+          wait $HOST_PID 2>/dev/null || true
+          rm -f "$SOCKET_PATH"
+
+          exit $CLIENT_EXIT
+
+      - name: Run vsl-camhost multi-resolution tests (hardware)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+          GCOV_PREFIX: ${{ github.workspace }}
+          GCOV_PREFIX_STRIP: 5
+        run: |
+          set -o pipefail
+
+          echo "=== VSL Camera Host Multi-Resolution Tests ==="
+          echo "Testing vsl-camhost with various camera resolutions"
+          echo ""
+
+          # Detect camera device - use /dev/video3 on imx8mp (ISI capture)
+          CAMERA_DEVICE="/dev/video3"
+          if [ ! -e "$CAMERA_DEVICE" ]; then
+            echo "WARNING: Camera device $CAMERA_DEVICE not found"
+            v4l2-ctl --list-devices 2>/dev/null || true
+            echo "Skipping camera tests - no camera available"
+            exit 0
+          fi
+
+          echo "Using camera device: $CAMERA_DEVICE"
+          echo ""
+
+          # Test resolutions (common camera resolutions)
+          RESOLUTIONS="640x480 1280x720 1920x1080"
+          NUM_FRAMES=10  # Receive 10 frames per resolution test
+          TESTS_PASSED=0
+          TESTS_FAILED=0
+
+          for RES in $RESOLUTIONS; do
+            WIDTH=$(echo $RES | cut -d'x' -f1)
+            HEIGHT=$(echo $RES | cut -d'x' -f2)
+            SOCKET_PATH="/tmp/camhost_test_${WIDTH}x${HEIGHT}_$$"
+
+            echo "==============================================================================="
+            echo "Testing resolution: ${WIDTH}x${HEIGHT}"
+            echo "==============================================================================="
+
+            # Start camhost with specified resolution
+            echo "Starting vsl-camhost..."
+            ./build/src/vsl-camhost -d "$CAMERA_DEVICE" -r "${WIDTH}x${HEIGHT}" -p "$SOCKET_PATH" -V &
+            CAMHOST_PID=$!
+
+            # Give camhost time to initialize camera and create socket
+            sleep 3
+
+            # Check if camhost is still running
+            if ! kill -0 $CAMHOST_PID 2>/dev/null; then
+              echo "WARNING: vsl-camhost failed to start for resolution ${WIDTH}x${HEIGHT}"
+              echo "This resolution may not be supported by the camera"
+              wait $CAMHOST_PID 2>/dev/null || true
+              TESTS_FAILED=$((TESTS_FAILED + 1))
+              continue
+            fi
+
+            # Check socket was created
+            if [ ! -S "$SOCKET_PATH" ]; then
+              echo "WARNING: Socket not created for resolution ${WIDTH}x${HEIGHT}"
+              kill $CAMHOST_PID 2>/dev/null || true
+              wait $CAMHOST_PID 2>/dev/null || true
+              TESTS_FAILED=$((TESTS_FAILED + 1))
+              continue
+            fi
+
+            echo "✓ vsl-camhost started (PID: $CAMHOST_PID)"
+
+            # Run client to receive frames and verify settings
+            echo "Running client to receive $NUM_FRAMES frames..."
+            if timeout 30 ./build/src/vsl-test-client "$SOCKET_PATH" "$NUM_FRAMES" 2>&1 | tee /tmp/client_output_$$.txt; then
+              # Verify the frame dimensions match expected resolution
+              if grep -q "Size:.*${WIDTH}x${HEIGHT}" /tmp/client_output_$$.txt; then
+                echo "✓ Resolution ${WIDTH}x${HEIGHT} test PASSED"
+                echo "  Frames received with correct dimensions"
+                TESTS_PASSED=$((TESTS_PASSED + 1))
+              else
+                echo "✗ Resolution ${WIDTH}x${HEIGHT} test FAILED"
+                echo "  Frame dimensions did not match expected ${WIDTH}x${HEIGHT}"
+                cat /tmp/client_output_$$.txt
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+              fi
+            else
+              echo "✗ Resolution ${WIDTH}x${HEIGHT} test FAILED"
+              echo "  Client failed to receive frames"
+              TESTS_FAILED=$((TESTS_FAILED + 1))
+            fi
+
+            # Cleanup
+            kill $CAMHOST_PID 2>/dev/null || true
+            wait $CAMHOST_PID 2>/dev/null || true
+            rm -f "$SOCKET_PATH" /tmp/client_output_$$.txt
+
+            echo ""
+            sleep 1  # Brief pause between resolution tests
+          done
+
+          echo "==============================================================================="
+          echo "VSL Camera Host Multi-Resolution Test Summary"
+          echo "==============================================================================="
+          echo "Tests passed: $TESTS_PASSED"
+          echo "Tests failed: $TESTS_FAILED"
+
+          if [ $TESTS_FAILED -gt 0 ]; then
+            echo ""
+            echo "Some resolution tests failed. This may be due to camera limitations."
+            # Don't fail the job if some resolutions aren't supported
+            # At least one resolution should work
+            if [ $TESTS_PASSED -eq 0 ]; then
+              echo "ERROR: No resolution tests passed!"
+              exit 1
+            fi
+          fi
+
+          echo "✓ Camera host multi-resolution tests completed"
 
       - name: Collect gcda files for processing
         if: always()
@@ -927,9 +1142,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture | Environment | Tests |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------------|-------------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Ubuntu 22.04 | x86_64 | GitHub Runner | C, Rust, Python |" >> $GITHUB_STEP_SUMMARY
-          echo "| Ubuntu 22.04 | aarch64 | GitHub ARM Runner | C, Rust, Python |" >> $GITHUB_STEP_SUMMARY
-          echo "| NXP i.MX8M Plus | aarch64 | Real Hardware | C, Rust, Python (camera, DmaBuf) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ubuntu 22.04 | x86_64 | GitHub Runner | C, Rust, Python, Host/Client IPC |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ubuntu 22.04 | aarch64 | GitHub ARM Runner | C, Rust, Python, Host/Client IPC |" >> $GITHUB_STEP_SUMMARY
+          echo "| NXP i.MX8M Plus | aarch64 | Real Hardware | C, Rust, Python, Host/Client IPC, Camera Multi-Resolution |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Use standalone coverage summary script (also used by `make test`)
