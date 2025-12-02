@@ -1,8 +1,8 @@
 # GitHub Actions workflow for testing and code quality
 #
-# This workflow builds the Debug configuration with coverage enabled,
-# runs unit tests (C, Python, and Rust), collects coverage data, and 
-# performs static analysis including SonarCloud scanning.
+# This workflow builds with RelWithDebInfo (optimized with debug info) and
+# coverage enabled, runs unit tests (C, Python, and Rust), collects coverage
+# data, and performs static analysis including SonarCloud scanning.
 #
 # Action Versions (hash-pinned per SPS v2.1):
 # - actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (v4.2.2)
@@ -121,8 +121,10 @@ jobs:
 
       - name: Configure CMake
         run: |
+          # Use RelWithDebInfo for optimized binaries with debug info and coverage
+          # This provides realistic performance while still enabling profiling
           cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DENABLE_COVER=ON \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
@@ -176,7 +178,9 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
         run: |
           set -o pipefail
+          # Use profiling profile for optimized binaries with debug info
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
+            --profile profiling \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
       - name: Add skipped Rust tests to JUnit XML
@@ -275,16 +279,16 @@ jobs:
           # Set up coverage environment for building instrumented test binaries
           # This sets RUSTFLAGS with -C instrument-coverage and CARGO_LLVM_COV_TARGET_DIR
           source <(cargo llvm-cov show-env --export-prefix)
-          
-          # Build test binaries with coverage instrumentation (including ignored tests)
-          # Binaries are placed in target/llvm-cov-target/debug/deps/
-          cargo nextest run --workspace --all-features --no-run --run-ignored=all
-          
+
+          # Build test binaries with coverage instrumentation using profiling profile
+          # (optimized with debug info) - binaries placed in target/llvm-cov-target/profiling/deps/
+          cargo nextest run --workspace --all-features --profile profiling --no-run --run-ignored=all
+
           # Copy instrumented test binaries to target/tests for artifact upload
           mkdir -p target/tests
-          find target/llvm-cov-target/debug/deps/ -maxdepth 1 -type f -executable \
+          find target/llvm-cov-target/profiling/deps/ -maxdepth 1 -type f -executable \
             -name "videostream*" -exec cp {} target/tests/ \;
-          
+
           echo "Instrumented test binaries:"
           ls -la target/tests/
 
@@ -907,14 +911,15 @@ jobs:
           # Find all instrumented binaries (ELF files in deps directory)
           # Note: Execute permissions are lost during artifact upload/download,
           # so we use 'file' command to identify ELF binaries by content
+          # Note: Using profiling profile for optimized binaries with debug info
           echo ""
           echo "=== Finding instrumented binaries ==="
-          echo "Contents of debug/deps:"
-          ls -la target/llvm-cov-target/debug/deps/ 2>/dev/null | head -30
-          
+          echo "Contents of profiling/deps:"
+          ls -la target/llvm-cov-target/profiling/deps/ 2>/dev/null | head -30
+
           OBJECT_FILES=""
           # Look for test binaries (videostream-* without extension) and library
-          for obj in $(find target/llvm-cov-target/debug/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
+          for obj in $(find target/llvm-cov-target/profiling/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
             if file "$obj" | grep -q "ELF"; then
               if [ -z "$OBJECT_FILES" ]; then
                 OBJECT_FILES="$obj"
@@ -923,11 +928,11 @@ jobs:
               fi
             fi
           done
-          
+
           if [ -z "$OBJECT_FILES" ]; then
-            echo "ERROR: No ELF binaries found in target/llvm-cov-target/debug/deps/"
-            echo "All files in debug/deps:"
-            find target/llvm-cov-target/debug/deps -type f 2>/dev/null | head -30
+            echo "ERROR: No ELF binaries found in target/llvm-cov-target/profiling/deps/"
+            echo "All files in profiling/deps:"
+            find target/llvm-cov-target/profiling/deps -type f 2>/dev/null | head -30
             exit 1
           fi
           
