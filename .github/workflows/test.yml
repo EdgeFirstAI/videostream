@@ -35,9 +35,10 @@
 # - Uses cargo-nextest for Rust tests with JUnit XML output
 # - Captures test performance metrics with /usr/bin/time -v
 # - Publishes test results with EnricoMi/publish-unit-test-result-action
-# - Host/Client IPC tests verify UNIX socket communication with shared memory
+# - Host/Client IPC tests on GitHub runners use POSIX shared memory fallback
+# - Host/Client IPC tests on hardware use DMA heap for zero-copy frame sharing
 # - On-target vsl-camhost tests verify camera streaming at multiple resolutions
-#   (640x480, 1280x720, 1920x1080) with DMA heap frame sharing
+#   (640x480, 1280x720, 1920x1080) with real camera hardware
 
 name: Test
 
@@ -225,6 +226,7 @@ jobs:
 
           echo "=== VideoStream Host/Client IPC Test ==="
           echo "Testing inter-process communication via UNIX socket"
+          echo "Note: Uses POSIX shared memory on GitHub runners (DMA heap not available)"
           echo ""
 
           SOCKET_PATH="/tmp/videostream_ci_test_$$"
@@ -576,7 +578,7 @@ jobs:
           print(f"Generated {output_file} with {len(tests)} tests ({total_passed} passed, {total_failed} failed)")
           JUNIT_SCRIPT
 
-      - name: Run host/client IPC tests with coverage (hardware)
+      - name: Run host/client IPC tests with coverage (hardware, DMA heap)
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
           GCOV_PREFIX: ${{ github.workspace }}
@@ -585,7 +587,7 @@ jobs:
           set -o pipefail
 
           echo "=== VideoStream Host/Client IPC Test (Hardware) ==="
-          echo "Testing inter-process communication with DMA heap on real hardware"
+          echo "Testing inter-process communication with DMA heap zero-copy on real hardware"
           echo ""
 
           SOCKET_PATH="/tmp/videostream_hw_test_$$"
@@ -1142,9 +1144,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Architecture | Environment | Tests |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------------|-------------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Ubuntu 22.04 | x86_64 | GitHub Runner | C, Rust, Python, Host/Client IPC |" >> $GITHUB_STEP_SUMMARY
-          echo "| Ubuntu 22.04 | aarch64 | GitHub ARM Runner | C, Rust, Python, Host/Client IPC |" >> $GITHUB_STEP_SUMMARY
-          echo "| NXP i.MX8M Plus | aarch64 | Real Hardware | C, Rust, Python, Host/Client IPC, Camera Multi-Resolution |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ubuntu 22.04 | x86_64 | GitHub Runner | C, Rust, Python, IPC (shared memory) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ubuntu 22.04 | aarch64 | GitHub ARM Runner | C, Rust, Python, IPC (shared memory) |" >> $GITHUB_STEP_SUMMARY
+          echo "| NXP i.MX8M Plus | aarch64 | Real Hardware | C, Rust, Python, IPC (DMA heap), Camera Multi-Resolution |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Use standalone coverage summary script (also used by `make test`)
