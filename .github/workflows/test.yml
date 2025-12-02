@@ -416,6 +416,15 @@ jobs:
           name: rust-tests-aarch64
           path: rust-tests/
 
+      - name: Make downloaded binaries executable
+        run: |
+          # Artifact upload/download doesn't preserve execute permissions
+          chmod +x build/src/vsl-* 2>/dev/null || true
+          chmod +x rust-tests/* 2>/dev/null || true
+          echo "Made binaries executable:"
+          ls -la build/src/vsl-* 2>/dev/null || echo "No vsl binaries found"
+          ls -la rust-tests/* 2>/dev/null || echo "No rust test binaries found"
+
       - name: Create Python virtual environment
         run: |
           python3 -m venv venv
@@ -480,10 +489,7 @@ jobs:
           # Set up profraw collection directory
           export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
           mkdir -p build/profraw
-          
-          # Make test binaries executable
-          chmod +x rust-tests/*
-          
+
           # Track overall test status
           TEST_FAILED=0
           
