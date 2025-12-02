@@ -6,7 +6,8 @@
  * @brief VideoStream Client Test - Frame Consumer
  *
  * This test demonstrates the core VideoStream C API for inter-process frame
- * sharing. The client connects to a host and receives shared frames.
+ * sharing. The client connects to a host and receives shared frames, measuring
+ * latency and throughput.
  *
  * Usage:
  *   ./test_client [socket_path] [num_frames]
@@ -54,30 +55,127 @@ signal_handler(int sig)
 }
 
 /**
- * Calculate checksum of frame data (simple validation)
+ * Statistics tracking structure
  */
-static unsigned long
-calculate_checksum(const void* data, size_t size)
+struct frame_stats {
+    int64_t latency_min;
+    int64_t latency_max;
+    int64_t latency_sum;
+    int64_t interval_min;
+    int64_t interval_max;
+    int64_t interval_sum;
+    int64_t prev_timestamp;
+    int64_t first_timestamp;
+    int64_t last_timestamp;
+    int     frame_count;
+    int     dropped_frames;
+    int64_t prev_serial;
+};
+
+static void
+stats_init(struct frame_stats* stats)
 {
-    const unsigned char* bytes = (const unsigned char*) data;
-    unsigned long        sum   = 0;
+    stats->latency_min     = INT64_MAX;
+    stats->latency_max     = 0;
+    stats->latency_sum     = 0;
+    stats->interval_min    = INT64_MAX;
+    stats->interval_max    = 0;
+    stats->interval_sum    = 0;
+    stats->prev_timestamp  = 0;
+    stats->first_timestamp = 0;
+    stats->last_timestamp  = 0;
+    stats->frame_count     = 0;
+    stats->dropped_frames  = 0;
+    stats->prev_serial     = -1;
+}
 
-    for (size_t i = 0; i < size; i++) { sum += bytes[i]; }
+static void
+stats_update(struct frame_stats* stats, VSLFrame* frame)
+{
+    int64_t receive_time    = vsl_timestamp();
+    int64_t frame_timestamp = vsl_frame_timestamp(frame);
+    int64_t serial          = vsl_frame_serial(frame);
 
-    return sum;
+    // Calculate latency (time from frame creation to receive)
+    int64_t latency = receive_time - frame_timestamp;
+    if (latency < stats->latency_min) { stats->latency_min = latency; }
+    if (latency > stats->latency_max) { stats->latency_max = latency; }
+    stats->latency_sum += latency;
+
+    // Track timestamps for FPS calculation
+    if (stats->frame_count == 0) {
+        stats->first_timestamp = frame_timestamp;
+    } else {
+        // Calculate inter-frame interval
+        int64_t interval = frame_timestamp - stats->prev_timestamp;
+        if (interval < stats->interval_min) { stats->interval_min = interval; }
+        if (interval > stats->interval_max) { stats->interval_max = interval; }
+        stats->interval_sum += interval;
+    }
+
+    // Check for dropped frames (gaps in serial numbers)
+    if (stats->prev_serial >= 0 && serial > stats->prev_serial + 1) {
+        stats->dropped_frames += (int) (serial - stats->prev_serial - 1);
+    }
+
+    stats->prev_timestamp = frame_timestamp;
+    stats->last_timestamp = frame_timestamp;
+    stats->prev_serial    = serial;
+    stats->frame_count++;
+}
+
+static void
+stats_print(const struct frame_stats* stats)
+{
+    if (stats->frame_count == 0) {
+        printf("No frames received\n");
+        return;
+    }
+
+    // Latency statistics (in microseconds for readability)
+    double latency_min_us = stats->latency_min / 1000.0;
+    double latency_max_us = stats->latency_max / 1000.0;
+    double latency_avg_us = (stats->latency_sum / stats->frame_count) / 1000.0;
+
+    // FPS based on frame timestamps
+    int64_t total_duration = stats->last_timestamp - stats->first_timestamp;
+    double  fps            = 0.0;
+    if (total_duration > 0 && stats->frame_count > 1) {
+        fps = (stats->frame_count - 1) * 1e9 / total_duration;
+    }
+
+    // Inter-frame interval statistics (in milliseconds)
+    double interval_min_ms = 0.0;
+    double interval_max_ms = 0.0;
+    double interval_avg_ms = 0.0;
+    if (stats->frame_count > 1) {
+        interval_min_ms = stats->interval_min / 1e6;
+        interval_max_ms = stats->interval_max / 1e6;
+        interval_avg_ms = (stats->interval_sum / (stats->frame_count - 1)) / 1e6;
+    }
+
+    printf("Frames received:  %d\n", stats->frame_count);
+    if (stats->dropped_frames > 0) {
+        printf("Frames dropped:   %d\n", stats->dropped_frames);
+    }
+    printf("\n");
+    printf("Latency (us):     min=%.1f  max=%.1f  avg=%.1f\n",
+           latency_min_us,
+           latency_max_us,
+           latency_avg_us);
+    printf("Interval (ms):    min=%.2f  max=%.2f  avg=%.2f\n",
+           interval_min_ms,
+           interval_max_ms,
+           interval_avg_ms);
+    printf("Throughput:       %.2f FPS\n", fps);
 }
 
 /**
- * Print frame statistics
+ * Print frame information (first frame only)
  */
 static void
-print_frame_stats(VSLFrame* frame, int frame_num, unsigned long checksum)
+print_frame_info(VSLFrame* frame)
 {
-    int64_t serial    = vsl_frame_serial(frame);
-    int64_t timestamp = vsl_frame_timestamp(frame);
-    int64_t pts       = vsl_frame_pts(frame);
-    int64_t duration  = vsl_frame_duration(frame);
-
     uint32_t fourcc        = vsl_frame_fourcc(frame);
     char     fourcc_str[5] = {(char) ((fourcc >> 0) & 0xFF),
                               (char) ((fourcc >> 8) & 0xFF),
@@ -85,29 +183,24 @@ print_frame_stats(VSLFrame* frame, int frame_num, unsigned long checksum)
                               (char) ((fourcc >> 24) & 0xFF),
                               0};
 
-    printf("Frame #%d:\n", frame_num);
-    printf("  Serial:    %ld\n", serial);
+    printf("Frame format:\n");
     printf("  Size:      %dx%d\n",
            vsl_frame_width(frame),
            vsl_frame_height(frame));
     printf("  Format:    %s (0x%08X)\n", fourcc_str, fourcc);
-    printf("  Timestamp: %ld ns\n", timestamp);
-    printf("  PTS:       %ld ns\n", pts);
-    printf("  Duration:  %ld ns\n", duration);
-    printf("  Checksum:  0x%08lX\n", checksum);
     printf("\n");
 }
 
 int
 main(int argc, char* argv[])
 {
-    const char* socket_path      = DEFAULT_SOCKET_PATH;
-    int         num_frames       = DEFAULT_NUM_FRAMES;
-    VSLClient*  client           = NULL;
-    int         ret              = 1;
-    int         frame_count      = 0;
-    int64_t     start_time       = 0;
-    int64_t     first_frame_time = 0;
+    const char*        socket_path = DEFAULT_SOCKET_PATH;
+    int                num_frames  = DEFAULT_NUM_FRAMES;
+    VSLClient*         client      = NULL;
+    int                ret         = 1;
+    struct frame_stats stats;
+
+    stats_init(&stats);
 
     // Parse command-line arguments
     if (argc > 1) { socket_path = argv[1]; }
@@ -145,7 +238,7 @@ main(int argc, char* argv[])
         fprintf(stderr, "\n");
         goto cleanup;
     }
-    printf("✓ Connected to host\n");
+    printf("Connected to host\n");
     printf("  Path: %s\n\n", vsl_client_path(client));
 
     printf("%s\n", SEPARATOR);
@@ -153,10 +246,8 @@ main(int argc, char* argv[])
     printf("Press Ctrl+C to stop\n");
     printf("%s\n\n", SEPARATOR);
 
-    start_time = vsl_timestamp();
-
     // Main loop: wait for frames
-    while (g_running && (num_frames == 0 || frame_count < num_frames)) {
+    while (g_running && (num_frames == 0 || stats.frame_count < num_frames)) {
         VSLFrame* frame = vsl_frame_wait(client, 0);
         if (!frame) {
             if (errno == ETIMEDOUT) {
@@ -169,52 +260,24 @@ main(int argc, char* argv[])
             break;
         }
 
-        if (frame_count == 0) { first_frame_time = vsl_timestamp(); }
-        frame_count++;
+        // Print frame info on first frame
+        if (stats.frame_count == 0) { print_frame_info(frame); }
 
-        // Lock frame for access
-        if (vsl_frame_trylock(frame) != 0) {
-            fprintf(stderr, "WARNING: Failed to lock frame %d\n", frame_count);
-            vsl_frame_release(frame);
-            continue;
+        // Update statistics (latency, interval, dropped frames)
+        stats_update(&stats, frame);
+
+        // Progress indicator every 30 frames
+        if (stats.frame_count % 30 == 0) {
+            printf("Received %d frames...\n", stats.frame_count);
         }
 
-        // Map frame data
-        size_t size = 0;
-        void*  data = vsl_frame_mmap(frame, &size);
-        if (!data) {
-            fprintf(stderr, "WARNING: Failed to map frame %d\n", frame_count);
-            vsl_frame_unlock(frame);
-            vsl_frame_release(frame);
-            continue;
-        }
-
-        // Calculate checksum for validation
-        unsigned long checksum = calculate_checksum(data, size);
-
-        // Print detailed stats for first frame and every 30th frame
-        if (frame_count == 1 || frame_count % 30 == 0) {
-            print_frame_stats(frame, frame_count, checksum);
-        }
-
-        vsl_frame_munmap(frame);
-        vsl_frame_unlock(frame);
         vsl_frame_release(frame);
     }
-
-    int64_t end_time         = vsl_timestamp();
-    double  total_duration   = (end_time - start_time) / 1e9;
-    double  receive_duration = (end_time - first_frame_time) / 1e9;
 
     printf("\n%s\n", SEPARATOR);
     printf("Statistics\n");
     printf("%s\n", SEPARATOR);
-    printf("Frames received:  %d\n", frame_count);
-    printf("Total time:       %.2f seconds\n", total_duration);
-    printf("Receive time:     %.2f seconds\n", receive_duration);
-    if (receive_duration > 0) {
-        printf("Average FPS:      %.2f\n", frame_count / receive_duration);
-    }
+    stats_print(&stats);
     printf("%s\n", SEPARATOR);
 
     ret = 0;
