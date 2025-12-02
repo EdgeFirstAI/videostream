@@ -179,9 +179,9 @@ jobs:
         run: |
           set -o pipefail
           # Use Cargo profiling profile for optimized binaries with debug info
-          # Use nextest ci profile for CI-specific test configuration
+          # Note: cargo-llvm-cov's --profile sets the Cargo build profile, not nextest profile
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
-            --profile profiling -P ci \
+            --profile profiling \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
 
       - name: Add skipped Rust tests to JUnit XML
@@ -191,7 +191,7 @@ jobs:
           python3 << 'PATCH_JUNIT'
           import xml.etree.ElementTree as ET
 
-          junit_file = "target/nextest/ci/test-results.xml"
+          junit_file = "target/nextest/default/test-results.xml"
           tree = ET.parse(junit_file)
           root = tree.getroot()
 
@@ -334,7 +334,7 @@ jobs:
           path: |
             build/pytest_results.xml
             build/coverage_c.xml
-            target/nextest/ci/test-results.xml
+            target/nextest/default/test-results.xml
             build/test-metrics-*-${{ matrix.platform.name }}.txt
           retention-days: 30
 
@@ -381,7 +381,7 @@ jobs:
         with:
           files: |
             build/pytest_results.xml
-            target/nextest/ci/test-results.xml
+            target/nextest/default/test-results.xml
           check_name: Test Results (${{ matrix.platform.name }})
           comment_mode: always
           # ignore_runs helps avoid double-counting when tests report multiple runs
