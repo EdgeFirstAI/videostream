@@ -18,6 +18,15 @@ junit.report-name = "cargo-nextest"
 junit.store-success-output = false
 junit.store-failure-output = true
 
+# Profiling profile - used by cargo-llvm-cov nextest --profile profiling
+# cargo-llvm-cov passes --profile to nextest, which interprets it as nextest profile
+# This profile matches default settings for CI test runs with coverage
+[profile.profiling]
+junit.path = "test-results.xml"
+junit.report-name = "cargo-nextest"
+junit.store-success-output = false
+junit.store-failure-output = true
+
 # Hardware profile - runs ALL tests including ignored ones
 # Use on real hardware (imx8mp) where camera/DMA tests can run
 [profile.hardware]

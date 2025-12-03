@@ -191,7 +191,7 @@ jobs:
           python3 << 'PATCH_JUNIT'
           import xml.etree.ElementTree as ET
 
-          junit_file = "target/nextest/default/test-results.xml"
+          junit_file = "target/nextest/profiling/test-results.xml"
           tree = ET.parse(junit_file)
           root = tree.getroot()
 
@@ -334,7 +334,7 @@ jobs:
           path: |
             build/pytest_results.xml
             build/coverage_c.xml
-            target/nextest/default/test-results.xml
+            target/nextest/profiling/test-results.xml
             build/test-metrics-*-${{ matrix.platform.name }}.txt
           retention-days: 30
 
@@ -381,7 +381,7 @@ jobs:
         with:
           files: |
             build/pytest_results.xml
-            target/nextest/default/test-results.xml
+            target/nextest/profiling/test-results.xml
           check_name: Test Results (${{ matrix.platform.name }})
           comment_mode: always
           # ignore_runs helps avoid double-counting when tests report multiple runs
