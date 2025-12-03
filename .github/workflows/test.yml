@@ -282,13 +282,13 @@ jobs:
           source <(cargo llvm-cov show-env --export-prefix)
 
           # Build test binaries with coverage instrumentation using Cargo profiling profile
-          # (optimized with debug info) - binaries placed in target/llvm-cov-target/profiling/deps/
+          # (optimized with debug info) - binaries placed in target/profiling/deps/
           # --cargo-profile = Cargo build profile, -P = nextest profile (hardware runs ignored tests)
           cargo nextest run --workspace --all-features --cargo-profile profiling -P hardware --no-run
 
           # Copy instrumented test binaries to target/tests for artifact upload
           mkdir -p target/tests
-          find target/llvm-cov-target/profiling/deps/ -maxdepth 1 -type f -executable \
+          find target/profiling/deps/ -maxdepth 1 -type f -executable \
             -name "videostream*" -exec cp {} target/tests/ \;
 
           echo "Instrumented test binaries:"
@@ -372,7 +372,7 @@ jobs:
         with:
           name: rust-llvm-cov-aarch64
           path: |
-            target/llvm-cov-target/
+            target/profiling/
           retention-days: 7
 
       - name: Publish test results
@@ -836,7 +836,7 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
         with:
           name: rust-llvm-cov-aarch64
-          path: target/llvm-cov-target/
+          path: target/profiling/
 
       - name: Download imx8mp coverage artifacts (contains gcda and profraw files)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
@@ -857,8 +857,8 @@ jobs:
 
       - name: Process Rust profraw files into coverage report
         run: |
-          echo "=== Downloaded llvm-cov-target directory ==="
-          ls -la target/llvm-cov-target/ || echo "Directory not found"
+          echo "=== Downloaded profiling directory (instrumented objects) ==="
+          ls -la target/profiling/ || echo "Directory not found"
           
           echo ""
           echo "=== Profraw files from imx8mp ==="
@@ -874,9 +874,9 @@ jobs:
           
           echo ""
           echo "=== Downloaded instrumented objects from aarch64 build ==="
-          ls -la target/llvm-cov-target/ || echo "No llvm-cov-target directory"
-          find target/llvm-cov-target/ -type f -name "*.d" | wc -l | xargs echo "Dep files:"
-          find target/llvm-cov-target/ -type f -executable | wc -l | xargs echo "Executables:"
+          ls -la target/profiling/ || echo "No profiling directory"
+          find target/profiling/ -type f -name "*.d" | wc -l | xargs echo "Dep files:"
+          find target/profiling/ -type f -executable | wc -l | xargs echo "Executables:"
           
           # Find LLVM tools from Rust toolchain
           RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}
@@ -917,11 +917,11 @@ jobs:
           echo ""
           echo "=== Finding instrumented binaries ==="
           echo "Contents of profiling/deps:"
-          ls -la target/llvm-cov-target/profiling/deps/ 2>/dev/null | head -30
+          ls -la target/profiling/deps/ 2>/dev/null | head -30
 
           OBJECT_FILES=""
           # Look for test binaries (videostream-* without extension) and library
-          for obj in $(find target/llvm-cov-target/profiling/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
+          for obj in $(find target/profiling/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
             if file "$obj" | grep -q "ELF"; then
               if [ -z "$OBJECT_FILES" ]; then
                 OBJECT_FILES="$obj"
@@ -932,9 +932,9 @@ jobs:
           done
 
           if [ -z "$OBJECT_FILES" ]; then
-            echo "ERROR: No ELF binaries found in target/llvm-cov-target/profiling/deps/"
+            echo "ERROR: No ELF binaries found in target/profiling/deps/"
             echo "All files in profiling/deps:"
-            find target/llvm-cov-target/profiling/deps -type f 2>/dev/null | head -30
+            find target/profiling/deps -type f 2>/dev/null | head -30
             exit 1
           fi
           
