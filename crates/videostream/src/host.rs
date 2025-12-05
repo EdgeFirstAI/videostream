@@ -22,9 +22,11 @@ use videostream_sys as ffi;
 /// ```no_run
 /// use videostream::host::Host;
 ///
+/// # fn main() -> Result<(), videostream::Error> {
 /// let host = Host::new("/tmp/video.sock")?;
 /// println!("Host listening on: {:?}", host.path()?);
-/// # Ok::<(), videostream::Error>(())
+/// # Ok(())
+/// # }
 /// ```
 pub struct Host {
     ptr: *mut ffi::VSLHost,
