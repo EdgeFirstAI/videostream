@@ -397,6 +397,20 @@ mod tests {
     }
 
     #[test]
+    fn test_host_drop_frame() {
+        let path = PathBuf::from("/tmp/test_drop.vsl");
+        let host = Host::new(&path).unwrap();
+
+        let frame = crate::frame::Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Test drop_frame on an allocated frame
+        // The behavior depends on the C API - may succeed or fail
+        // depending on whether the frame is tracked by the host
+        let _ = host.drop_frame(&frame);
+    }
+
+    #[test]
     fn test_host_debug() {
         let path = PathBuf::from("/tmp/test_debug.vsl");
         let host = Host::new(&path).unwrap();
