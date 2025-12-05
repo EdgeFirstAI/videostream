@@ -46,6 +46,29 @@ impl Client {
         panic!("CURRENTLY NOT USED");
     }
 
+    /// Returns the optional userptr associated with this client connection.
+    ///
+    /// # Returns
+    ///
+    /// Returns the user pointer provided to [`Client::new`], or `None` if none was set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer is a raw void pointer. The caller is responsible for
+    /// ensuring the pointer is valid and properly cast to the correct type.
+    pub fn get_userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+        let ptr = vsl!(vsl_client_userptr(self.ptr));
+        if ptr.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(ptr))
+        }
+    }
+
     pub fn path(&self) -> Result<PathBuf, Error> {
         let path_ptr = vsl!(vsl_client_path(self.ptr));
         if path_ptr.is_null() {

@@ -150,11 +150,31 @@ impl Frame {
         Ok(vsl!(vsl_frame_size(self.ptr)) as i32)
     }
 
-    /*
-    pub fn stride(&self) -> i32 {
-        return unsafe { ffi::vsl_frame_stride(self.ptr) as i32};
+    /// Returns the stride in bytes of the video frame.
+    ///
+    /// Stride is the number of bytes from the start of one row to the next.
+    /// May be larger than width*bytes_per_pixel due to alignment requirements.
+    ///
+    /// # Returns
+    ///
+    /// Returns the row stride in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// println!("Stride: {} bytes", frame.stride()?);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn stride(&self) -> Result<i32, Error> {
+        Ok(vsl!(vsl_frame_stride(self.ptr)) as i32)
     }
-    */
 
     pub fn handle(&self) -> Result<i32, Error> {
         let handle: std::os::raw::c_int = vsl!(vsl_frame_handle(self.ptr));
@@ -217,6 +237,128 @@ impl Frame {
             return Err(err.into());
         }
         Ok(())
+    }
+
+    /// Returns the user pointer associated with this frame.
+    ///
+    /// # Returns
+    ///
+    /// Returns the user pointer provided to [`Frame::new`], or `None` if none was set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer is a raw void pointer. The caller is responsible for
+    /// ensuring the pointer is valid and properly cast to the correct type.
+    pub fn userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+        let ptr = vsl!(vsl_frame_userptr(self.ptr));
+        if ptr.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(ptr))
+        }
+    }
+
+    /// Associates a user pointer with this frame.
+    ///
+    /// Sets or updates the user data pointer for this frame. This can be used to
+    /// attach arbitrary application data to a frame.
+    ///
+    /// # Arguments
+    ///
+    /// * `userptr` - User data pointer to associate with frame
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the pointer remains valid for the lifetime of the frame.
+    /// The pointer will not be dereferenced by this library, but is stored and can be
+    /// retrieved later via `userptr()`.
+    pub unsafe fn set_userptr(&self, userptr: *mut std::os::raw::c_void) -> Result<(), Error> {
+        vsl!(vsl_frame_set_userptr(self.ptr, userptr));
+        Ok(())
+    }
+
+    /// Frees the allocated buffer for this frame.
+    ///
+    /// Releases the underlying memory (DmaBuf or shared memory) but does not
+    /// destroy the frame object. Use [`Drop`] to destroy the frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// frame.alloc(None)?;
+    /// // Use frame...
+    /// frame.unalloc()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn unalloc(&self) -> Result<(), Error> {
+        vsl!(vsl_frame_unalloc(self.ptr));
+        Ok(())
+    }
+
+    /// Copies this frame into the target frame with optional format conversion and cropping.
+    ///
+    /// Handles format conversion, rescaling, and cropping using hardware
+    /// acceleration when available (G2D on i.MX8). Both frames can be host or client
+    /// frames. Automatically locks frames during copy (safe for free-standing frames
+    /// too).
+    ///
+    /// Copy sequence: 1) Crop source, 2) Convert format, 3) Scale to target size.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Destination frame (receives copied data)
+    /// * `crop` - Optional crop region in source coordinates (None for full frame)
+    ///
+    /// # Returns
+    ///
+    /// Returns the number of bytes copied on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the copy operation fails.
+    ///
+    /// # Warning
+    ///
+    /// Copying to/from a posted frame may cause visual tearing.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let source = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// source.alloc(None)?;
+    ///
+    /// let target = Frame::new(640, 480, 0, "RGB3")?;
+    /// target.alloc(None)?;
+    ///
+    /// let bytes = source.copy_to(&target, None)?;
+    /// println!("Copied {} bytes", bytes);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn copy_to(&self, target: &Frame, crop: Option<&ffi::VSLRect>) -> Result<i32, Error> {
+        let crop_ptr = crop.map_or(std::ptr::null(), |c| c as *const ffi::VSLRect);
+        let ret = vsl!(vsl_frame_copy(target.ptr, self.ptr, crop_ptr));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(ret)
     }
 
     pub fn get_ptr(&self) -> *mut ffi::VSLFrame {
