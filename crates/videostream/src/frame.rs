@@ -679,14 +679,16 @@ mod tests {
         frame.alloc(None).unwrap();
 
         // Should have size after alloc
-        assert!(frame.size().unwrap() > 0);
+        let size_before = frame.size().unwrap();
+        assert!(size_before > 0);
 
         // Unalloc should succeed
         frame.unalloc().unwrap();
 
-        // After unalloc, size should still be reported (metadata remains)
-        // but the actual buffer is freed
-        assert!(frame.size().unwrap() > 0);
+        // After unalloc, the buffer is freed but the frame metadata remains.
+        // The handle should no longer be valid
+        let handle = frame.handle().unwrap();
+        assert_eq!(handle, -1, "Handle should be -1 after unalloc");
     }
 
     #[test]
