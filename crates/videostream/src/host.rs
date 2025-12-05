@@ -16,8 +16,25 @@ use videostream_sys as ffi;
 ///
 /// A host is created with a socket path which it will own exclusively and
 /// allowing clients to connect in order to receive frames.
+///
+/// # Examples
+///
+/// ```no_run
+/// use videostream::host::Host;
+///
+/// let host = Host::new("/tmp/video.sock")?;
+/// println!("Host listening on: {:?}", host.path()?);
+/// # Ok::<(), videostream::Error>(())
+/// ```
 pub struct Host {
     ptr: *mut ffi::VSLHost,
+}
+
+impl std::fmt::Debug for Host {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self.path().unwrap_or_else(|_| PathBuf::from("<error>"));
+        f.debug_struct("Host").field("path", &path).finish()
+    }
 }
 
 impl Host {
@@ -332,5 +349,42 @@ mod tests {
         // Creating a second host at the same path should raise an error.
         // let host2 = Host::new(&path);
         // assert!(host2.is_err());
+    }
+
+    #[test]
+    fn test_host_sockets() {
+        let path = PathBuf::from("/tmp/test_sockets.vsl");
+        let host = Host::new(&path).unwrap();
+
+        // Should have at least the listening socket
+        let sockets = host.sockets().unwrap();
+        assert!(
+            !sockets.is_empty(),
+            "Expected at least 1 socket (listening socket)"
+        );
+
+        // The first socket should be the listening socket and be a valid FD
+        assert!(sockets[0] >= 0, "Listening socket FD should be >= 0");
+    }
+
+    #[test]
+    fn test_host_poll_timeout() {
+        let path = PathBuf::from("/tmp/test_poll.vsl");
+        let host = Host::new(&path).unwrap();
+
+        // Poll with immediate timeout should return 0 (no activity)
+        let result = host.poll(0).unwrap();
+        assert_eq!(result, 0, "Poll with 0 timeout should return 0");
+    }
+
+    #[test]
+    fn test_host_debug() {
+        let path = PathBuf::from("/tmp/test_debug.vsl");
+        let host = Host::new(&path).unwrap();
+        let debug_str = format!("{:?}", host);
+
+        // Debug output should contain Host and path info
+        assert!(debug_str.contains("Host"));
+        assert!(debug_str.contains("test_debug.vsl"));
     }
 }

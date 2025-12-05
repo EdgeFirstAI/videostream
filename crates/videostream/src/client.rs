@@ -9,12 +9,33 @@ use std::{
 };
 use videostream_sys as ffi;
 
+/// Client structure for connecting to a VideoStream host.
+///
+/// Provides functionality to subscribe to video frames published by a
+/// [`crate::host::Host`].
+///
+/// # Examples
+///
+/// ```no_run
+/// use videostream::client::Client;
+///
+/// let client = Client::new("/tmp/video.sock", true)?;
+/// println!("Connected to: {:?}", client.path()?);
+/// # Ok::<(), videostream::Error>(())
+/// ```
 pub struct Client {
     ptr: *mut ffi::VSLClient,
 }
 
 unsafe impl Send for Client {}
 unsafe impl Sync for Client {}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = self.path().unwrap_or_else(|_| PathBuf::from("<error>"));
+        f.debug_struct("Client").field("path", &path).finish()
+    }
+}
 
 impl Client {
     pub fn new(path: &str, reconnect: bool) -> Result<Self, Error> {
