@@ -128,3 +128,17 @@ impl Drop for Client {
         let _ = self.disconnect();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_debug() {
+        let client = Client::new("/tmp/test_debug.vsl", true).unwrap();
+        let debug_str = format!("{:?}", client);
+
+        assert!(debug_str.contains("Client"));
+        assert!(debug_str.contains("test_debug.vsl"));
+    }
+}
