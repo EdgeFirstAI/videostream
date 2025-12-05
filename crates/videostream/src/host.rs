@@ -385,6 +385,18 @@ mod tests {
     }
 
     #[test]
+    fn test_host_process() {
+        let path = PathBuf::from("/tmp/test_process.vsl");
+        let host = Host::new(&path).unwrap();
+
+        // Process should handle timeout when no activity
+        match host.process() {
+            Ok(_) | Err(Error::Io(_)) => {} // Both are acceptable
+            Err(e) => panic!("Unexpected error: {}", e),
+        }
+    }
+
+    #[test]
     fn test_host_debug() {
         let path = PathBuf::from("/tmp/test_debug.vsl");
         let host = Host::new(&path).unwrap();
