@@ -44,11 +44,258 @@ impl Host {
         Ok(PathBuf::from(path_str))
     }
 
-    pub fn poll(&self) {}
+    /// Polls the host's socket connections for activity.
+    ///
+    /// Waits for socket activity (new connections or client messages) using poll().
+    /// Should be called in a loop before [`Host::process`]. The `wait` parameter
+    /// controls timeout behavior:
+    /// - `> 0`: Poll waits up to this duration in milliseconds
+    /// - `= 0`: Returns immediately
+    /// - `< 0`: Waits indefinitely
+    ///
+    /// # Arguments
+    ///
+    /// * `wait` - Timeout in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// Returns the number of sockets with activity, 0 on timeout, or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the underlying poll() call fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::host::Host;
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// loop {
+    ///     match host.poll(1000) {
+    ///         Ok(n) if n > 0 => {
+    ///             host.process()?;
+    ///         }
+    ///         Ok(_) => {} // timeout
+    ///         Err(e) => eprintln!("Poll error: {}", e),
+    ///     }
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn poll(&self, wait: i64) -> Result<i32, Error> {
+        let ret = vsl!(vsl_host_poll(self.ptr, wait));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(ret)
+    }
 
-    pub fn process(&self) {}
+    /// Processes host tasks: expires old frames and services one client connection.
+    ///
+    /// First expires frames past their lifetime, then services the first available
+    /// connection (accepting new clients or processing client messages). Should be
+    /// called in a loop, typically after [`Host::poll`] indicates activity.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if processing fails. Common errors include `ETIMEDOUT`
+    /// if no activity is available.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::host::Host;
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// loop {
+    ///     if host.poll(1000)? > 0 {
+    ///         host.process()?;
+    ///     }
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn process(&self) -> Result<(), Error> {
+        let ret = vsl!(vsl_host_process(self.ptr));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(())
+    }
 
-    pub fn sockets(&self) {}
+    /// Services a single client socket.
+    ///
+    /// Processes messages from a specific client socket. Does not accept new
+    /// connections - use [`Host::process`] for that. Useful when you need to
+    /// track errors for individual clients.
+    ///
+    /// # Arguments
+    ///
+    /// * `sock` - The client socket file descriptor to service
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] on failure. Common errors include `EPIPE` if the
+    /// client has disconnected.
+    pub fn service(&self, sock: i32) -> Result<(), Error> {
+        let ret = vsl!(vsl_host_service(self.ptr, sock));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(())
+    }
+
+    /// Requests a copy of the sockets managed by the host.
+    ///
+    /// Returns socket file descriptors for the host's listening socket and all
+    /// connected client sockets. The first socket is always the listening socket.
+    /// The array should be refreshed frequently as sockets may become stale.
+    ///
+    /// Thread-safe: allows one thread to use sockets for messaging while another
+    /// polls for reads.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of socket file descriptors. The first entry is the
+    /// listening socket, followed by client sockets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the operation fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::host::Host;
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// let sockets = host.sockets()?;
+    /// println!("Listening socket: {}", sockets[0]);
+    /// println!("Number of clients: {}", sockets.len() - 1);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn sockets(&self) -> Result<Vec<i32>, Error> {
+        // First call to get the required size
+        let mut max_sockets: usize = 0;
+        let _ret = vsl!(vsl_host_sockets(
+            self.ptr,
+            0,
+            std::ptr::null_mut(),
+            &mut max_sockets as *mut usize
+        ));
+
+        if max_sockets == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Allocate buffer and get actual sockets
+        let mut sockets = vec![0i32; max_sockets];
+        let ret = vsl!(vsl_host_sockets(
+            self.ptr,
+            max_sockets,
+            sockets.as_mut_ptr(),
+            std::ptr::null_mut()
+        ));
+
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+
+        Ok(sockets)
+    }
+
+    /// Posts a frame to all connected clients.
+    ///
+    /// Transfers ownership of the frame to the host. The frame is broadcast to all
+    /// connected clients and will be automatically released when it expires. Do not
+    /// call [`crate::frame::Frame::drop`] on frames posted to the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` - Frame to post (ownership transferred to host)
+    /// * `expires` - Expiration time in nanoseconds (absolute, from [`crate::timestamp`])
+    /// * `duration` - Frame duration in nanoseconds (-1 if unknown)
+    /// * `pts` - Presentation timestamp in nanoseconds (-1 if unknown)
+    /// * `dts` - Decode timestamp in nanoseconds (-1 if unknown)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if posting fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::{host::Host, frame::Frame, timestamp};
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// let frame = Frame::new(1920, 1080, 1920 * 2, "YUYV")?;
+    /// frame.alloc(None)?;
+    ///
+    /// let now = timestamp()?;
+    /// let expires = now + 1_000_000_000; // 1 second
+    /// host.post(frame, expires, -1, -1, -1)?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn post(
+        &self,
+        frame: crate::frame::Frame,
+        expires: i64,
+        duration: i64,
+        pts: i64,
+        dts: i64,
+    ) -> Result<(), Error> {
+        let frame_ptr = frame.get_ptr();
+        std::mem::forget(frame); // Transfer ownership to host
+
+        let ret = vsl!(vsl_host_post(
+            self.ptr, frame_ptr, expires, duration, pts, dts
+        ));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(())
+    }
+
+    /// Drops a frame from the host.
+    ///
+    /// Removes the host association of the frame and returns ownership to the
+    /// caller. Can be used to cancel a previously posted frame before it expires.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` - Frame to drop from host (must be owned by this host)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the operation fails.
+    pub fn drop_frame(&self, frame: &crate::frame::Frame) -> Result<(), Error> {
+        let ret = vsl!(vsl_host_drop(self.ptr, frame.get_ptr()));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Host {
