@@ -63,8 +63,12 @@ impl Client {
         Ok(())
     }
 
+    #[deprecated(
+        since = "2.0.0",
+        note = "Use get_userptr() instead which returns Result"
+    )]
     pub fn userptr() {
-        panic!("CURRENTLY NOT USED");
+        panic!("CURRENTLY NOT USED - use get_userptr() instead");
     }
 
     /// Returns the optional userptr associated with this client connection.
