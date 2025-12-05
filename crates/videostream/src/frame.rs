@@ -348,7 +348,7 @@ impl Frame {
     ///
     /// The returned pointer is a raw void pointer. The caller is responsible for
     /// ensuring the pointer is valid and properly cast to the correct type.
-    pub fn userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+    pub fn get_userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
         let ptr = vsl!(vsl_frame_userptr(self.ptr));
         if ptr.is_null() {
             Ok(None)
@@ -662,7 +662,7 @@ mod tests {
         let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
 
         // Initially should be None
-        assert!(frame.userptr().unwrap().is_none());
+        assert!(frame.get_userptr().unwrap().is_none());
 
         // Create a test value and use its pointer
         let test_value: i32 = 42;
@@ -673,7 +673,7 @@ mod tests {
         }
 
         // Get should return the same pointer
-        let retrieved = frame.userptr().unwrap().unwrap();
+        let retrieved = frame.get_userptr().unwrap().unwrap();
         assert_eq!(retrieved, test_ptr);
     }
 
