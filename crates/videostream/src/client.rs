@@ -132,6 +132,7 @@ impl Drop for Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
 
     #[test]
     fn test_client_debug() {
@@ -140,5 +141,43 @@ mod tests {
 
         assert!(debug_str.contains("Client"));
         assert!(debug_str.contains("test_debug.vsl"));
+    }
+
+    #[test]
+    fn test_client_get_userptr() {
+        // Test 1: Client created with null userptr should return None
+        let client_none = Client::new("/tmp/test_userptr_none.vsl", true).unwrap();
+        let userptr_none = client_none.get_userptr().unwrap();
+        assert_eq!(
+            userptr_none, None,
+            "Client with null userptr should return None"
+        );
+
+        // Test 2: Client created with a userptr should return Some(ptr)
+        // Create a CString to use as user data
+        let user_data = CString::new("test_user_data").unwrap();
+        let user_data_ptr = user_data.as_ptr() as *mut std::os::raw::c_void;
+
+        // Create client with userptr using FFI directly since Client::new doesn't expose it
+        let path_str_c = CString::new("/tmp/test_userptr_some.vsl").unwrap();
+        let lib = videostream_sys::init().unwrap();
+        let ptr = unsafe { lib.vsl_client_init(path_str_c.as_ptr(), user_data_ptr, true) };
+        assert!(!ptr.is_null(), "Client initialization should succeed");
+
+        let client_some = Client { ptr };
+        let userptr_some = client_some.get_userptr().unwrap();
+        assert!(
+            userptr_some.is_some(),
+            "Client with userptr should return Some"
+        );
+        assert_eq!(
+            userptr_some.unwrap(),
+            user_data_ptr,
+            "Userptr should match what was set"
+        );
+
+        // Keep user_data alive until client is dropped
+        drop(client_some);
+        drop(user_data);
     }
 }
