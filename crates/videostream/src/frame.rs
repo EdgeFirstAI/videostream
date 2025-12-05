@@ -338,7 +338,7 @@ impl Frame {
     ///
     /// # Returns
     ///
-    /// Returns the user pointer provided to [`Frame::new`], or `None` if none was set.
+    /// Returns the user pointer associated with this frame, or `None` if none was set via [`Frame::set_userptr`].
     ///
     /// # Errors
     ///

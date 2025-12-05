@@ -69,7 +69,7 @@ impl Client {
         since = "2.0.0",
         note = "Use get_userptr() instead which returns Result"
     )]
-    pub fn userptr() {
+    pub fn userptr(&self) {
         panic!("This method has been deprecated and will panic. Use get_userptr() which returns a Result<Option<_>, Error> instead.");
     }
 
@@ -77,7 +77,7 @@ impl Client {
     ///
     /// # Returns
     ///
-    /// Returns the user pointer provided to [`Client::new`], or `None` if none was set.
+    /// Returns the user pointer associated with this client connection, or `None` if none was set.
     ///
     /// # Errors
     ///

@@ -240,7 +240,8 @@ impl Host {
     ///
     /// Transfers ownership of the frame to the host. The frame is broadcast to all
     /// connected clients and will be automatically released when it expires. Do not
-    /// call [`crate::frame::Frame::drop`] on frames posted to the host.
+    /// use frames after posting them to the host, as ownership has been transferred
+    /// and the host will manage their lifecycle.
     ///
     /// # Arguments
     ///
@@ -281,7 +282,6 @@ impl Host {
         dts: i64,
     ) -> Result<(), Error> {
         let frame_ptr = frame.get_ptr();
-        std::mem::forget(frame); // Transfer ownership to host
 
         let ret = vsl!(vsl_host_post(
             self.ptr, frame_ptr, expires, duration, pts, dts
@@ -290,6 +290,9 @@ impl Host {
             let err = io::Error::last_os_error();
             return Err(err.into());
         }
+
+        // Only transfer ownership after successful posting
+        std::mem::forget(frame);
         Ok(())
     }
 
