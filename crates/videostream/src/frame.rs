@@ -374,7 +374,7 @@ impl Frame {
     ///
     /// The caller must ensure the pointer remains valid for the lifetime of the frame.
     /// The pointer will not be dereferenced by this library, but is stored and can be
-    /// retrieved later via `userptr()`.
+    /// retrieved later via `get_userptr()`.
     pub unsafe fn set_userptr(&self, userptr: *mut std::os::raw::c_void) -> Result<(), Error> {
         vsl!(vsl_frame_set_userptr(self.ptr, userptr));
         Ok(())
