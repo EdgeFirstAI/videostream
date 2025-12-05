@@ -104,6 +104,8 @@ unsafe impl Send for Frame {}
 
 impl std::fmt::Debug for Frame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Note: If any of these methods fail, we use default/fallback values.
+        // This is intentional to avoid Debug implementation failing.
         let width = self.width().unwrap_or(0);
         let height = self.height().unwrap_or(0);
         let fourcc = self.fourcc().unwrap_or(0);

@@ -32,7 +32,9 @@ unsafe impl Sync for Client {}
 
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let path = self.path().unwrap_or_else(|_| PathBuf::from("<error>"));
+        let path = self
+            .path()
+            .unwrap_or_else(|_| PathBuf::from("<invalid_path>"));
         f.debug_struct("Client").field("path", &path).finish()
     }
 }
@@ -68,7 +70,7 @@ impl Client {
         note = "Use get_userptr() instead which returns Result"
     )]
     pub fn userptr() {
-        panic!("CURRENTLY NOT USED - use get_userptr() instead");
+        panic!("This method has been deprecated and will panic. Use get_userptr() which returns a Result<Option<_>, Error> instead.");
     }
 
     /// Returns the optional userptr associated with this client connection.
