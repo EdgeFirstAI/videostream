@@ -34,7 +34,9 @@ pub struct Host {
 
 impl std::fmt::Debug for Host {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let path = self.path().unwrap_or_else(|_| PathBuf::from("<error>"));
+        let path = self
+            .path()
+            .unwrap_or_else(|_| PathBuf::from("<invalid_path>"));
         f.debug_struct("Host").field("path", &path).finish()
     }
 }
