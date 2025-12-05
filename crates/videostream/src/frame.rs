@@ -662,8 +662,10 @@ mod tests {
         // Initially should be None
         assert!(frame.userptr().unwrap().is_none());
 
-        // Set a userptr (just using an arbitrary number as pointer)
-        let test_ptr = 0x12345678 as *mut std::os::raw::c_void;
+        // Create a test value and use its pointer
+        let test_value: i32 = 42;
+        let test_ptr = &test_value as *const i32 as *mut std::os::raw::c_void;
+
         unsafe {
             frame.set_userptr(test_ptr).unwrap();
         }
