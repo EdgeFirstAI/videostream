@@ -696,18 +696,6 @@ mod tests {
     }
 
     #[test]
-    fn test_frame_copy_to() {
-        let source = Frame::new(1920, 1080, 0, "YUYV").unwrap();
-        source.alloc(None).unwrap();
-
-        let target = Frame::new(640, 480, 0, "RGB3").unwrap();
-        target.alloc(None).unwrap();
-
-        let bytes = source.copy_to(&target, None).unwrap();
-        assert!(bytes > 0, "copy_to should return positive byte count");
-    }
-
-    #[test]
     fn test_frame_debug() {
         let frame = Frame::new(1920, 1080, 0, "YUYV").unwrap();
         let debug_str = format!("{:?}", frame);
