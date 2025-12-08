@@ -15,7 +15,7 @@ use videostream_sys as ffi;
 ///
 /// Represents a rectangular region of a frame used for defining cropping
 /// regions in operations like [`Frame::copy_to`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Rect {
     /// The left-most pixel offset for the rectangle
     pub x: i32,
@@ -56,6 +56,12 @@ impl Rect {
     }
 }
 
+impl std::fmt::Display for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Rect({}, {}, {}x{})", self.x, self.y, self.width, self.height)
+    }
+}
+
 impl From<Rect> for ffi::VSLRect {
     fn from(rect: Rect) -> Self {
         ffi::VSLRect {
@@ -75,6 +81,18 @@ impl From<ffi::VSLRect> for Rect {
             width: rect.width,
             height: rect.height,
         }
+    }
+}
+
+impl From<(i32, i32, i32, i32)> for Rect {
+    fn from((x, y, width, height): (i32, i32, i32, i32)) -> Self {
+        Rect::new(x, y, width, height)
+    }
+}
+
+impl From<Rect> for (i32, i32, i32, i32) {
+    fn from(r: Rect) -> Self {
+        (r.x, r.y, r.width, r.height)
     }
 }
 
@@ -661,6 +679,50 @@ mod tests {
         // Test conversion back
         let rect2: Rect = ffi_rect.into();
         assert_eq!(rect, rect2);
+    }
+
+    #[test]
+    fn test_rect_display() {
+        let rect = Rect::new(10, 20, 100, 200);
+        let display = format!("{}", rect);
+        assert_eq!(display, "Rect(10, 20, 100x200)");
+    }
+
+    #[test]
+    fn test_rect_default() {
+        let rect = Rect::default();
+        assert_eq!(rect.x, 0);
+        assert_eq!(rect.y, 0);
+        assert_eq!(rect.width, 0);
+        assert_eq!(rect.height, 0);
+    }
+
+    #[test]
+    fn test_rect_tuple_conversion() {
+        // Test From<(i32, i32, i32, i32)> for Rect
+        let rect: Rect = (10, 20, 100, 200).into();
+        assert_eq!(rect.x, 10);
+        assert_eq!(rect.y, 20);
+        assert_eq!(rect.width, 100);
+        assert_eq!(rect.height, 200);
+
+        // Test From<Rect> for (i32, i32, i32, i32)
+        let tuple: (i32, i32, i32, i32) = rect.into();
+        assert_eq!(tuple, (10, 20, 100, 200));
+    }
+
+    #[test]
+    fn test_rect_hash() {
+        use std::collections::HashSet;
+        
+        let rect1 = Rect::new(10, 20, 100, 200);
+        let rect2 = Rect::new(10, 20, 100, 200);
+        let rect3 = Rect::new(15, 25, 100, 200);
+
+        let mut set = HashSet::new();
+        set.insert(rect1);
+        assert!(set.contains(&rect2)); // Same values should hash the same
+        assert!(!set.contains(&rect3)); // Different values should not match
     }
 
     #[test]

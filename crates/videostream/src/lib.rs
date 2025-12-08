@@ -146,6 +146,7 @@ use std::{
 use videostream_sys as ffi;
 
 /// Error type for VideoStream library operations
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
     /// The VideoStream library (libvideostream.so) could not be loaded at runtime
