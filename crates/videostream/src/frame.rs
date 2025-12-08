@@ -11,6 +11,73 @@ use std::{
 };
 use videostream_sys as ffi;
 
+/// Rectangle region for frame cropping.
+///
+/// Represents a rectangular region of a frame used for defining cropping
+/// regions in operations like [`Frame::copy_to`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    /// The left-most pixel offset for the rectangle
+    pub x: i32,
+    /// The top-most pixel offset for the rectangle
+    pub y: i32,
+    /// The width in pixels of the rectangle (end position is x+width)
+    pub width: i32,
+    /// The height in pixels of the rectangle (end position is y+height)
+    pub height: i32,
+}
+
+impl Rect {
+    /// Creates a new rectangle region.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Left-most pixel offset
+    /// * `y` - Top-most pixel offset
+    /// * `width` - Width in pixels
+    /// * `height` - Height in pixels
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use videostream::frame::Rect;
+    ///
+    /// let rect = Rect::new(0, 0, 640, 480);
+    /// assert_eq!(rect.x, 0);
+    /// assert_eq!(rect.width, 640);
+    /// ```
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
+impl From<Rect> for ffi::VSLRect {
+    fn from(rect: Rect) -> Self {
+        ffi::VSLRect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+}
+
+impl From<ffi::VSLRect> for Rect {
+    fn from(rect: ffi::VSLRect) -> Self {
+        Rect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+}
+
 /// The Frame structure handles the frame and underlying framebuffer.  A frame
 /// can be an image or a single video frame, the distinction is not considered.
 ///
@@ -18,11 +85,39 @@ use videostream_sys as ffi;
 /// not published through a Host nor was it created from a receiving Client. A
 /// free-standing frame can be mapped and copied to other frames which provides
 /// an optimized method for resizing or converting between formats.
+///
+/// # Examples
+///
+/// ```no_run
+/// use videostream::frame::Frame;
+///
+/// let frame = Frame::new(1920, 1080, 0, "YUYV")?;
+/// frame.alloc(None)?;
+/// println!("Frame: {}x{}", frame.width()?, frame.height()?);
+/// # Ok::<(), videostream::Error>(())
+/// ```
 pub struct Frame {
     ptr: *mut ffi::VSLFrame,
 }
 
 unsafe impl Send for Frame {}
+
+impl std::fmt::Debug for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Note: If any of these methods fail, we use default/fallback values.
+        // This is intentional to avoid Debug implementation failing.
+        let width = self.width().unwrap_or(0);
+        let height = self.height().unwrap_or(0);
+        let fourcc = self.fourcc().unwrap_or(0);
+        let fourcc_str = crate::fourcc::FourCC::from(fourcc);
+
+        f.debug_struct("Frame")
+            .field("width", &width)
+            .field("height", &height)
+            .field("fourcc", &fourcc_str)
+            .finish()
+    }
+}
 
 impl Frame {
     pub fn new(width: u32, height: u32, stride: u32, fourcc_str: &str) -> Result<Self, Error> {
@@ -150,11 +245,31 @@ impl Frame {
         Ok(vsl!(vsl_frame_size(self.ptr)) as i32)
     }
 
-    /*
-    pub fn stride(&self) -> i32 {
-        return unsafe { ffi::vsl_frame_stride(self.ptr) as i32};
+    /// Returns the stride in bytes of the video frame.
+    ///
+    /// Stride is the number of bytes from the start of one row to the next.
+    /// May be larger than width*bytes_per_pixel due to alignment requirements.
+    ///
+    /// # Returns
+    ///
+    /// Returns the row stride in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// println!("Stride: {} bytes", frame.stride()?);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn stride(&self) -> Result<i32, Error> {
+        Ok(vsl!(vsl_frame_stride(self.ptr)) as i32)
     }
-    */
 
     pub fn handle(&self) -> Result<i32, Error> {
         let handle: std::os::raw::c_int = vsl!(vsl_frame_handle(self.ptr));
@@ -217,6 +332,136 @@ impl Frame {
             return Err(err.into());
         }
         Ok(())
+    }
+
+    /// Returns the user pointer associated with this frame.
+    ///
+    /// # Returns
+    ///
+    /// Returns the user pointer associated with this frame, or `None` if none was set via [`Frame::set_userptr`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer is a raw void pointer. The caller is responsible for
+    /// ensuring the pointer is valid and properly cast to the correct type.
+    pub fn get_userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+        let ptr = vsl!(vsl_frame_userptr(self.ptr));
+        if ptr.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(ptr))
+        }
+    }
+
+    /// Associates a user pointer with this frame.
+    ///
+    /// Sets or updates the user data pointer for this frame. This can be used to
+    /// attach arbitrary application data to a frame.
+    ///
+    /// # Arguments
+    ///
+    /// * `userptr` - User data pointer to associate with frame
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the pointer remains valid for the lifetime of the frame.
+    /// The pointer will not be dereferenced by this library, but is stored and can be
+    /// retrieved later via `get_userptr()`.
+    pub unsafe fn set_userptr(&self, userptr: *mut std::os::raw::c_void) -> Result<(), Error> {
+        vsl!(vsl_frame_set_userptr(self.ptr, userptr));
+        Ok(())
+    }
+
+    /// Frees the allocated buffer for this frame.
+    ///
+    /// Releases the underlying memory (DmaBuf or shared memory) but does not
+    /// destroy the frame object. Use [`Drop`] to destroy the frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// frame.alloc(None)?;
+    /// // Use frame...
+    /// frame.unalloc()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn unalloc(&self) -> Result<(), Error> {
+        vsl!(vsl_frame_unalloc(self.ptr));
+        Ok(())
+    }
+
+    /// Copies this frame into the target frame with optional format conversion and cropping.
+    ///
+    /// Handles format conversion, rescaling, and cropping using hardware
+    /// acceleration when available (G2D on i.MX8). Both frames can be host or client
+    /// frames. Automatically locks frames during copy (safe for free-standing frames
+    /// too).
+    ///
+    /// Copy sequence: 1) Crop source, 2) Convert format, 3) Scale to target size.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Destination frame (receives copied data)
+    /// * `crop` - Optional crop region in source coordinates (None for full frame)
+    ///
+    /// # Returns
+    ///
+    /// Returns the number of bytes copied on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the copy operation fails.
+    ///
+    /// # Warning
+    ///
+    /// Copying to/from a posted frame may cause visual tearing.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::{Frame, Rect};
+    ///
+    /// let source = Frame::new(1920, 1080, 0, "YUYV")?;
+    /// source.alloc(None)?;
+    ///
+    /// let target = Frame::new(640, 480, 0, "RGB3")?;
+    /// target.alloc(None)?;
+    ///
+    /// // Copy full frame
+    /// let bytes = source.copy_to(&target, None)?;
+    /// println!("Copied {} bytes", bytes);
+    ///
+    /// // Copy with crop
+    /// let crop = Rect::new(100, 100, 800, 600);
+    /// let bytes = source.copy_to(&target, Some(&crop))?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn copy_to(&self, target: &Frame, crop: Option<&Rect>) -> Result<i32, Error> {
+        let crop_ffi: Option<ffi::VSLRect> = crop.map(|r| (*r).into());
+        let crop_ptr = crop_ffi
+            .as_ref()
+            .map_or(std::ptr::null(), |c| c as *const ffi::VSLRect);
+        let ret = vsl!(vsl_frame_copy(target.ptr, self.ptr, crop_ptr));
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            return Err(err.into());
+        }
+        Ok(ret)
     }
 
     pub fn get_ptr(&self) -> *mut ffi::VSLFrame {
@@ -376,4 +621,88 @@ mod tests {
 
     #[test]
     fn invalid_shm_name() {}
+
+    #[test]
+    fn test_rect() {
+        let rect = Rect::new(10, 20, 100, 200);
+        assert_eq!(rect.x, 10);
+        assert_eq!(rect.y, 20);
+        assert_eq!(rect.width, 100);
+        assert_eq!(rect.height, 200);
+
+        // Test conversion to FFI type
+        let ffi_rect: ffi::VSLRect = rect.into();
+        assert_eq!(ffi_rect.x, 10);
+        assert_eq!(ffi_rect.y, 20);
+        assert_eq!(ffi_rect.width, 100);
+        assert_eq!(ffi_rect.height, 200);
+
+        // Test conversion back
+        let rect2: Rect = ffi_rect.into();
+        assert_eq!(rect, rect2);
+    }
+
+    #[test]
+    fn test_frame_stride() {
+        let frame = Frame::new(640, 480, 1920, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Stride should be at least width * bytes_per_pixel
+        let stride = frame.stride().unwrap();
+        assert!(
+            stride >= 640 * 3,
+            "Stride {} should be at least {}",
+            stride,
+            640 * 3
+        );
+    }
+
+    #[test]
+    fn test_frame_userptr() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+
+        // Initially should be None
+        assert!(frame.get_userptr().unwrap().is_none());
+
+        // Create a test value and use its pointer
+        let test_value: i32 = 42;
+        let test_ptr = &test_value as *const i32 as *mut std::os::raw::c_void;
+
+        unsafe {
+            frame.set_userptr(test_ptr).unwrap();
+        }
+
+        // Get should return the same pointer
+        let retrieved = frame.get_userptr().unwrap().unwrap();
+        assert_eq!(retrieved, test_ptr);
+    }
+
+    #[test]
+    fn test_frame_unalloc() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Should have size after alloc
+        let size_before = frame.size().unwrap();
+        assert!(size_before > 0);
+
+        // Unalloc should succeed
+        frame.unalloc().unwrap();
+
+        // After unalloc, the buffer is freed but the frame metadata remains.
+        // The handle should no longer be valid
+        let handle = frame.handle().unwrap();
+        assert_eq!(handle, -1, "Handle should be -1 after unalloc");
+    }
+
+    #[test]
+    fn test_frame_debug() {
+        let frame = Frame::new(1920, 1080, 0, "YUYV").unwrap();
+        let debug_str = format!("{:?}", frame);
+
+        // Debug output should contain frame info
+        assert!(debug_str.contains("Frame"));
+        assert!(debug_str.contains("1920"));
+        assert!(debug_str.contains("1080"));
+    }
 }
