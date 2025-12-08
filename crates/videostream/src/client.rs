@@ -190,7 +190,7 @@ impl Client {
     /// use videostream::client::{Client, Reconnect};
     ///
     /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
-    /// 
+    ///
     /// // Check if a user pointer was set
     /// if let Some(ptr) = client.userptr()? {
     ///     println!("Client has user data");
@@ -284,7 +284,7 @@ impl Client {
     /// use videostream::frame::Frame;
     ///
     /// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
-    /// 
+    ///
     /// // Wait indefinitely
     /// let frame = client.get_frame(0)?;
     /// println!("Received frame: {}x{}", frame.width()?, frame.height()?);

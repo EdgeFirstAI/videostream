@@ -64,8 +64,8 @@ main(int argc, char** argv)
 
     g2d = g2d_initialize(NULL, NULL);
     if (!g2d) {
-        printf(
-            "[WARNING] unable to initialize g2d, only RGB will be supported.\n");
+        printf("[WARNING] unable to initialize g2d, only RGB will be "
+               "supported.\n");
     } else if (g2d->open(&g2d_handle)) {
         fprintf(stderr, "failed to open g2d library\n");
         return EXIT_FAILURE;
