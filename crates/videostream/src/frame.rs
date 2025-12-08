@@ -657,10 +657,12 @@ impl Frame {
     ///     frame.set_userptr(Box::into_raw(data) as *mut _).unwrap();
     /// }
     ///
-    /// // Retrieve user data
+    /// // Retrieve and clean up user data
     /// if let Some(ptr) = frame.userptr()? {
-    ///     let value = unsafe { *(ptr as *const u64) };
-    ///     println!("User data: {}", value);
+    ///     // SAFETY: We know we stored a Box<u64> as a raw pointer
+    ///     let boxed: Box<u64> = unsafe { Box::from_raw(ptr as *mut u64) };
+    ///     println!("User data: {}", *boxed);
+    ///     // boxed is dropped here, memory is freed
     /// }
     /// # Ok::<(), videostream::Error>(())
     /// ```
