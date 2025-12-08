@@ -13,7 +13,8 @@ use videostream_sys as ffi;
 
 type CameraFormats = Vec<FourCC>;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Mirror {
     #[default]
     None,
