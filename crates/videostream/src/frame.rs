@@ -618,6 +618,7 @@ impl Frame {
     /// let frame = Frame::new(640, 480, 0, "RGB3")?;
     /// let file = File::open("/dev/video0")?;
     /// frame.attach(file.as_raw_fd(), 640 * 480 * 3, 0)?;
+    /// // Keep `file` alive for as long as the frame uses the file descriptor.
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn attach(&self, fd: RawFd, size: usize, offset: usize) -> Result<(), Error> {
