@@ -9,6 +9,48 @@ use std::{
 };
 use videostream_sys as ffi;
 
+/// Reconnection behavior for client connections.
+///
+/// Controls whether a [`Client`] automatically reconnects when the connection
+/// to the host is lost.
+///
+/// # Examples
+///
+/// ```no_run
+/// use videostream::client::{Client, Reconnect};
+///
+/// // Client with automatic reconnection
+/// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
+///
+/// // Client without automatic reconnection
+/// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+/// # Ok::<(), videostream::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Reconnect {
+    /// Do not automatically reconnect on disconnect
+    #[default]
+    No,
+    /// Automatically reconnect when connection is lost
+    Yes,
+}
+
+impl From<Reconnect> for bool {
+    fn from(reconnect: Reconnect) -> bool {
+        matches!(reconnect, Reconnect::Yes)
+    }
+}
+
+impl From<bool> for Reconnect {
+    fn from(value: bool) -> Self {
+        if value {
+            Reconnect::Yes
+        } else {
+            Reconnect::No
+        }
+    }
+}
+
 /// Client structure for connecting to a VideoStream host.
 ///
 /// Provides functionality to subscribe to video frames published by a
@@ -17,9 +59,9 @@ use videostream_sys as ffi;
 /// # Examples
 ///
 /// ```no_run
-/// use videostream::client::Client;
+/// use videostream::client::{Client, Reconnect};
 ///
-/// let client = Client::new("/tmp/video.sock", true)?;
+/// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
 /// println!("Connected to: {:?}", client.path()?);
 /// # Ok::<(), videostream::Error>(())
 /// ```
@@ -40,12 +82,36 @@ impl std::fmt::Debug for Client {
 }
 
 impl Client {
-    pub fn new(path: &str, reconnect: bool) -> Result<Self, Error> {
+    /// Creates a new client and connects to the host at the specified socket path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - UNIX socket path to connect to
+    /// * `reconnect` - Whether to automatically reconnect on disconnect
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `Client` connected to the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the connection fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// // Client with automatic reconnection
+    /// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn new(path: &str, reconnect: Reconnect) -> Result<Self, Error> {
         let path_str_c = CString::new(path)?;
         let ptr = vsl!(vsl_client_init(
             path_str_c.as_ptr(),
             std::ptr::null_mut(),
-            reconnect
+            reconnect.into()
         ));
         if ptr.is_null() {
             let err = io::Error::last_os_error();
@@ -55,22 +121,52 @@ impl Client {
         Ok(Client { ptr })
     }
 
+    /// Releases client resources without disconnecting.
+    ///
+    /// Cleans up client-side resources while keeping the connection alive.
+    /// Typically called before dropping the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// // ... use client ...
+    /// client.release()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn release(&self) -> Result<(), Error> {
         vsl!(vsl_client_release(self.ptr));
         Ok(())
     }
 
+    /// Disconnects from the host.
+    ///
+    /// Closes the connection to the host server. If `Reconnect::Yes` was specified,
+    /// the client will attempt to reconnect on the next frame request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// // ... use client ...
+    /// client.disconnect()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn disconnect(&self) -> Result<(), Error> {
         vsl!(vsl_client_disconnect(self.ptr));
         Ok(())
-    }
-
-    #[deprecated(
-        since = "2.0.0",
-        note = "Use get_userptr() instead which returns Result"
-    )]
-    pub fn userptr(&self) {
-        panic!("This method has been deprecated and will panic. Use get_userptr() which returns a Result<Option<_>, Error> instead.");
     }
 
     /// Returns the optional userptr associated with this client connection.
@@ -87,7 +183,21 @@ impl Client {
     ///
     /// The returned pointer is a raw void pointer. The caller is responsible for
     /// ensuring the pointer is valid and properly cast to the correct type.
-    pub fn get_userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    ///
+    /// // Check if a user pointer was set
+    /// if let Some(ptr) = client.userptr()? {
+    ///     println!("Client has user data");
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
         let ptr = vsl!(vsl_client_userptr(self.ptr));
         if ptr.is_null() {
             Ok(None)
@@ -96,6 +206,23 @@ impl Client {
         }
     }
 
+    /// Returns the socket path this client is connected to.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NullPointer`] if the path is null or [`Error::Utf8`] if
+    /// the path is not valid UTF-8.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// let path = client.path()?;
+    /// println!("Connected to: {:?}", path);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn path(&self) -> Result<PathBuf, Error> {
         let path_ptr = vsl!(vsl_client_path(self.ptr));
         if path_ptr.is_null() {
@@ -107,11 +234,62 @@ impl Client {
         }
     }
 
+    /// Sets the timeout for frame reception.
+    ///
+    /// Controls how long [`Client::get_frame`] will wait for a frame before timing out.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Timeout in seconds (fractional values allowed)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// client.set_timeout(5.0)?; // 5 second timeout
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn set_timeout(&self, timeout: f32) -> Result<(), Error> {
         vsl!(vsl_client_set_timeout(self.ptr, timeout));
         Ok(())
     }
 
+    /// Waits for and receives the next frame from the host.
+    ///
+    /// Blocks until a frame is available or the timeout expires. The `until` parameter
+    /// specifies an absolute deadline using the monotonic clock.
+    ///
+    /// # Arguments
+    ///
+    /// * `until` - Absolute deadline timestamp in nanoseconds (0 = wait indefinitely)
+    ///
+    /// # Returns
+    ///
+    /// Returns the received [`Frame`] on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the operation fails or times out.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    /// use videostream::frame::Frame;
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
+    ///
+    /// // Wait indefinitely
+    /// let frame = client.get_frame(0)?;
+    /// println!("Received frame: {}x{}", frame.width()?, frame.height()?);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn get_frame(&self, until: i64) -> Result<Frame, Error> {
         let frame = vsl!(vsl_frame_wait(self.ptr, until));
         if frame.is_null() {
@@ -152,7 +330,7 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Now create a client that connects to the host
-        let client = Client::new(&socket_path, false).unwrap();
+        let client = Client::new(&socket_path, Reconnect::No).unwrap();
         let debug_str = format!("{:?}", client);
 
         assert!(debug_str.contains("Client"));
@@ -170,8 +348,8 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Test 1: Client created with null userptr should return None
-        let client_none = Client::new(&socket_path, false).unwrap();
-        let userptr_none = client_none.get_userptr().unwrap();
+        let client_none = Client::new(&socket_path, Reconnect::No).unwrap();
+        let userptr_none = client_none.userptr().unwrap();
         assert_eq!(
             userptr_none, None,
             "Client with null userptr should return None"
@@ -190,7 +368,7 @@ mod tests {
         assert!(!ptr.is_null(), "Client initialization should succeed");
 
         let client_some = Client { ptr };
-        let userptr_some = client_some.get_userptr().unwrap();
+        let userptr_some = client_some.userptr().unwrap();
         assert!(
             userptr_some.is_some(),
             "Client with userptr should return Some"
@@ -215,7 +393,7 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Create a client
-        let client = Client::new(&socket_path, false).unwrap();
+        let client = Client::new(&socket_path, Reconnect::No).unwrap();
 
         // Verify the path matches
         let client_path = client.path().unwrap();
@@ -237,7 +415,7 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Create a client
-        let client = Client::new(&socket_path, false).unwrap();
+        let client = Client::new(&socket_path, Reconnect::No).unwrap();
 
         // Set timeout should succeed
         client.set_timeout(5.0).unwrap();
@@ -254,7 +432,7 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Create a client
-        let client = Client::new(&socket_path, false).unwrap();
+        let client = Client::new(&socket_path, Reconnect::No).unwrap();
 
         // Give the connection time to establish
         thread::sleep(Duration::from_millis(10));
@@ -306,12 +484,39 @@ mod tests {
         let host = Host::new(&socket_path).unwrap();
 
         // Create a client
-        let client = Client::new(&socket_path, false).unwrap();
+        let client = Client::new(&socket_path, Reconnect::No).unwrap();
 
         // Disconnect should succeed
         client.disconnect().unwrap();
 
         drop(client);
         drop(host);
+    }
+
+    #[test]
+    fn test_reconnect_enum() {
+        // Test default
+        assert_eq!(Reconnect::default(), Reconnect::No);
+
+        // Test conversion to bool
+        assert!(bool::from(Reconnect::Yes));
+        assert!(!bool::from(Reconnect::No));
+
+        // Test conversion from bool
+        assert_eq!(Reconnect::from(true), Reconnect::Yes);
+        assert_eq!(Reconnect::from(false), Reconnect::No);
+
+        // Test Debug
+        let debug_str = format!("{:?}", Reconnect::Yes);
+        assert!(debug_str.contains("Yes"));
+
+        // Test PartialEq
+        assert_eq!(Reconnect::Yes, Reconnect::Yes);
+        assert_ne!(Reconnect::Yes, Reconnect::No);
+
+        // Test Clone/Copy
+        let r1 = Reconnect::Yes;
+        let r2 = r1;
+        assert_eq!(r1, r2);
     }
 }

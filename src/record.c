@@ -169,7 +169,7 @@ vsl_task(void* data)
 }
 
 static void
-bus_message(GstBus* bus __attribute__((unused)),
+bus_message(GstBus*     bus __attribute__((unused)),
             GstMessage* message,
             gpointer    userptr)
 {

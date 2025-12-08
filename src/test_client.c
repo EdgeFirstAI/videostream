@@ -151,7 +151,8 @@ stats_print(const struct frame_stats* stats)
     if (stats->frame_count > 1) {
         interval_min_ms = stats->interval_min / 1e6;
         interval_max_ms = stats->interval_max / 1e6;
-        interval_avg_ms = (stats->interval_sum / (stats->frame_count - 1)) / 1e6;
+        interval_avg_ms =
+            (stats->interval_sum / (stats->frame_count - 1)) / 1e6;
     }
 
     printf("Frames received:  %d\n", stats->frame_count);
