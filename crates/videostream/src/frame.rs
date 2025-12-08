@@ -195,6 +195,31 @@ impl Frame {
         Ok(Frame { ptr: wrapper.ptr })
     }
 
+    /// Attempts to acquire a read lock on the frame.
+    ///
+    /// Locks the frame for reading, preventing modifications by the host or other
+    /// clients. Must be called before accessing frame data with [`Frame::mmap`].
+    /// Always pair with [`Frame::unlock`] when done.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the lock cannot be acquired (frame is busy).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    ///
+    /// // Lock before reading
+    /// frame.trylock()?;
+    /// let data = frame.mmap()?;
+    /// println!("Frame size: {} bytes", data.len());
+    /// frame.unlock()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn trylock(&self) -> Result<(), Error> {
         let ret = vsl!(vsl_frame_trylock(self.ptr));
         if ret != 0 {
@@ -204,6 +229,27 @@ impl Frame {
         Ok(())
     }
 
+    /// Releases the read lock on the frame.
+    ///
+    /// Unlocks a previously locked frame, allowing other processes to modify it.
+    /// Always call after [`Frame::trylock`] when finished accessing frame data.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the unlock fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    /// frame.trylock()?;
+    /// // ... use frame ...
+    /// frame.unlock()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn unlock(&self) -> Result<(), Error> {
         if vsl!(vsl_frame_unlock(self.ptr)) as i32 == -1 {
             let err = io::Error::last_os_error();
@@ -212,6 +258,35 @@ impl Frame {
         Ok(())
     }
 
+    /// Synchronizes DMA buffer memory between CPU and device.
+    ///
+    /// Required when using DmaBuf frames to ensure memory coherency between
+    /// CPU and hardware accelerators (G2D, VPU). Call before/after hardware access.
+    ///
+    /// # Arguments
+    ///
+    /// * `enable` - `true` to sync for device read, `false` to sync for CPU read
+    /// * `mode` - Sync mode (0 = bidirectional)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if sync fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    ///
+    /// // Sync before hardware reads frame
+    /// frame.sync(true, 0)?;
+    /// // ... hardware operation ...
+    /// // Sync after hardware writes frame
+    /// frame.sync(false, 0)?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn sync(&self, enable: bool, mode: i32) -> Result<(), Error> {
         let ret = vsl!(vsl_frame_sync(self.ptr, enable as i32, mode));
         if ret >= 0 {
@@ -221,30 +296,160 @@ impl Frame {
         Ok(())
     }
 
+    /// Returns the frame sequence number.
+    ///
+    /// Serial numbers increment for each frame posted by a host, allowing clients
+    /// to detect dropped frames.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let serial = frame.serial()?;
+    /// println!("Frame serial: {}", serial);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn serial(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_serial(self.ptr)))
     }
 
+    /// Returns the frame timestamp in nanoseconds.
+    ///
+    /// Timestamp is set when the frame is created or captured, using `CLOCK_MONOTONIC`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let ts = frame.timestamp()?;
+    /// println!("Frame timestamp: {} ns", ts);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn timestamp(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_timestamp(self.ptr)))
     }
 
+    /// Returns the frame duration in nanoseconds.
+    ///
+    /// Duration represents the display time for this frame (e.g., 33ms for 30fps).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let duration = frame.duration()?;
+    /// println!("Frame duration: {} ns", duration);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn duration(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_duration(self.ptr)))
     }
 
+    /// Returns the presentation timestamp (PTS) in nanoseconds.
+    ///
+    /// PTS indicates when this frame should be displayed. Used for A/V sync.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let pts = frame.pts()?;
+    /// println!("PTS: {} ns", pts);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn pts(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_pts(self.ptr)))
     }
 
+    /// Returns the decode timestamp (DTS) in nanoseconds.
+    ///
+    /// DTS indicates when this frame should be decoded. Mainly used for encoded streams.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let dts = frame.dts()?;
+    /// println!("DTS: {} ns", dts);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn dts(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_dts(self.ptr)))
     }
 
+    /// Returns the expiration timestamp in nanoseconds.
+    ///
+    /// Frames are automatically released by the host when they expire. Set via
+    /// [`crate::host::Host::post`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let expires = frame.expires()?;
+    /// println!("Frame expires at: {} ns", expires);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn expires(&self) -> Result<i64, Error> {
         Ok(vsl!(vsl_frame_expires(self.ptr)))
     }
 
+    /// Returns the pixel format as a FOURCC code.
+    ///
+    /// FOURCC is a 32-bit integer representing the pixel format (e.g., 'YUYV', 'RGB3').
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    /// use videostream::fourcc::FourCC;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let fourcc = frame.fourcc()?;
+    /// let fourcc_str = FourCC::from(fourcc);
+    /// println!("Format: {}", fourcc_str);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn fourcc(&self) -> Result<u32, Error> {
         Ok(vsl!(vsl_frame_fourcc(self.ptr)))
     }
@@ -289,11 +494,52 @@ impl Frame {
         Ok(vsl!(vsl_frame_stride(self.ptr)) as i32)
     }
 
+    /// Returns the file descriptor handle for this frame's buffer.
+    ///
+    /// For DmaBuf frames, this is the DmaBuf file descriptor. For shared memory,
+    /// this is the file descriptor of the shared memory object.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    /// let fd = frame.handle()?;
+    /// println!("Buffer FD: {}", fd);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn handle(&self) -> Result<i32, Error> {
         let handle: std::os::raw::c_int = vsl!(vsl_frame_handle(self.ptr));
         Ok(handle as i32)
     }
 
+    /// Returns the physical address of the frame buffer if available.
+    ///
+    /// Physical addresses are only available for certain memory types (e.g., contiguous
+    /// DMA buffers on i.MX8). Returns `None` if not available.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    /// if let Some(paddr) = frame.paddr()? {
+    ///     println!("Physical address: 0x{:x}", paddr);
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn paddr(&self) -> Result<Option<isize>, Error> {
         let ret = vsl!(vsl_frame_paddr(self.ptr));
         if ret == -1 {
@@ -343,6 +589,33 @@ impl Frame {
         Ok(())
     }
 
+    /// Attaches an existing file descriptor to this frame.
+    ///
+    /// Associates an existing buffer (file, DmaBuf, or shared memory) with this frame
+    /// without allocating new memory. Useful for wrapping external buffers.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - File descriptor to attach
+    /// * `size` - Size of the buffer in bytes
+    /// * `offset` - Offset into the buffer (usually 0)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the attachment fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::frame::Frame;
+    /// use std::fs::File;
+    /// use std::os::fd::AsRawFd;
+    ///
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// let file = File::open("/dev/video0")?;
+    /// frame.attach(file.as_raw_fd(), 640 * 480 * 3, 0)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn attach(&self, fd: RawFd, size: usize, offset: usize) -> Result<(), Error> {
         let ret = vsl!(vsl_frame_attach(self.ptr, fd, size, offset));
         if ret < 0 {
