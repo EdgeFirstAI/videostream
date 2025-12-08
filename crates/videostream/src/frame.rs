@@ -58,7 +58,11 @@ impl Rect {
 
 impl std::fmt::Display for Rect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Rect({}, {}, {}x{})", self.x, self.y, self.width, self.height)
+        write!(
+            f,
+            "Rect({}, {}, {}x{})",
+            self.x, self.y, self.width, self.height
+        )
     }
 }
 
@@ -646,7 +650,7 @@ impl Frame {
     /// use videostream::frame::Frame;
     ///
     /// let frame = Frame::new(640, 480, 0, "RGB3")?;
-    /// 
+    ///
     /// // Set user data
     /// let data = Box::new(42u64);
     /// unsafe {
@@ -987,7 +991,7 @@ mod tests {
     #[test]
     fn test_rect_hash() {
         use std::collections::HashSet;
-        
+
         let rect1 = Rect::new(10, 20, 100, 200);
         let rect2 = Rect::new(10, 20, 100, 200);
         let rect3 = Rect::new(15, 25, 100, 200);

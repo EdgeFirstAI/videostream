@@ -206,7 +206,11 @@ struct camhost_config {
 };
 
 // Return codes for argument parsing
-enum parse_result { PARSE_OK = 0, PARSE_EXIT_SUCCESS = 1, PARSE_EXIT_FAILURE = 2 };
+enum parse_result {
+    PARSE_OK           = 0,
+    PARSE_EXIT_SUCCESS = 1,
+    PARSE_EXIT_FAILURE = 2
+};
 
 static void
 print_fourcc_warning(const char* optarg, uint32_t cam_fourcc)
@@ -253,24 +257,25 @@ print_available_formats(vsl_camera* cam)
 static enum parse_result
 parse_arguments(int argc, char** argv, struct camhost_config* config)
 {
-    static struct option options[] = {
-        {"help", no_argument, NULL, 'h'},
-        {"version", no_argument, NULL, 'v'},
-        {"verbose", no_argument, NULL, 'V'},
-        {"log", required_argument, NULL, 'L'},
-        {"capture_device", required_argument, NULL, 'd'},
-        {"mirror", no_argument, NULL, 'M'},
-        {"mirror_v", no_argument, NULL, 'H'},
-        {"camera_res", required_argument, NULL, 'r'},
-        {"path", required_argument, NULL, 'p'},
-        {"lifespan", required_argument, NULL, 'l'},
-        {"bufcount", required_argument, NULL, 'b'},
-        {"fourcc", required_argument, NULL, 'f'},
-        {NULL, 0, NULL, 0}};
+    static struct option options[] =
+        {{"help", no_argument, NULL, 'h'},
+         {"version", no_argument, NULL, 'v'},
+         {"verbose", no_argument, NULL, 'V'},
+         {"log", required_argument, NULL, 'L'},
+         {"capture_device", required_argument, NULL, 'd'},
+         {"mirror", no_argument, NULL, 'M'},
+         {"mirror_v", no_argument, NULL, 'H'},
+         {"camera_res", required_argument, NULL, 'r'},
+         {"path", required_argument, NULL, 'p'},
+         {"lifespan", required_argument, NULL, 'l'},
+         {"bufcount", required_argument, NULL, 'b'},
+         {"fourcc", required_argument, NULL, 'f'},
+         {NULL, 0, NULL, 0}};
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "hvVL:d:MHr:p:l:b:f:", options, NULL))
-           != -1) {
+    while (
+        (opt = getopt_long(argc, argv, "hvVL:d:MHr:p:l:b:f:", options, NULL)) !=
+        -1) {
         switch (opt) {
         case 'h':
             printf("%s\n%s", argv[0], USAGE);

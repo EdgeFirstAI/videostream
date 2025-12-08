@@ -175,7 +175,7 @@ impl Host {
     ///
     /// let host = Host::new("/tmp/video.sock")?;
     /// let sockets = host.sockets()?;
-    /// 
+    ///
     /// // Service each client socket individually
     /// for sock in &sockets[1..] { // Skip listening socket
     ///     if let Err(e) = host.service(*sock) {
