@@ -167,6 +167,23 @@ impl Host {
     ///
     /// Returns [`Error::Io`] on failure. Common errors include `EPIPE` if the
     /// client has disconnected.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::host::Host;
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// let sockets = host.sockets()?;
+    /// 
+    /// // Service each client socket individually
+    /// for sock in &sockets[1..] { // Skip listening socket
+    ///     if let Err(e) = host.service(*sock) {
+    ///         eprintln!("Error servicing socket {}: {}", sock, e);
+    ///     }
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn service(&self, sock: i32) -> Result<(), Error> {
         let ret = vsl!(vsl_host_service(self.ptr, sock));
         if ret < 0 {
@@ -312,6 +329,25 @@ impl Host {
     /// # Errors
     ///
     /// Returns [`Error::Io`] if the operation fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::{host::Host, frame::Frame, timestamp};
+    ///
+    /// let host = Host::new("/tmp/video.sock")?;
+    /// let frame = Frame::new(640, 480, 0, "RGB3")?;
+    /// frame.alloc(None)?;
+    ///
+    /// let now = timestamp()?;
+    /// let expires = now + 1_000_000_000; // 1 second
+    /// host.post(frame, expires, -1, -1, -1)?;
+    ///
+    /// // Cancel the frame before it's sent
+    /// // Note: This example shows the API but won't work as-is because
+    /// // post() transfers ownership of the frame
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn drop_frame(&self, frame: &crate::frame::Frame) -> Result<(), Error> {
         let ret = vsl!(vsl_host_drop(self.ptr, frame.get_ptr()));
         if ret < 0 {

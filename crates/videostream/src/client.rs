@@ -121,11 +121,49 @@ impl Client {
         Ok(Client { ptr })
     }
 
+    /// Releases client resources without disconnecting.
+    ///
+    /// Cleans up client-side resources while keeping the connection alive.
+    /// Typically called before dropping the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// // ... use client ...
+    /// client.release()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn release(&self) -> Result<(), Error> {
         vsl!(vsl_client_release(self.ptr));
         Ok(())
     }
 
+    /// Disconnects from the host.
+    ///
+    /// Closes the connection to the host server. If `Reconnect::Yes` was specified,
+    /// the client will attempt to reconnect on the next frame request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// // ... use client ...
+    /// client.disconnect()?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn disconnect(&self) -> Result<(), Error> {
         vsl!(vsl_client_disconnect(self.ptr));
         Ok(())
@@ -168,6 +206,23 @@ impl Client {
         }
     }
 
+    /// Returns the socket path this client is connected to.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NullPointer`] if the path is null or [`Error::Utf8`] if
+    /// the path is not valid UTF-8.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// let path = client.path()?;
+    /// println!("Connected to: {:?}", path);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn path(&self) -> Result<PathBuf, Error> {
         let path_ptr = vsl!(vsl_client_path(self.ptr));
         if path_ptr.is_null() {
@@ -179,11 +234,62 @@ impl Client {
         }
     }
 
+    /// Sets the timeout for frame reception.
+    ///
+    /// Controls how long [`Client::get_frame`] will wait for a frame before timing out.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Timeout in seconds (fractional values allowed)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
+    /// client.set_timeout(5.0)?; // 5 second timeout
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn set_timeout(&self, timeout: f32) -> Result<(), Error> {
         vsl!(vsl_client_set_timeout(self.ptr, timeout));
         Ok(())
     }
 
+    /// Waits for and receives the next frame from the host.
+    ///
+    /// Blocks until a frame is available or the timeout expires. The `until` parameter
+    /// specifies an absolute deadline using the monotonic clock.
+    ///
+    /// # Arguments
+    ///
+    /// * `until` - Absolute deadline timestamp in nanoseconds (0 = wait indefinitely)
+    ///
+    /// # Returns
+    ///
+    /// Returns the received [`Frame`] on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the operation fails or times out.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::{Client, Reconnect};
+    /// use videostream::frame::Frame;
+    ///
+    /// let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
+    /// 
+    /// // Wait indefinitely
+    /// let frame = client.get_frame(0)?;
+    /// println!("Received frame: {}x{}", frame.width()?, frame.height()?);
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
     pub fn get_frame(&self, until: i64) -> Result<Frame, Error> {
         let frame = vsl!(vsl_frame_wait(self.ptr, until));
         if frame.is_null() {
