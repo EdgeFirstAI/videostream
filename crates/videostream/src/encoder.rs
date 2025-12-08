@@ -39,19 +39,19 @@ impl VSLRect {
         }
     }
 
-    pub fn get_width(&self) -> c_int {
+    pub fn width(&self) -> c_int {
         (self.rect).width
     }
 
-    pub fn get_height(&self) -> c_int {
+    pub fn height(&self) -> c_int {
         (self.rect).height
     }
 
-    pub fn get_x(&self) -> c_int {
+    pub fn x(&self) -> c_int {
         (self.rect).x
     }
 
-    pub fn get_y(&self) -> c_int {
+    pub fn y(&self) -> c_int {
         (self.rect).y
     }
 }

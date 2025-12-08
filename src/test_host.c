@@ -121,7 +121,9 @@ check_dma_heap_access(void)
                 dma_heap_path);
         fprintf(stderr, "      Will use POSIX shared memory instead.\n");
         fprintf(stderr, "      For DMA heap access, you can:\n");
-        fprintf(stderr, "        - Add user to 'video' group: sudo usermod -a -G video $USER\n");
+        fprintf(stderr,
+                "        - Add user to 'video' group: sudo usermod -a -G video "
+                "$USER\n");
         fprintf(stderr, "        - Run with sudo: sudo ./test_host\n\n");
         return 0; // Fall back to shared memory
     }
