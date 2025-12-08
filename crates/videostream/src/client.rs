@@ -187,9 +187,9 @@ impl Client {
     /// # Example
     ///
     /// ```no_run
-    /// use videostream::client::Client;
+    /// use videostream::client::{Client, Reconnect};
     ///
-    /// let client = Client::new("/tmp/video.sock", false)?;
+    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
     /// 
     /// // Check if a user pointer was set
     /// if let Some(ptr) = client.userptr()? {
@@ -499,8 +499,8 @@ mod tests {
         assert_eq!(Reconnect::default(), Reconnect::No);
 
         // Test conversion to bool
-        assert_eq!(bool::from(Reconnect::Yes), true);
-        assert_eq!(bool::from(Reconnect::No), false);
+        assert!(bool::from(Reconnect::Yes));
+        assert!(!bool::from(Reconnect::No));
 
         // Test conversion from bool
         assert_eq!(Reconnect::from(true), Reconnect::Yes);
