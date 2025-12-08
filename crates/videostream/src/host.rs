@@ -333,19 +333,16 @@ impl Host {
     /// # Example
     ///
     /// ```no_run
-    /// use videostream::{host::Host, frame::Frame, timestamp};
+    /// use videostream::{host::Host, frame::Frame};
     ///
     /// let host = Host::new("/tmp/video.sock")?;
     /// let frame = Frame::new(640, 480, 0, "RGB3")?;
     /// frame.alloc(None)?;
     ///
-    /// let now = timestamp()?;
-    /// let expires = now + 1_000_000_000; // 1 second
-    /// host.post(frame, expires, -1, -1, -1)?;
-    ///
-    /// // Cancel the frame before it's sent
-    /// // Note: This example shows the API but won't work as-is because
-    /// // post() transfers ownership of the frame
+    /// // Cancel the frame before posting it
+    /// host.drop_frame(&frame)?;
+    /// // If you want to post the frame, do so after cancellation is not needed
+    /// // host.post(frame, expires, -1, -1, -1)?;
     /// # Ok::<(), videostream::Error>(())
     /// ```
     pub fn drop_frame(&self, frame: &crate::frame::Frame) -> Result<(), Error> {
