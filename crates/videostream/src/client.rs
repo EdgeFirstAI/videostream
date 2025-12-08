@@ -65,14 +65,6 @@ impl Client {
         Ok(())
     }
 
-    #[deprecated(
-        since = "2.0.0",
-        note = "Use get_userptr() instead which returns Result"
-    )]
-    pub fn userptr(&self) {
-        panic!("This method has been deprecated and will panic. Use get_userptr() which returns a Result<Option<_>, Error> instead.");
-    }
-
     /// Returns the optional userptr associated with this client connection.
     ///
     /// # Returns
@@ -87,7 +79,21 @@ impl Client {
     ///
     /// The returned pointer is a raw void pointer. The caller is responsible for
     /// ensuring the pointer is valid and properly cast to the correct type.
-    pub fn get_userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::client::Client;
+    ///
+    /// let client = Client::new("/tmp/video.sock", false)?;
+    /// 
+    /// // Check if a user pointer was set
+    /// if let Some(ptr) = client.userptr()? {
+    ///     println!("Client has user data");
+    /// }
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    pub fn userptr(&self) -> Result<Option<*mut std::os::raw::c_void>, Error> {
         let ptr = vsl!(vsl_client_userptr(self.ptr));
         if ptr.is_null() {
             Ok(None)
@@ -171,7 +177,7 @@ mod tests {
 
         // Test 1: Client created with null userptr should return None
         let client_none = Client::new(&socket_path, false).unwrap();
-        let userptr_none = client_none.get_userptr().unwrap();
+        let userptr_none = client_none.userptr().unwrap();
         assert_eq!(
             userptr_none, None,
             "Client with null userptr should return None"
@@ -190,7 +196,7 @@ mod tests {
         assert!(!ptr.is_null(), "Client initialization should succeed");
 
         let client_some = Client { ptr };
-        let userptr_some = client_some.get_userptr().unwrap();
+        let userptr_some = client_some.userptr().unwrap();
         assert!(
             userptr_some.is_some(),
             "Client with userptr should return Some"
