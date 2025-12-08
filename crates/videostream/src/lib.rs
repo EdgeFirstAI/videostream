@@ -44,11 +44,11 @@
 //! ## Subscribing to Frames (Client)
 //!
 //! ```no_run
-//! use videostream::{client::Client, frame::Frame, Error};
+//! use videostream::{client::{Client, Reconnect}, frame::Frame, Error};
 //!
 //! fn subscribe_frames() -> Result<(), Error> {
 //!     // Connect to host socket (auto-reconnect on disconnect)
-//!     let client = Client::new("/tmp/video.sock", true)?;
+//!     let client = Client::new("/tmp/video.sock", Reconnect::Yes)?;
 //!     
 //!     // Wait for next frame (blocking)
 //!     let frame = Frame::wait(&client, 0)?;
