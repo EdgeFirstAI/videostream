@@ -166,6 +166,12 @@ pub enum Error {
 
     /// Null pointer returned from C library where valid pointer expected
     NullPointer,
+
+    /// Required symbol not found in the library (e.g., encoder/decoder when VPU not compiled)
+    SymbolNotFound(&'static str),
+
+    /// Hardware not available (e.g., VPU hardware not present on the system)
+    HardwareNotAvailable(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -179,6 +185,12 @@ impl fmt::Display for Error {
             Error::CString(err) => write!(f, "CString creation error: {}", err),
             Error::TryFromInt(err) => write!(f, "Integer conversion error: {}", err),
             Error::NullPointer => write!(f, "Null pointer returned from VideoStream library"),
+            Error::SymbolNotFound(symbol) => {
+                write!(f, "Symbol '{}' not found in library (VPU support may not be compiled)", symbol)
+            }
+            Error::HardwareNotAvailable(hw) => {
+                write!(f, "Hardware '{}' not available on this system", hw)
+            }
         }
     }
 }
@@ -192,6 +204,8 @@ impl error::Error for Error {
             Error::CString(err) => Some(err),
             Error::TryFromInt(err) => Some(err),
             Error::NullPointer => None,
+            Error::SymbolNotFound(_) => None,
+            Error::HardwareNotAvailable(_) => None,
         }
     }
 }
