@@ -1441,13 +1441,13 @@ impl VideoStreamLibrary {
     /// Try to create a decoder, returning None if the symbol is not available.
     pub unsafe fn try_vsl_decoder_create(
         &self,
-        outputFourcc: u32,
+        output_fourcc: u32,
         fps: ::std::os::raw::c_int,
     ) -> Option<*mut VSLDecoder> {
         self.vsl_decoder_create
             .as_ref()
             .ok()
-            .map(|f| f(outputFourcc, fps))
+            .map(|f| f(output_fourcc, fps))
     }
 
     /// Try to release a decoder, returning false if the symbol is not available.
