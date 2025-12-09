@@ -31,14 +31,14 @@ static INIT_LOCK: Mutex<()> = Mutex::new(());
 /// a custom path to the library. If not set, searches standard system paths.
 pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
     if let Some(lib) = LIBRARY.get() {
-        return Ok(&**lib);
+        return Ok(lib);
     }
 
     let _guard = INIT_LOCK.lock().unwrap();
 
     // Double-check after acquiring lock
     if let Some(lib) = LIBRARY.get() {
-        return Ok(&**lib);
+        return Ok(lib);
     }
 
     // Check for VIDEOSTREAM_LIBRARY environment variable
@@ -54,14 +54,14 @@ pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
         .ok()
         .expect("Failed to initialize library");
 
-    Ok(&**LIBRARY.get().unwrap())
+    Ok(LIBRARY.get().unwrap())
 }
 
 /// Get a reference to the loaded library
 ///
 /// Panics if init() has not been called successfully.
 pub fn library() -> &'static VideoStreamLibrary {
-    &**LIBRARY
+    LIBRARY
         .get()
         .expect("VideoStream library not initialized - call videostream_sys::init() first")
 }
