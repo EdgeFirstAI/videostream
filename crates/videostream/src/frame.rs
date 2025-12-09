@@ -838,6 +838,9 @@ mod tests {
         os::fd::AsRawFd,
     };
 
+    /// Sentinel value indicating an invalid or unallocated file descriptor handle.
+    const INVALID_HANDLE: i32 = -1;
+
     #[test]
     fn frame() {
         //let fourcc = 0x33424752 as u32; //Hex for RGB3
@@ -1055,7 +1058,7 @@ mod tests {
         // After unalloc, the buffer is freed but the frame metadata remains.
         // The handle should no longer be valid
         let handle = frame.handle().unwrap();
-        assert_eq!(handle, -1, "Handle should be -1 after unalloc");
+        assert_eq!(handle, INVALID_HANDLE, "Handle should be -1 after unalloc");
     }
 
     #[test]
@@ -1176,9 +1179,9 @@ mod tests {
     #[test]
     fn test_frame_handle_before_alloc() {
         let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
-        // Handle should be -1 before allocation
+        // Handle should be invalid before allocation
         let handle = frame.handle().unwrap();
-        assert_eq!(handle, -1, "Handle should be -1 before alloc");
+        assert_eq!(handle, INVALID_HANDLE, "Handle should be -1 before alloc");
     }
 
     #[test]
