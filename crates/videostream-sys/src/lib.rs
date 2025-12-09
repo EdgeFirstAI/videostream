@@ -22,6 +22,9 @@ static INIT_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// This must be called before using any other VideoStream functions.
 /// Returns an error if the library cannot be loaded.
+///
+/// The environment variable `VIDEOSTREAM_LIBRARY` can be used to specify
+/// a custom path to the library. If not set, searches standard system paths.
 pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
     if let Some(lib) = LIBRARY.get() {
         return Ok(lib);
@@ -34,7 +37,12 @@ pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
         return Ok(lib);
     }
 
-    let lib = unsafe { VideoStreamLibrary::new("libvideostream.so")? };
+    // Check for VIDEOSTREAM_LIBRARY environment variable
+    let lib_path = std::env::var("VIDEOSTREAM_LIBRARY")
+        .ok()
+        .unwrap_or_else(|| "libvideostream.so".to_string());
+
+    let lib = unsafe { VideoStreamLibrary::new(lib_path.as_str())? };
 
     LIBRARY.set(lib).ok().expect("Failed to initialize library");
 

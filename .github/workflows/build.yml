@@ -104,13 +104,20 @@ jobs:
             python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev
 
-      - name: Configure CMake
+      - name: Configure CMake (manylinux2014 compatible)
         run: |
+          # Build with manylinux2014 compatibility (GLIBC 2.17 from CentOS 7)
+          # This ensures binaries work on older distributions
+          #
+          # Note: Coverage instrumentation is NOT compatible with manylinux2014
+          # and is only enabled in test.yml for development/CI environments.
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/usr \
+                -DCMAKE_C_FLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
                 -DENABLE_VPU=OFF \
-                -DENABLE_G2D=OFF
+                -DENABLE_G2D=OFF \
+                -DENABLE_COVER=OFF
 
       - name: Build
         run: |
@@ -163,7 +170,14 @@ jobs:
             python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev
 
-      - name: Build Debian packages
+      - name: Set manylinux2014 build flags
+        run: |
+          # Export build flags for manylinux2014 compatibility (GLIBC 2.17)
+          # These flags are used by dpkg-buildpackage via debian/rules
+          echo "DEB_CFLAGS_APPEND=-D_GLIBCXX_USE_CXX11_ABI=0" >> $GITHUB_ENV
+          echo "DEB_BUILD_OPTIONS=nocheck" >> $GITHUB_ENV
+
+      - name: Build Debian packages (manylinux2014 compatible)
         run: |
           dpkg-buildpackage --no-sign -j$(nproc)
 
