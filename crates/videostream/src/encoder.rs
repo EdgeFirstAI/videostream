@@ -244,7 +244,7 @@ mod tests {
         // depending on whether the library was compiled with VPU support
         let result = is_available();
         // If library loads, we get Ok(bool), if not we get Err
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok(), "is_available should always return Ok if the library is loaded correctly");
     }
 
     /// Test that Encoder::create returns SymbolNotFound when VPU not available
