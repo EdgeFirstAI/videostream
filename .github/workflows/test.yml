@@ -123,11 +123,29 @@ jobs:
         run: |
           # Use RelWithDebInfo for optimized binaries with debug info and coverage
           # This provides realistic performance while still enabling profiling
+          # 
+          # VPU/G2D Support:
+          # - aarch64 builds: Enable VPU and G2D so encoder/decoder symbols are available
+          #   for hardware testing. The VPU wrapper uses dlopen to load Hantro
+          #   libraries at runtime, so no Hantro libs needed at compile time.
+          # - x86_64 builds: Disable VPU/G2D (no hardware support)
+          #
+          # The Rust wrapper gracefully handles missing symbols (SymbolNotFound error)
+          # and missing hardware (HardwareNotAvailable error) at runtime.
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "aarch64" ]; then
+            ENABLE_VPU=ON
+            ENABLE_G2D=ON
+          else
+            ENABLE_VPU=OFF
+            ENABLE_G2D=OFF
+          fi
+          
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DENABLE_COVER=ON \
-                -DENABLE_VPU=OFF \
-                -DENABLE_G2D=OFF \
+                -DENABLE_VPU=$ENABLE_VPU \
+                -DENABLE_G2D=$ENABLE_G2D \
                 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build with SonarCloud build wrapper
@@ -187,7 +205,7 @@ jobs:
       - name: Add skipped Rust tests to JUnit XML
         run: |
           # nextest doesn't include ignored tests in JUnit output
-          # Add them as skipped entries so test counts match hardware (46 total)
+          # Add them as skipped entries so test counts match hardware
           python3 << 'PATCH_JUNIT'
           import xml.etree.ElementTree as ET
 
@@ -196,10 +214,18 @@ jobs:
           root = tree.getroot()
 
           # Ignored tests that run on hardware but are skipped on CI
+          # These tests require specific hardware (camera, VPU) not available on GitHub runners
           ignored_tests = [
+              # Camera tests - require V4L2 camera hardware
               ("camera::tests::test_camera_start_stop", "videostream"),
               ("camera::tests::test_camera_enum", "videostream"),
               ("camera::tests::test_camera_invalid", "videostream"),
+              # Encoder tests - require VPU hardware (Hantro VC8000E)
+              ("encoder::tests::test_encoder_create_h264", "videostream"),
+              ("encoder::tests::test_encoder_create_hevc", "videostream"),
+              # Decoder tests - require VPU hardware (Hantro G2)
+              ("decoder::tests::test_decoder_create_h264", "videostream"),
+              ("decoder::tests::test_decoder_create_hevc", "videostream"),
           ]
 
           # Find the testsuite and add skipped tests
@@ -210,7 +236,7 @@ jobs:
                   testcase.set('classname', classname)
                   testcase.set('time', '0.000')
                   skipped = ET.SubElement(testcase, 'skipped')
-                  skipped.set('message', 'Test requires camera hardware (run with --include-ignored)')
+                  skipped.set('message', 'Test requires hardware (run with --include-ignored)')
 
               # Update test count
               current_tests = int(testsuite.get('tests', 0))

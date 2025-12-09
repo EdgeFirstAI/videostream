@@ -19,21 +19,43 @@
 
 static void *handle = NULL;
 
+// Workaround: The Hantro library uses libm symbols (e.g., pow) but doesn't
+// link to libm. We load libm with RTLD_GLOBAL to make its symbols available
+// for subsequent dlopen calls.
+static void ensure_libm_global(void)
+{
+    static int done = 0;
+    if (!done) {
+        void *libm_handle = dlopen("libm.so.6", RTLD_NOW | RTLD_GLOBAL);
+        if (!libm_handle) {
+            libm_handle = dlopen("libm.so", RTLD_NOW | RTLD_GLOBAL);
+        }
+        if (!libm_handle) {
+            fprintf(stderr, "Warning: Failed to preload libm: %s\n", dlerror());
+        }
+        done = 1;
+    }
+}
+
 int
 HantroDec_OpenLib()
 {
     if (handle == NULL) {
         const char* lib_path = NULL;
 
+        // Ensure libm symbols are globally available for Hantro library
+        ensure_libm_global();
+
         lib_path = getenv(ENV_NAME);
         if (lib_path == NULL) {
             // Environmental variable is not set, search for the library in
             // typical locations
-            handle = dlopen(LIB_NAME, RTLD_LAZY);
+            // Use RTLD_NOW to resolve all symbols immediately
+            handle = dlopen(LIB_NAME, RTLD_NOW);
         } else {
             // Environmental variable is set, try to load the library from the
             // specified path
-            handle = dlopen(lib_path, RTLD_LAZY);
+            handle = dlopen(lib_path, RTLD_NOW);
         }
 
         if (handle == NULL) {

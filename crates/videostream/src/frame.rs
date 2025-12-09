@@ -838,6 +838,9 @@ mod tests {
         os::fd::AsRawFd,
     };
 
+    /// Sentinel value indicating an invalid or unallocated file descriptor handle.
+    const INVALID_HANDLE: i32 = -1;
+
     #[test]
     fn frame() {
         //let fourcc = 0x33424752 as u32; //Hex for RGB3
@@ -1055,7 +1058,7 @@ mod tests {
         // After unalloc, the buffer is freed but the frame metadata remains.
         // The handle should no longer be valid
         let handle = frame.handle().unwrap();
-        assert_eq!(handle, -1, "Handle should be -1 after unalloc");
+        assert_eq!(handle, INVALID_HANDLE, "Handle should be -1 after unalloc");
     }
 
     #[test]
@@ -1067,5 +1070,153 @@ mod tests {
         assert!(debug_str.contains("Frame"));
         assert!(debug_str.contains("1920"));
         assert!(debug_str.contains("1080"));
+    }
+
+    #[test]
+    fn test_frame_metadata() {
+        let frame = Frame::new(1920, 1080, 1920 * 2, "YUYV").unwrap();
+        assert_eq!(frame.width().unwrap(), 1920);
+        assert_eq!(frame.height().unwrap(), 1080);
+        // YUYV fourcc value
+        assert_eq!(frame.fourcc().unwrap(), 0x56595559);
+    }
+
+    #[test]
+    fn test_frame_different_formats() {
+        // Test common video formats - some formats may not be supported on all platforms
+        let formats = ["YUYV", "NV12", "RGB3"];
+        for fmt in formats {
+            let frame = Frame::new(640, 480, 0, fmt);
+            assert!(frame.is_ok(), "Failed to create frame with format {}", fmt);
+        }
+    }
+
+    #[test]
+    fn test_frame_invalid_fourcc_length_short() {
+        // FourCC must be exactly 4 characters
+        let result = Frame::new(640, 480, 0, "RGB");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_frame_invalid_fourcc_length_long() {
+        let result = Frame::new(640, 480, 0, "RGB32");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_frame_small_dimensions() {
+        // Small but valid dimensions
+        let frame = Frame::new(1, 1, 0, "YUYV");
+        assert!(frame.is_ok());
+        let f = frame.unwrap();
+        assert_eq!(f.width().unwrap(), 1);
+        assert_eq!(f.height().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_frame_large_dimensions() {
+        // 4K resolution
+        let frame = Frame::new(3840, 2160, 3840 * 2, "YUYV");
+        assert!(frame.is_ok());
+        let f = frame.unwrap();
+        assert_eq!(f.width().unwrap(), 3840);
+        assert_eq!(f.height().unwrap(), 2160);
+    }
+
+    #[test]
+    fn test_frame_timestamps() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Timestamps should return Ok (values may be 0 or some initialized value)
+        let serial = frame.serial();
+        let timestamp = frame.timestamp();
+        let duration = frame.duration();
+        let pts = frame.pts();
+        let dts = frame.dts();
+
+        assert!(serial.is_ok());
+        assert!(timestamp.is_ok());
+        assert!(duration.is_ok());
+        assert!(pts.is_ok());
+        assert!(dts.is_ok());
+    }
+
+    #[test]
+    fn test_frame_trylock_unlock() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // trylock may fail depending on implementation - just ensure no panic
+        let lock_result = frame.trylock();
+        if lock_result.is_ok() {
+            let unlock_result = frame.unlock();
+            assert!(
+                unlock_result.is_ok(),
+                "unlock should succeed after successful lock"
+            );
+        }
+    }
+
+    #[test]
+    fn test_frame_send() {
+        // Verify Frame implements Send
+        fn assert_send<T: Send>() {}
+        assert_send::<Frame>();
+    }
+
+    #[test]
+    fn test_frame_expires() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Expires should return Ok (value depends on how frame was created)
+        let expires = frame.expires();
+        assert!(expires.is_ok());
+    }
+
+    #[test]
+    fn test_frame_handle_before_alloc() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        // Handle should be invalid before allocation
+        let handle = frame.handle().unwrap();
+        assert_eq!(handle, INVALID_HANDLE, "Handle should be -1 before alloc");
+    }
+
+    #[test]
+    fn test_frame_handle_after_alloc() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Handle should be a valid file descriptor after allocation
+        let handle = frame.handle().unwrap();
+        assert!(handle >= 0, "Handle should be >= 0 after alloc");
+    }
+
+    #[test]
+    fn test_frame_path_before_alloc() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        // Path should be None before allocation
+        let path = frame.path().unwrap();
+        assert!(path.is_none(), "Path should be None before alloc");
+    }
+
+    #[test]
+    fn test_frame_paddr() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Physical address may or may not be available depending on allocation type
+        let paddr = frame.paddr();
+        assert!(paddr.is_ok());
+    }
+
+    #[test]
+    fn test_frame_mmap_before_alloc() {
+        let frame = Frame::new(640, 480, 0, "RGB3").unwrap();
+        // mmap should fail before allocation
+        let result = frame.mmap();
+        assert!(result.is_err());
     }
 }
