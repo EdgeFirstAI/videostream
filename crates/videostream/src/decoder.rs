@@ -235,10 +235,10 @@ mod tests {
         // If VPU is available, we might get Ok or HardwareNotAvailable
         // The key is: this should NEVER panic
         match result {
-            Ok(_) => {} // VPU available and hardware present
-            Err(Error::SymbolNotFound(_)) => {} // VPU symbols not in library
+            Ok(_) => {}                               // VPU available and hardware present
+            Err(Error::SymbolNotFound(_)) => {}       // VPU symbols not in library
             Err(Error::HardwareNotAvailable(_)) => {} // VPU symbols present but no hardware
-            Err(Error::LibraryNotLoaded(_)) => {} // Library couldn't be loaded
+            Err(Error::LibraryNotLoaded(_)) => {}     // Library couldn't be loaded
             Err(e) => panic!("Unexpected error type: {:?}", e),
         }
     }
