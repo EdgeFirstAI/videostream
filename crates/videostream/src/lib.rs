@@ -487,4 +487,20 @@ mod tests {
             "Display should mention integer conversion error"
         );
     }
+
+    #[test]
+    fn test_error_display_symbol_not_found() {
+        let err = Error::SymbolNotFound("vsl_encoder_create");
+        let display = format!("{}", err);
+        assert!(display.contains("vsl_encoder_create"));
+        assert!(display.contains("Symbol"));
+    }
+
+    #[test]
+    fn test_error_display_hardware_not_available() {
+        let err = Error::HardwareNotAvailable("VPU encoder");
+        let display = format!("{}", err);
+        assert!(display.contains("VPU encoder"));
+        assert!(display.contains("Hardware"));
+    }
 }
