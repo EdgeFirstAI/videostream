@@ -186,7 +186,11 @@ impl fmt::Display for Error {
             Error::TryFromInt(err) => write!(f, "Integer conversion error: {}", err),
             Error::NullPointer => write!(f, "Null pointer returned from VideoStream library"),
             Error::SymbolNotFound(symbol) => {
-                write!(f, "Symbol '{}' not found in library (VPU support may not be compiled)", symbol)
+                write!(
+                    f,
+                    "Symbol '{}' not found in library (VPU support may not be compiled)",
+                    symbol
+                )
             }
             Error::HardwareNotAvailable(hw) => {
                 write!(f, "Hardware '{}' not available on this system", hw)

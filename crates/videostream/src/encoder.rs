@@ -111,8 +111,9 @@ impl Encoder {
         dts: i64,
     ) -> Result<frame::Frame, Error> {
         let lib = ffi::init()?;
-        let frame_ptr =
-            unsafe { lib.try_vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts) };
+        let frame_ptr = unsafe {
+            lib.try_vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts)
+        };
 
         match frame_ptr {
             Some(p) if !p.is_null() => p.try_into().map_err(|()| Error::NullPointer),
@@ -261,10 +262,10 @@ mod tests {
         // If VPU is available, we might get Ok or HardwareNotAvailable
         // The key is: this should NEVER panic
         match result {
-            Ok(_) => {} // VPU available and hardware present
-            Err(Error::SymbolNotFound(_)) => {} // VPU symbols not in library
+            Ok(_) => {}                               // VPU available and hardware present
+            Err(Error::SymbolNotFound(_)) => {}       // VPU symbols not in library
             Err(Error::HardwareNotAvailable(_)) => {} // VPU symbols present but no hardware
-            Err(Error::LibraryNotLoaded(_)) => {} // Library couldn't be loaded
+            Err(Error::LibraryNotLoaded(_)) => {}     // Library couldn't be loaded
             Err(e) => panic!("Unexpected error type: {:?}", e),
         }
     }
