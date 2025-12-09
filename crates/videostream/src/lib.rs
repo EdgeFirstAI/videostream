@@ -345,4 +345,128 @@ mod tests {
             Err(e) => println!("Failed to get version: {}", e),
         }
     }
+
+    #[test]
+    fn test_timestamp() {
+        let result = timestamp();
+        assert!(result.is_ok(), "timestamp() should succeed");
+        let ts = result.unwrap();
+        assert!(ts >= 0, "timestamp should be non-negative");
+    }
+
+    #[test]
+    fn test_error_display_io() {
+        let io_err = Error::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "test error",
+        ));
+        let display = format!("{}", io_err);
+        assert!(
+            display.contains("test error") || display.contains("I/O error"),
+            "Display should contain error message"
+        );
+    }
+
+    #[test]
+    fn test_error_display_null_pointer() {
+        let err = Error::NullPointer;
+        let display = format!("{}", err);
+        assert!(
+            display.contains("Null pointer"),
+            "Display should mention null pointer"
+        );
+    }
+
+    #[test]
+    fn test_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no access");
+        let err: Error = io_err.into();
+        assert!(matches!(err, Error::Io(_)));
+    }
+
+    #[test]
+    fn test_error_from_nul() {
+        // Create a NulError by trying to create a CString with embedded null
+        let nul_result = std::ffi::CString::new("test\0string");
+        assert!(nul_result.is_err());
+        let nul_err = nul_result.unwrap_err();
+        let err: Error = nul_err.into();
+        assert!(matches!(err, Error::CString(_)));
+    }
+
+    #[test]
+    fn test_error_from_utf8() {
+        // Create a Utf8Error by converting invalid UTF-8
+        let invalid_utf8 = vec![0xff, 0xfe];
+        let utf8_result = std::str::from_utf8(&invalid_utf8);
+        assert!(utf8_result.is_err());
+        let utf8_err = utf8_result.unwrap_err();
+        let err: Error = utf8_err.into();
+        assert!(matches!(err, Error::Utf8(_)));
+    }
+
+    #[test]
+    fn test_error_from_try_from_int() {
+        // Create a TryFromIntError by converting an out-of-range value
+        let result: Result<u8, _> = (-1i32).try_into();
+        assert!(result.is_err());
+        let int_err = result.unwrap_err();
+        let err: Error = int_err.into();
+        assert!(matches!(err, Error::TryFromInt(_)));
+    }
+
+    #[test]
+    fn test_error_debug() {
+        let err = Error::NullPointer;
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("NullPointer"));
+    }
+
+    #[test]
+    fn test_error_source() {
+        use std::error::Error as StdError;
+
+        // NullPointer should have no source
+        let null_err = Error::NullPointer;
+        assert!(null_err.source().is_none());
+
+        // Io error should have a source
+        let io_err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        assert!(io_err.source().is_some());
+    }
+
+    #[test]
+    fn test_error_display_utf8() {
+        let invalid_utf8 = vec![0xff, 0xfe];
+        let utf8_err = std::str::from_utf8(&invalid_utf8).unwrap_err();
+        let err: Error = utf8_err.into();
+        let display = format!("{}", err);
+        assert!(
+            display.contains("UTF-8"),
+            "Display should mention UTF-8 error"
+        );
+    }
+
+    #[test]
+    fn test_error_display_cstring() {
+        let nul_err = std::ffi::CString::new("test\0string").unwrap_err();
+        let err: Error = nul_err.into();
+        let display = format!("{}", err);
+        assert!(
+            display.contains("CString"),
+            "Display should mention CString error"
+        );
+    }
+
+    #[test]
+    fn test_error_display_try_from_int() {
+        let result: Result<u8, _> = (-1i32).try_into();
+        let int_err = result.unwrap_err();
+        let err: Error = int_err.into();
+        let display = format!("{}", err);
+        assert!(
+            display.contains("Integer") || display.contains("conversion"),
+            "Display should mention integer conversion error"
+        );
+    }
 }

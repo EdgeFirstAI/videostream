@@ -112,3 +112,105 @@ impl Drop for Encoder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vsl_rect_new() {
+        let rect = VSLRect::new(10, 20, 640, 480);
+        assert_eq!(rect.x(), 10);
+        assert_eq!(rect.y(), 20);
+        assert_eq!(rect.width(), 640);
+        assert_eq!(rect.height(), 480);
+    }
+
+    #[test]
+    fn test_vsl_rect_zero() {
+        let rect = VSLRect::new(0, 0, 0, 0);
+        assert_eq!(rect.x(), 0);
+        assert_eq!(rect.y(), 0);
+        assert_eq!(rect.width(), 0);
+        assert_eq!(rect.height(), 0);
+    }
+
+    #[test]
+    fn test_vsl_rect_negative() {
+        // Negative values should be allowed (for crop offsets)
+        let rect = VSLRect::new(-10, -20, 640, 480);
+        assert_eq!(rect.x(), -10);
+        assert_eq!(rect.y(), -20);
+    }
+
+    #[test]
+    fn test_encoder_profile_enum_values() {
+        // Verify enum values match expected constants
+        assert_eq!(VSLEncoderProfileEnum::Auto as u32, 0);
+        assert_eq!(VSLEncoderProfileEnum::Kbps5000 as u32, 1);
+        assert_eq!(VSLEncoderProfileEnum::Kbps25000 as u32, 2);
+        assert_eq!(VSLEncoderProfileEnum::Kbps50000 as u32, 3);
+        assert_eq!(VSLEncoderProfileEnum::Kbps100000 as u32, 4);
+    }
+
+    #[test]
+    fn test_encoder_profile_enum_clone() {
+        let profile = VSLEncoderProfileEnum::Kbps25000;
+        let cloned = profile;
+        assert_eq!(profile, cloned);
+    }
+
+    #[test]
+    fn test_encoder_profile_enum_debug() {
+        let profile = VSLEncoderProfileEnum::Kbps25000;
+        let debug_str = format!("{:?}", profile);
+        assert!(debug_str.contains("Kbps25000"));
+    }
+
+    #[test]
+    fn test_encoder_profile_enum_copy() {
+        let profile = VSLEncoderProfileEnum::Kbps50000;
+        let copied = profile;
+        assert_eq!(profile, copied);
+    }
+
+    #[test]
+    fn test_encoder_profile_enum_equality() {
+        let a = VSLEncoderProfileEnum::Auto;
+        let b = VSLEncoderProfileEnum::Auto;
+        let c = VSLEncoderProfileEnum::Kbps5000;
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_vsl_rect_large_values() {
+        // Test with 4K resolution values
+        let rect = VSLRect::new(0, 0, 3840, 2160);
+        assert_eq!(rect.width(), 3840);
+        assert_eq!(rect.height(), 2160);
+    }
+
+    // Hardware-dependent tests (marked with ignore)
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_create_h264() {
+        let encoder = Encoder::create(
+            VSLEncoderProfileEnum::Kbps25000 as u32,
+            u32::from_le_bytes(*b"H264"),
+            30,
+        );
+        assert!(encoder.is_ok());
+    }
+
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_create_hevc() {
+        let encoder = Encoder::create(
+            VSLEncoderProfileEnum::Kbps25000 as u32,
+            u32::from_le_bytes(*b"HEVC"),
+            30,
+        );
+        assert!(encoder.is_ok());
+    }
+}

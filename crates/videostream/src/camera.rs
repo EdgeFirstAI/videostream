@@ -556,4 +556,115 @@ mod tests {
 
         Ok((y_min, y_max, y_avg as u8))
     }
+
+    #[test]
+    fn test_camera_builder_defaults() {
+        let camera = create_camera();
+        // Verify defaults can be configured
+        let _camera = camera.with_device("/dev/video0");
+        // The camera struct should be created without errors
+    }
+
+    #[test]
+    fn test_camera_builder_chain() {
+        let _camera = create_camera()
+            .with_device("/dev/video0")
+            .with_resolution(1920, 1080)
+            .with_format(FourCC(*b"YUYV"))
+            .with_mirror(Mirror::Horizontal)
+            .with_buffers(8);
+
+        // Camera struct should be configured
+        // Actual validation happens on open()
+    }
+
+    #[test]
+    fn test_mirror_display() {
+        assert_eq!(format!("{}", Mirror::None), "none");
+        assert_eq!(format!("{}", Mirror::Horizontal), "horizontal");
+        assert_eq!(format!("{}", Mirror::Vertical), "vertical");
+        assert_eq!(format!("{}", Mirror::Both), "both");
+    }
+
+    #[test]
+    fn test_mirror_default() {
+        let mirror = Mirror::default();
+        assert!(matches!(mirror, Mirror::None));
+    }
+
+    #[test]
+    fn test_mirror_clone() {
+        let original = Mirror::Horizontal;
+        let cloned = original;
+        assert!(matches!(cloned, Mirror::Horizontal));
+    }
+
+    #[test]
+    fn test_mirror_debug() {
+        let mirror = Mirror::Vertical;
+        let debug_str = format!("{:?}", mirror);
+        assert!(debug_str.contains("Vertical"));
+    }
+
+    #[test]
+    fn test_mirror_equality() {
+        let a = Mirror::None;
+        let b = Mirror::None;
+        let c = Mirror::Horizontal;
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_mirror_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(Mirror::None);
+        set.insert(Mirror::Horizontal);
+        set.insert(Mirror::None); // Duplicate
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_camera_invalid_device() {
+        let camera = create_camera().with_device("/dev/nonexistent_video_device_12345");
+
+        let result = camera.open();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_camera_default() {
+        let camera = Camera::default();
+        // Verify default values through builder chain
+        let debug_str = format!("{:?}", camera);
+        assert!(debug_str.contains("/dev/video0"));
+        assert!(debug_str.contains("1920"));
+        assert!(debug_str.contains("1080"));
+    }
+
+    #[test]
+    fn test_camera_clone() {
+        let camera = create_camera()
+            .with_device("/dev/video1")
+            .with_resolution(640, 480);
+        let cloned = camera.clone();
+        let debug_str = format!("{:?}", cloned);
+        assert!(debug_str.contains("/dev/video1"));
+        assert!(debug_str.contains("640"));
+    }
+
+    #[test]
+    fn test_mirror_all_variants() {
+        let variants = [
+            Mirror::None,
+            Mirror::Horizontal,
+            Mirror::Vertical,
+            Mirror::Both,
+        ];
+        for mirror in variants {
+            let display = format!("{}", mirror);
+            assert!(!display.is_empty(), "Mirror display should not be empty");
+        }
+    }
 }
