@@ -53,7 +53,10 @@ pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
     // trying to access unloaded library code.
     let leaked_lib: &'static VideoStreamLibrary = Box::leak(Box::new(lib));
 
-    LIBRARY.set(leaked_lib).ok().expect("Failed to initialize library");
+    LIBRARY
+        .set(leaked_lib)
+        .ok()
+        .expect("Failed to initialize library");
 
     Ok(*LIBRARY.get().unwrap())
 }
