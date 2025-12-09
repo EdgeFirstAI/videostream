@@ -29,6 +29,9 @@ static void ensure_libm_global(void)
         if (!libm_handle) {
             libm_handle = dlopen("libm.so", RTLD_NOW | RTLD_GLOBAL);
         }
+        if (!libm_handle) {
+            fprintf(stderr, "Warning: Failed to preload libm: %s\n", dlerror());
+        }
         done = 1;
     }
 }
