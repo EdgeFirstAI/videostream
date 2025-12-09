@@ -25,7 +25,10 @@ static void ensure_libm_global(void)
 {
     static int done = 0;
     if (!done) {
-        dlopen("libm.so.6", RTLD_NOW | RTLD_GLOBAL);
+        void *libm_handle = dlopen("libm.so.6", RTLD_NOW | RTLD_GLOBAL);
+        if (!libm_handle) {
+            libm_handle = dlopen("libm.so", RTLD_NOW | RTLD_GLOBAL);
+        }
         done = 1;
     }
 }
