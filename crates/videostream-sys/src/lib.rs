@@ -13,9 +13,13 @@ include!("ffi.rs");
 // Re-export libloading for error handling
 pub use libloading;
 
+use std::mem::ManuallyDrop;
 use std::sync::{Mutex, OnceLock};
 
-static LIBRARY: OnceLock<VideoStreamLibrary> = OnceLock::new();
+// Wrap VideoStreamLibrary in ManuallyDrop to prevent dlclose() at program exit.
+// This prevents segfaults when the C library or GStreamer plugins have global
+// destructors that would run after the library is unloaded.
+static LIBRARY: OnceLock<ManuallyDrop<VideoStreamLibrary>> = OnceLock::new();
 static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Initialize the VideoStream library by loading libvideostream.so
@@ -27,14 +31,14 @@ static INIT_LOCK: Mutex<()> = Mutex::new(());
 /// a custom path to the library. If not set, searches standard system paths.
 pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
     if let Some(lib) = LIBRARY.get() {
-        return Ok(lib);
+        return Ok(&**lib);
     }
 
     let _guard = INIT_LOCK.lock().unwrap();
 
     // Double-check after acquiring lock
     if let Some(lib) = LIBRARY.get() {
-        return Ok(lib);
+        return Ok(&**lib);
     }
 
     // Check for VIDEOSTREAM_LIBRARY environment variable
@@ -44,21 +48,25 @@ pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
 
     let lib = unsafe { VideoStreamLibrary::new(lib_path.as_str())? };
 
-    LIBRARY.set(lib).ok().expect("Failed to initialize library");
+    // Wrap in ManuallyDrop to prevent dlclose() at program exit
+    LIBRARY
+        .set(ManuallyDrop::new(lib))
+        .ok()
+        .expect("Failed to initialize library");
 
-    Ok(LIBRARY.get().unwrap())
+    Ok(&**LIBRARY.get().unwrap())
 }
 
 /// Get a reference to the loaded library
 ///
 /// Panics if init() has not been called successfully.
 pub fn library() -> &'static VideoStreamLibrary {
-    LIBRARY
+    &**LIBRARY
         .get()
         .expect("VideoStream library not initialized - call videostream_sys::init() first")
 }
 
 /// Try to get a reference to the loaded library without panicking
 pub fn try_library() -> Option<&'static VideoStreamLibrary> {
-    LIBRARY.get()
+    LIBRARY.get().map(|lib| &**lib)
 }
