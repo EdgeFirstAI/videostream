@@ -13,13 +13,13 @@ include!("ffi.rs");
 // Re-export libloading for error handling
 pub use libloading;
 
-use std::mem::ManuallyDrop;
 use std::sync::{Mutex, OnceLock};
 
-// Wrap VideoStreamLibrary in ManuallyDrop to prevent dlclose() at program exit.
-// This prevents segfaults when the C library or GStreamer plugins have global
-// destructors that would run after the library is unloaded.
-static LIBRARY: OnceLock<ManuallyDrop<VideoStreamLibrary>> = OnceLock::new();
+// Store a leaked (never-freed) reference to the library to prevent dlclose() at program exit.
+// This prevents segfaults when the C library or GStreamer plugins have global destructors
+// or atexit() handlers that would run after the library is unloaded.
+// Using a leaked Box ensures the library pointer remains valid for the entire program lifetime.
+static LIBRARY: OnceLock<&'static VideoStreamLibrary> = OnceLock::new();
 static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Initialize the VideoStream library by loading libvideostream.so
@@ -48,13 +48,14 @@ pub fn init() -> Result<&'static VideoStreamLibrary, libloading::Error> {
 
     let lib = unsafe { VideoStreamLibrary::new(lib_path.as_str())? };
 
-    // Wrap in ManuallyDrop to prevent dlclose() at program exit
-    LIBRARY
-        .set(ManuallyDrop::new(lib))
-        .ok()
-        .expect("Failed to initialize library");
+    // Leak the library to prevent dlclose() at program exit.
+    // This intentionally leaks memory but prevents segfaults from cleanup code
+    // trying to access unloaded library code.
+    let leaked_lib: &'static VideoStreamLibrary = Box::leak(Box::new(lib));
 
-    Ok(LIBRARY.get().unwrap())
+    LIBRARY.set(leaked_lib).ok().expect("Failed to initialize library");
+
+    Ok(*LIBRARY.get().unwrap())
 }
 
 /// Get a reference to the loaded library
@@ -68,5 +69,5 @@ pub fn library() -> &'static VideoStreamLibrary {
 
 /// Try to get a reference to the loaded library without panicking
 pub fn try_library() -> Option<&'static VideoStreamLibrary> {
-    LIBRARY.get().map(|lib| &**lib)
+    LIBRARY.get().copied()
 }
