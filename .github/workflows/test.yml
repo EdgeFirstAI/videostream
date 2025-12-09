@@ -123,7 +123,13 @@ jobs:
         run: |
           # Use RelWithDebInfo for optimized binaries with debug info and coverage
           # This provides realistic performance while still enabling profiling
-          # 
+          #
+          # Coverage vs. manylinux2014 Compatibility:
+          # - This test.yml workflow prioritizes COVERAGE INSTRUMENTATION
+          # - Coverage is NOT compatible with manylinux2014 requirements
+          # - For manylinux2014 compatible binaries, see build.yml instead
+          # - These test builds are for CI/CD and development only, not distribution
+          #
           # VPU/G2D Support:
           # - aarch64 builds: Enable VPU and G2D so encoder/decoder symbols are available
           #   for hardware testing. The VPU wrapper uses dlopen to load Hantro
@@ -140,7 +146,7 @@ jobs:
             ENABLE_VPU=OFF
             ENABLE_G2D=OFF
           fi
-          
+
           cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DENABLE_COVER=ON \
