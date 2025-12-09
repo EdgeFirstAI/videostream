@@ -1359,4 +1359,140 @@ impl VideoStreamLibrary {
             .as_ref()
             .expect("Expected function, got error."))(decoder)
     }
+
+    /// Check if encoder functions are available in the loaded library.
+    ///
+    /// Returns `true` if the library was compiled with VPU encoder support,
+    /// `false` otherwise.
+    pub fn is_encoder_available(&self) -> bool {
+        self.vsl_encoder_create.is_ok()
+            && self.vsl_encoder_release.is_ok()
+            && self.vsl_encode_frame.is_ok()
+            && self.vsl_encoder_new_output_frame.is_ok()
+    }
+
+    /// Check if decoder functions are available in the loaded library.
+    ///
+    /// Returns `true` if the library was compiled with VPU decoder support,
+    /// `false` otherwise.
+    pub fn is_decoder_available(&self) -> bool {
+        self.vsl_decoder_create.is_ok()
+            && self.vsl_decoder_release.is_ok()
+            && self.vsl_decode_frame.is_ok()
+            && self.vsl_decoder_width.is_ok()
+            && self.vsl_decoder_height.is_ok()
+            && self.vsl_decoder_crop.is_ok()
+    }
+
+    /// Try to create an encoder, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_encoder_create(
+        &self,
+        profile: VSLEncoderProfile,
+        outputFourcc: u32,
+        fps: ::std::os::raw::c_int,
+    ) -> Option<*mut VSLEncoder> {
+        self.vsl_encoder_create
+            .as_ref()
+            .ok()
+            .map(|f| f(profile, outputFourcc, fps))
+    }
+
+    /// Try to release an encoder, returning false if the symbol is not available.
+    pub unsafe fn try_vsl_encoder_release(&self, encoder: *mut VSLEncoder) -> bool {
+        if let Ok(f) = self.vsl_encoder_release.as_ref() {
+            f(encoder);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Try to encode a frame, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_encode_frame(
+        &self,
+        encoder: *mut VSLEncoder,
+        source: *mut VSLFrame,
+        destination: *mut VSLFrame,
+        cropRegion: *const VSLRect,
+        keyframe: *mut ::std::os::raw::c_int,
+    ) -> Option<::std::os::raw::c_int> {
+        self.vsl_encode_frame
+            .as_ref()
+            .ok()
+            .map(|f| f(encoder, source, destination, cropRegion, keyframe))
+    }
+
+    /// Try to create a new output frame for the encoder.
+    pub unsafe fn try_vsl_encoder_new_output_frame(
+        &self,
+        encoder: *const VSLEncoder,
+        width: ::std::os::raw::c_int,
+        height: ::std::os::raw::c_int,
+        duration: i64,
+        pts: i64,
+        dts: i64,
+    ) -> Option<*mut VSLFrame> {
+        self.vsl_encoder_new_output_frame
+            .as_ref()
+            .ok()
+            .map(|f| f(encoder, width, height, duration, pts, dts))
+    }
+
+    /// Try to create a decoder, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_decoder_create(
+        &self,
+        output_fourcc: u32,
+        fps: ::std::os::raw::c_int,
+    ) -> Option<*mut VSLDecoder> {
+        self.vsl_decoder_create
+            .as_ref()
+            .ok()
+            .map(|f| f(output_fourcc, fps))
+    }
+
+    /// Try to release a decoder, returning false if the symbol is not available.
+    pub unsafe fn try_vsl_decoder_release(&self, decoder: *mut VSLDecoder) -> bool {
+        if let Ok(f) = self.vsl_decoder_release.as_ref() {
+            f(decoder);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Try to decode a frame, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_decode_frame(
+        &self,
+        decoder: *mut VSLDecoder,
+        data: *const ::std::os::raw::c_void,
+        data_length: ::std::os::raw::c_uint,
+        bytes_used: *mut usize,
+        output_frame: *mut *mut VSLFrame,
+    ) -> Option<VSLDecoderRetCode> {
+        self.vsl_decode_frame
+            .as_ref()
+            .ok()
+            .map(|f| f(decoder, data, data_length, bytes_used, output_frame))
+    }
+
+    /// Try to get decoder width, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_decoder_width(
+        &self,
+        decoder: *const VSLDecoder,
+    ) -> Option<::std::os::raw::c_int> {
+        self.vsl_decoder_width.as_ref().ok().map(|f| f(decoder))
+    }
+
+    /// Try to get decoder height, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_decoder_height(
+        &self,
+        decoder: *const VSLDecoder,
+    ) -> Option<::std::os::raw::c_int> {
+        self.vsl_decoder_height.as_ref().ok().map(|f| f(decoder))
+    }
+
+    /// Try to get decoder crop region, returning None if the symbol is not available.
+    pub unsafe fn try_vsl_decoder_crop(&self, decoder: *const VSLDecoder) -> Option<VSLRect> {
+        self.vsl_decoder_crop.as_ref().ok().map(|f| f(decoder))
+    }
 }

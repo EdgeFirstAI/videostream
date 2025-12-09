@@ -30,11 +30,14 @@ Codec_OpenLib()
         if (lib_path == NULL) {
             // Environmental variable is not set, search for the library in
             // typical locations
-            handle = dlopen(LIB_NAME, RTLD_LAZY);
+            // Use RTLD_NOW to resolve all symbols immediately - this allows
+            // the library to use symbols from libm that are already loaded
+            // by the main application
+            handle = dlopen(LIB_NAME, RTLD_NOW);
         } else {
             // Environmental variable is set, try to load the library from the
             // specified path
-            handle = dlopen(lib_path, RTLD_LAZY);
+            handle = dlopen(lib_path, RTLD_NOW);
         }
 
         if (handle == NULL) {
