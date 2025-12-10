@@ -13,6 +13,20 @@ override_dh_auto_configure:
 			-DCMAKE_INSTALL_PREFIX=/usr \
 			-DINSTALL_MANUAL=$(INSTALL_MANUAL)
 
+override_dh_auto_build:
+	  # Build C library with CMake
+	  dh_auto_build
+	  # Build Rust CLI binary
+	  LD_LIBRARY_PATH=$(CURDIR)/obj-$(DEB_TARGET_GNU_TYPE):$$LD_LIBRARY_PATH \
+	    cargo build --release -p videostream-cli
+
+override_dh_auto_install:
+	  # Install C library and tools
+	  dh_auto_install
+	  # Install Rust CLI binary
+	  mkdir -p debian/tmp/usr/bin
+	  cp target/release/videostream debian/tmp/usr/bin/
+
 override_dh_shlibdeps:
 
 override_dh_installdocs:

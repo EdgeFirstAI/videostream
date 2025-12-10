@@ -19,6 +19,7 @@ default = []
 dma-buf.workspace = true
 unix-ts.workspace = true
 videostream-sys.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

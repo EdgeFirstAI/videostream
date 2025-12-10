@@ -109,7 +109,8 @@ read_frame(vsl_camera* ctx)
         buf.memory   = V4L2_MEMORY_MMAP;
         buf.m.planes = &mplanes;
         buf.length   = 1;
-        buf.index    = 0;
+        // buf.index should not be set for VIDIOC_DQBUF - it's an output parameter
+        // buf.index    = 0;
     }
 
     if (-1 == xioctl(ctx->fd, VIDIOC_DQBUF, &buf)) {
