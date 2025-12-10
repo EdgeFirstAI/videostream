@@ -127,7 +127,32 @@ cmake --build build -j$(nproc)
 
 ### Usage Examples
 
-#### Example 1: V4L2 Camera Capture (C API)
+#### Example 1: VideoStream CLI (Recommended)
+
+The `videostream` CLI provides the easiest way to work with cameras and video streaming:
+
+```bash
+# Display hardware capabilities (camera, VPU encoder/decoder)
+videostream info
+
+# Record H.264 video from camera (60 frames)
+videostream record output.h264 --frames 60 --device /dev/video3
+
+# Convert H.264 to MP4 container
+videostream convert output.h264 output.mp4
+
+# Stream camera frames to VSL socket (with H.264 encoding)
+videostream stream /tmp/camera.sock --encode --codec h264 &
+
+# Receive frames and display metrics
+videostream receive /tmp/camera.sock --frames 100 --json
+```
+
+For detailed CLI usage, run `videostream --help` or `videostream <command> --help`.
+
+---
+
+#### Example 2: V4L2 Camera Capture (C API)
 
 ```c
 #include <videostream.h>

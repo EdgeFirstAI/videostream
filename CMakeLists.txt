@@ -393,10 +393,20 @@ install(TARGETS videostream
 add_subdirectory(src)
 
 # Install Python package
-install(DIRECTORY videostream 
-    COMPONENT python 
+install(DIRECTORY videostream
+    COMPONENT python
     DESTINATION ${PYTHON_INSTALL_DIR}
 )
+
+# Rust CLI binary (videostream)
+# Note: The Rust CLI is built by cargo during the build process (see debian/rules and build.yml)
+# This install command picks up the pre-built binary for packaging
+if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/usr/bin/videostream")
+    install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/usr/bin/videostream
+        COMPONENT runtime
+        DESTINATION bin
+    )
+endif()
 
 # CPack configuration for relocatable archives
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSTEM_NAME)

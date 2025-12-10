@@ -123,6 +123,27 @@ jobs:
         run: |
           cmake --build build -j$(nproc)
 
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build Rust CLI (videostream binary)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          # Build CLI with Release profile for distribution
+          cargo build --release -p videostream-cli
+
+          # Install CLI binary to build directory for packaging
+          mkdir -p build/usr/bin
+          cp target/release/videostream build/usr/bin/
+          chmod +x build/usr/bin/videostream
+
+          echo "Built CLI binary:"
+          ls -lh target/release/videostream
+          file target/release/videostream
+
       - name: Create ZIP package
         run: |
           cpack
@@ -169,6 +190,11 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev
+
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Set manylinux2014 build flags
         run: |

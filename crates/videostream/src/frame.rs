@@ -622,11 +622,20 @@ impl Frame {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn attach(&self, fd: RawFd, size: usize, offset: usize) -> Result<(), Error> {
+        log::debug!(
+            "Frame::attach called with fd={}, size={}, offset={}",
+            fd,
+            size,
+            offset
+        );
         let ret = vsl!(vsl_frame_attach(self.ptr, fd, size, offset));
+        log::debug!("vsl_frame_attach returned: {}", ret);
         if ret < 0 {
             let err = io::Error::last_os_error();
+            log::error!("Frame::attach failed with ret={}, errno: {:?}", ret, err);
             return Err(err.into());
         }
+        log::debug!("Frame::attach succeeded");
         Ok(())
     }
 
@@ -802,15 +811,34 @@ impl TryFrom<&CameraBuffer<'_>> for Frame {
     type Error = Error;
 
     fn try_from(buf: &CameraBuffer<'_>) -> Result<Self, Self::Error> {
+        log::debug!(
+            "Frame::try_from CameraBuffer: {}x{} format={} fd={}",
+            buf.width(),
+            buf.height(),
+            buf.format(),
+            buf.fd().as_raw_fd()
+        );
+
         let frame = Frame::new(
             buf.width().try_into().unwrap(),
             buf.height().try_into().unwrap(),
             0,
             buf.format().to_string().as_str(),
         )?;
+
+        log::debug!(
+            "Frame created successfully, attempting attach with fd={}",
+            buf.fd().as_raw_fd()
+        );
+
         match frame.attach(buf.fd().as_raw_fd(), 0, 0) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
+            Ok(_) => {
+                log::debug!("Frame attach succeeded");
+            }
+            Err(e) => {
+                log::error!("Frame attach failed: {:?}", e);
+                return Err(e);
+            }
         }
         Ok(frame)
     }
@@ -819,11 +847,13 @@ impl TryFrom<&CameraBuffer<'_>> for Frame {
 impl Drop for Frame {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
+            log::trace!("Frame::drop() - releasing frame ptr={:?}", self.ptr);
             if let Ok(lib) = ffi::init() {
                 unsafe {
                     lib.vsl_frame_release(self.ptr);
                 }
             }
+            log::trace!("Frame::drop() - frame released");
         }
     }
 }

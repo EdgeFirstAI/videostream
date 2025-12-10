@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **VideoStream CLI**: Modern Rust CLI application with 5 commands (DE-993)
+  - `videostream stream`: Camera → VSL socket streaming (raw/encoded)
+  - `videostream record`: Camera → H.264/H.265 Annex-B bitstream recording
+  - `videostream receive`: VSL socket client with latency metrics (p50/p95/p99)
+  - `videostream info`: Hardware capabilities enumeration (camera, VPU encoder/decoder)
+  - `videostream convert`: H.264/H.265 Annex-B → MP4 conversion with SPS parser
+  - CLI distributed in `videostream-tools` package alongside legacy `vsl-camhost`
+  - Comprehensive integration tests (11 unit + 6 hardware tests)
+  - JSON output support for programmatic metrics collection
+
+### Fixed
+
+- V4L2: Fixed VIDIOC_DQBUF bug by removing incorrect `buf.index = 0` initialization
+- Camera: Enhanced buffer release logging with trace/warn diagnostics
+- CLI: Resolved argument short-option conflicts (-d, -f flags)
+
+---
+
 ## [2.0.0] - 2025-11-27
 
 ### Changed
