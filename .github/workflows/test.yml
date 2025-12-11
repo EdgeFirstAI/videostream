@@ -572,6 +572,14 @@ jobs:
           for test_bin in rust-tests/*; do
             if [ -x "$test_bin" ] && [ -f "$test_bin" ]; then
               test_name=$(basename "$test_bin")
+
+              # Skip non-test binaries (like the videostream CLI)
+              # Test binaries accept --list, CLI binaries don't
+              if ! "$test_bin" --list >/dev/null 2>&1; then
+                echo "⏭️  Skipped non-test binary: $test_name"
+                continue
+              fi
+
               echo "=== Running $test_name ==="
               # --include-ignored runs tests marked with #[ignore] (camera tests need real hardware)
               # --test-threads=1 for deterministic execution on hardware
