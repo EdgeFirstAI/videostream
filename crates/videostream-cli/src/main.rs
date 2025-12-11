@@ -17,7 +17,9 @@ use std::process::ExitCode;
 /// VideoStream CLI - Camera streaming, encoding, and metrics tool
 #[derive(Parser)]
 #[command(name = "videostream")]
-#[command(version, about, long_about = None)]
+#[command(version)]
+#[command(about = "VideoStream CLI - Camera streaming, encoding, and metrics tool")]
+#[command(long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
     /// Enable verbose logging (use RUST_LOG=debug for more)
