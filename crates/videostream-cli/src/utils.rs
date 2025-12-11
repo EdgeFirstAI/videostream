@@ -6,6 +6,30 @@ use signal_hook::consts::SIGINT;
 use signal_hook::flag;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use videostream::encoder;
+
+/// Helper to parse and validate resolution parts
+fn parse_resolution_parts(
+    width_str: &str,
+    height_str: &str,
+    original: &str,
+) -> Result<(i32, i32), CliError> {
+    let width = width_str
+        .parse::<i32>()
+        .map_err(|_| CliError::InvalidArgs(format!("Invalid width in resolution: {}", original)))?;
+    let height = height_str.parse::<i32>().map_err(|_| {
+        CliError::InvalidArgs(format!("Invalid height in resolution: {}", original))
+    })?;
+
+    if width <= 0 || height <= 0 {
+        return Err(CliError::InvalidArgs(format!(
+            "Resolution dimensions must be positive: {}",
+            original
+        )));
+    }
+
+    Ok((width, height))
+}
 
 /// Parse resolution string in format "WxH" or "W*H"
 ///
@@ -18,40 +42,12 @@ use std::sync::Arc;
 pub fn parse_resolution(s: &str) -> Result<(i32, i32), CliError> {
     // Try 'x' separator first
     if let Some((width_str, height_str)) = s.split_once('x') {
-        let width = width_str
-            .parse::<i32>()
-            .map_err(|_| CliError::InvalidArgs(format!("Invalid width in resolution: {}", s)))?;
-        let height = height_str
-            .parse::<i32>()
-            .map_err(|_| CliError::InvalidArgs(format!("Invalid height in resolution: {}", s)))?;
-
-        if width <= 0 || height <= 0 {
-            return Err(CliError::InvalidArgs(format!(
-                "Resolution dimensions must be positive: {}",
-                s
-            )));
-        }
-
-        return Ok((width, height));
+        return parse_resolution_parts(width_str, height_str, s);
     }
 
     // Try '*' separator as alternative
     if let Some((width_str, height_str)) = s.split_once('*') {
-        let width = width_str
-            .parse::<i32>()
-            .map_err(|_| CliError::InvalidArgs(format!("Invalid width in resolution: {}", s)))?;
-        let height = height_str
-            .parse::<i32>()
-            .map_err(|_| CliError::InvalidArgs(format!("Invalid height in resolution: {}", s)))?;
-
-        if width <= 0 || height <= 0 {
-            return Err(CliError::InvalidArgs(format!(
-                "Resolution dimensions must be positive: {}",
-                s
-            )));
-        }
-
-        return Ok((width, height));
+        return parse_resolution_parts(width_str, height_str, s);
     }
 
     Err(CliError::InvalidArgs(format!(
@@ -147,6 +143,49 @@ pub fn parse_bitrate(s: &str) -> Result<u32, CliError> {
     // Parse as plain number (assume kbps)
     s.parse::<u32>()
         .map_err(|_| CliError::InvalidArgs(format!("Invalid bitrate: {}", s)))
+}
+
+/// Map bitrate to encoder profile
+///
+/// Maps bitrate in kbps to the appropriate VideoStream encoder profile.
+/// Uses profile tiers: 5Mbps, 25Mbps, 50Mbps, 100Mbps.
+///
+/// # Examples
+/// ```
+/// use videostream_cli::utils::bitrate_to_encoder_profile;
+/// use videostream::encoder::VSLEncoderProfileEnum;
+/// assert_eq!(bitrate_to_encoder_profile(5000), VSLEncoderProfileEnum::Kbps5000);
+/// assert_eq!(bitrate_to_encoder_profile(25000), VSLEncoderProfileEnum::Kbps25000);
+/// ```
+pub fn bitrate_to_encoder_profile(bitrate_kbps: u32) -> encoder::VSLEncoderProfileEnum {
+    match bitrate_kbps {
+        0..=7500 => encoder::VSLEncoderProfileEnum::Kbps5000,
+        7501..=37500 => encoder::VSLEncoderProfileEnum::Kbps25000,
+        37501..=75000 => encoder::VSLEncoderProfileEnum::Kbps50000,
+        _ => encoder::VSLEncoderProfileEnum::Kbps100000,
+    }
+}
+
+/// Convert codec string to FOURCC value
+///
+/// Converts codec name (h264, h265, hevc) to 32-bit FOURCC identifier.
+///
+/// # Examples
+/// ```
+/// use videostream_cli::utils::codec_to_fourcc;
+/// assert_eq!(codec_to_fourcc("h264").unwrap(), 0x34363248);
+/// assert_eq!(codec_to_fourcc("h265").unwrap(), 0x43564548);
+/// assert_eq!(codec_to_fourcc("hevc").unwrap(), 0x43564548);
+/// ```
+pub fn codec_to_fourcc(codec: &str) -> Result<u32, CliError> {
+    match codec.to_lowercase().as_str() {
+        "h264" => Ok(u32::from_le_bytes(*b"H264")),
+        "h265" | "hevc" => Ok(u32::from_le_bytes(*b"HEVC")),
+        _ => Err(CliError::InvalidArgs(format!(
+            "Unsupported codec: {} (supported: h264, h265, hevc)",
+            codec
+        ))),
+    }
 }
 
 /// NAL unit types for H.264/H.265
@@ -257,7 +296,7 @@ pub fn extract_parameter_sets_h265(data: &[u8]) -> Result<ParameterSets, CliErro
 /// - 0x00 0x00 0x01 (3-byte)
 ///
 /// Returns NAL units without start codes
-fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
+pub fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
     let mut nal_units = Vec::new();
     let mut i = 0;
 

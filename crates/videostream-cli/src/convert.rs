@@ -74,7 +74,7 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
 
     // Parse NAL units to extract individual frames
     log::info!("Parsing NAL units...");
-    let nal_units = parse_nal_units(&bitstream_data)?;
+    let nal_units = utils::parse_nal_units(&bitstream_data)?;
     log::info!("Found {} NAL units", nal_units.len());
 
     // Filter to get only VCL (Video Coding Layer) NAL units (actual frame data)
@@ -189,56 +189,6 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
     log::info!("Frames: {} ({} fps)", frames.len(), args.fps);
 
     Ok(())
-}
-
-/// Parse NAL units from Annex-B format bitstream
-fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
-    let mut nal_units = Vec::new();
-    let mut i = 0;
-
-    while i < data.len() {
-        // Find start code
-        let start_code_len = if i + 3 < data.len()
-            && data[i] == 0
-            && data[i + 1] == 0
-            && data[i + 2] == 0
-            && data[i + 3] == 1
-        {
-            4
-        } else if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-            3
-        } else {
-            i += 1;
-            continue;
-        };
-
-        // Found start code, skip it
-        i += start_code_len;
-        let nal_start = i;
-
-        // Find next start code
-        while i < data.len() {
-            if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-                break;
-            }
-            if i + 3 < data.len()
-                && data[i] == 0
-                && data[i + 1] == 0
-                && data[i + 2] == 0
-                && data[i + 3] == 1
-            {
-                break;
-            }
-            i += 1;
-        }
-
-        // Extract NAL unit
-        if nal_start < i {
-            nal_units.push(&data[nal_start..i]);
-        }
-    }
-
-    Ok(nal_units)
 }
 
 /// Detect resolution from SPS NAL unit

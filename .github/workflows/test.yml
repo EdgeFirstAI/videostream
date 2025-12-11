@@ -319,11 +319,23 @@ jobs:
           cargo nextest run --workspace --all-features --cargo-profile profiling -P hardware --no-run
 
           # Copy instrumented test binaries to target/tests for artifact upload
+          # Only copy binaries that are actual test runners (respond to --list)
+          # This excludes [[bin]] targets like the videostream CLI
           mkdir -p target/tests
           find target/profiling/deps/ -maxdepth 1 -type f -executable \
-            -name "videostream*" -exec cp {} target/tests/ \;
+            -name "videostream*" | \
+            while read bin; do
+              # Test binaries accept --list, CLI binaries don't
+              if "$bin" --list >/dev/null 2>&1; then
+                cp "$bin" target/tests/
+                echo "  ✓ Copied test binary: $(basename "$bin")"
+              else
+                echo "  ✗ Skipped non-test binary: $(basename "$bin")"
+              fi
+            done
 
-          echo "Instrumented test binaries:"
+          echo ""
+          echo "Instrumented test binaries ready for hardware testing:"
           ls -la target/tests/
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)

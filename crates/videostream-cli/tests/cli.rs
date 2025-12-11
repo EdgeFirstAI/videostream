@@ -18,15 +18,13 @@ use std::{
 };
 
 /// Helper to create a Command for the videostream binary
-#[allow(deprecated)]
 fn videostream_cmd() -> Command {
-    Command::cargo_bin("videostream").expect("Failed to find videostream binary")
+    Command::new(assert_cmd::cargo::cargo_bin!("videostream"))
 }
 
 /// Get the path to the videostream binary for std::process::Command
-#[allow(deprecated)]
 fn videostream_bin() -> PathBuf {
-    assert_cmd::cargo::cargo_bin("videostream")
+    assert_cmd::cargo::cargo_bin!("videostream").to_path_buf()
 }
 
 /// Get the test data directory (target/testdata/videostream-cli)

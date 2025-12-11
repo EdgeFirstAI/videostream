@@ -74,21 +74,14 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
     let fourcc = utils::fourcc_from_str(&args.format)?;
     log::debug!("Input format: {} (0x{:08x})", args.format, fourcc);
 
-    // Parse bitrate
+    // Parse bitrate and codec
     let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-    log::info!("Encoding at {} kbps", bitrate_kbps);
-
-    // Parse codec
-    let output_fourcc = match args.codec.to_lowercase().as_str() {
-        "h264" => u32::from_le_bytes(*b"H264"),
-        "h265" | "hevc" => u32::from_le_bytes(*b"HEVC"),
-        _ => {
-            return Err(CliError::InvalidArgs(format!(
-                "Invalid codec: {} (supported: h264, h265)",
-                args.codec
-            )))
-        }
-    };
+    let output_fourcc = utils::codec_to_fourcc(&args.codec)?;
+    log::info!(
+        "Encoding {} at {} kbps",
+        args.codec.to_uppercase(),
+        bitrate_kbps
+    );
 
     // Check encoder availability
     if !encoder::is_available().unwrap_or(false) {
@@ -112,16 +105,9 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
     log::info!("Starting camera capture");
     cam.start()?;
 
-    // Map bitrate to encoder profile
-    let profile = match bitrate_kbps {
-        0..=7500 => encoder::VSLEncoderProfileEnum::Kbps5000,
-        7501..=37500 => encoder::VSLEncoderProfileEnum::Kbps25000,
-        37501..=75000 => encoder::VSLEncoderProfileEnum::Kbps50000,
-        _ => encoder::VSLEncoderProfileEnum::Kbps100000,
-    };
-
     // Create encoder AFTER camera is started
     log::info!("Creating {} encoder", args.codec.to_uppercase());
+    let profile = utils::bitrate_to_encoder_profile(bitrate_kbps);
     let encoder = encoder::Encoder::create(profile as u32, output_fourcc, args.fps)?;
     log::debug!("Created encoder with profile {:?}", profile);
 
@@ -195,6 +181,19 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
             // input_frame drops here, before buffer
             keyframe
         };
+
+        // IMPORTANT: Buffer lifetime and memory safety
+        // -------------------------------------------
+        // The buffer MUST outlive input_frame because input_frame borrows from buffer.
+        // Dropping buffer before input_frame would cause use-after-free bugs.
+        //
+        // In hardware-accelerated pipelines, buffer may be mapped directly to device
+        // memory (DMA buffers). Premature deallocation can cause:
+        // - Memory corruption
+        // - DMA transfer failures
+        // - Hardware encoder hangs
+        //
+        // Always preserve this scoping pattern to ensure memory safety.
         // buffer drops here, after input_frame
 
         // Write encoded frame to file (raw Annex-B bitstream)

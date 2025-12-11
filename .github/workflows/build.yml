@@ -123,10 +123,8 @@ jobs:
         run: |
           cmake --build build -j$(nproc)
 
-      - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
 
       - name: Build Rust CLI (videostream binary)
         env:
@@ -191,10 +189,8 @@ jobs:
             python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev
 
-      - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
 
       - name: Set manylinux2014 build flags
         run: |
