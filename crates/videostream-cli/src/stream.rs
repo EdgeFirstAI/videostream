@@ -65,6 +65,15 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     // Install signal handler for graceful shutdown
     let term = utils::install_signal_handler()?;
 
+    // Warn if metrics-interval is requested (not yet implemented)
+    if let Some(interval) = args.metrics_interval {
+        log::warn!(
+            "--metrics-interval is not yet implemented (requested: {}s). \
+             Metrics will only be displayed at the end of streaming.",
+            interval
+        );
+    }
+
     // Create encoder if requested
     let mut encoder_opt = None;
     let _output_fourcc = if args.encode {
@@ -74,23 +83,20 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
             ));
         }
 
-        // Parse bitrate
+        // Parse bitrate and map to encoder profile
         let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-        log::info!("Encoding to H.264 at {} kbps", bitrate_kbps);
+        let profile = utils::bitrate_to_encoder_profile(bitrate_kbps);
+        log::info!(
+            "Encoding to H.264 at {} kbps (profile: {:?})",
+            bitrate_kbps,
+            profile
+        );
 
-        // Map bitrate to encoder profile
-        let profile = match bitrate_kbps {
-            0..=7500 => encoder::VSLEncoderProfileEnum::Kbps5000,
-            7501..=37500 => encoder::VSLEncoderProfileEnum::Kbps25000,
-            37501..=75000 => encoder::VSLEncoderProfileEnum::Kbps50000,
-            _ => encoder::VSLEncoderProfileEnum::Kbps100000,
-        };
-
-        let enc = encoder::Encoder::create(profile as u32, u32::from_le_bytes(*b"H264"), args.fps)?;
-        log::debug!("Created encoder with profile {:?}", profile);
+        let codec_fourcc = utils::codec_to_fourcc("h264")?;
+        let enc = encoder::Encoder::create(profile as u32, codec_fourcc, args.fps)?;
 
         encoder_opt = Some(enc);
-        u32::from_le_bytes(*b"H264") // Output is H.264
+        codec_fourcc // Output is H.264
     } else {
         fourcc // Pass through original format
     };
@@ -123,6 +129,16 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
         u64::MAX
     } else {
         args.frames
+    };
+
+    // Pre-calculate estimated frame size for metrics (avoid parsing in hot loop)
+    let estimated_frame_size = if args.encode {
+        // Encoded frame size estimate: bitrate / fps / 8 (convert bits to bytes)
+        let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
+        ((bitrate_kbps as u64 * 1000) / (args.fps as u64 * 8)) as u64
+    } else {
+        // Raw frame size: width * height * bytes_per_pixel (YUYV = 2 bytes/pixel)
+        (width * height * 2) as u64
     };
 
     // Main streaming loop
@@ -185,19 +201,8 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
 
         // Track metrics if enabled
         if let Some(ref mut metrics) = metrics_collector {
-            // For streaming, we track the frame we just sent
-            let frame_size = if args.encode {
-                // Encoded frames are typically smaller, estimate based on bitrate
-                // This is approximate - actual size varies by frame content
-                let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-                ((bitrate_kbps as u64 * 1000) / (args.fps as u64 * 8)) as u64
-            } else {
-                // Raw frame size = width * height * bytes_per_pixel
-                // YUYV = 2 bytes per pixel
-                (width * height * 2) as u64
-            };
-
-            metrics.record_bytes(frame_size);
+            // Use pre-calculated frame size estimate
+            metrics.record_bytes(estimated_frame_size);
             // Latency not applicable for streaming (we're the source)
             metrics.record_latency_us(0);
             metrics.track_serial(frame_count as i64);
