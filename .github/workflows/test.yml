@@ -506,12 +506,14 @@ jobs:
           ls -la rust-tests/* 2>/dev/null || echo "No rust test binaries found"
 
           # Set up CLI binary for integration tests
-          # assert_cmd uses cargo_bin!() macro which expects binary in target/profiling/
-          mkdir -p target/profiling
+          # cargo_bin!() macro uses CARGO_BIN_EXE_<name> environment variable
+          # Export it to point to our downloaded binary location
           if [ -f rust-tests/videostream ]; then
-            cp rust-tests/videostream target/profiling/
-            chmod +x target/profiling/videostream
-            echo "  ✓ CLI binary available at target/profiling/videostream for integration tests"
+            chmod +x rust-tests/videostream
+            # Set environment variable for cargo_bin!() macro
+            echo "CARGO_BIN_EXE_videostream=${{ github.workspace }}/rust-tests/videostream" >> $GITHUB_ENV
+            echo "  ✓ CLI binary available at rust-tests/videostream"
+            echo "  ✓ CARGO_BIN_EXE_videostream set for integration tests"
           else
             echo "  ⚠ WARNING: CLI binary not found in rust-tests/"
           fi
