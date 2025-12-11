@@ -572,20 +572,32 @@ jobs:
       - name: Run pre-built Rust tests with hardware access
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+          # CLI binary location for cargo_bin!() macro in integration tests
+          CARGO_BIN_EXE_videostream: ${{ github.workspace }}/rust-tests/videostream
           # Redirect gcda files to workspace (processed by ubuntu-22.04-arm job)
           GCOV_PREFIX: ${{ github.workspace }}
           GCOV_PREFIX_STRIP: 5
         run: |
           set -o pipefail
           mkdir -p build/rust-test-results
-          
+
           # Set up profraw collection directory
           export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
           mkdir -p build/profraw
 
+          # Verify CLI binary exists for integration tests
+          if [ -f "$CARGO_BIN_EXE_videostream" ]; then
+            echo "✓ CLI binary found at: $CARGO_BIN_EXE_videostream"
+            ls -lh "$CARGO_BIN_EXE_videostream"
+          else
+            echo "⚠ WARNING: CLI binary not found at $CARGO_BIN_EXE_videostream"
+            echo "  CLI integration tests may fail"
+          fi
+          echo ""
+
           # Track overall test status
           TEST_FAILED=0
-          
+
           # Run each test binary and collect results
           echo "Running pre-built Rust test binaries..."
           for test_bin in rust-tests/*; do
