@@ -352,6 +352,238 @@ pub fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
     Ok(nal_units)
 }
 
+/// Normalize codec alias to canonical form
+///
+/// Converts various codec name aliases to their canonical lowercase form:
+/// - H.264, h.264, H264, h264 → "h264"
+/// - H.265, h.265, H265, h265, HEVC, hevc → "h265"
+///
+/// # Examples
+/// ```
+/// use videostream_cli::utils::normalize_codec_alias;
+/// assert_eq!(normalize_codec_alias("H.264").unwrap(), "h264");
+/// assert_eq!(normalize_codec_alias("h264").unwrap(), "h264");
+/// assert_eq!(normalize_codec_alias("H.265").unwrap(), "h265");
+/// assert_eq!(normalize_codec_alias("HEVC").unwrap(), "h265");
+/// assert_eq!(normalize_codec_alias("hevc").unwrap(), "h265");
+/// ```
+pub fn normalize_codec_alias(codec: &str) -> Result<&'static str, CliError> {
+    match codec.to_lowercase().replace(['.', '-'], "").as_str() {
+        "h264" | "avc" => Ok("h264"),
+        "h265" | "hevc" => Ok("h265"),
+        _ => Err(CliError::InvalidArgs(format!(
+            "Unsupported codec: {} (supported: H.264/h264/AVC, H.265/h265/HEVC)",
+            codec
+        ))),
+    }
+}
+
+/// Create encoder if requested, with automatic availability check
+///
+/// Returns `(Option<Encoder>, output_fourcc)` where:
+/// - If `encode` is false, returns (None, fallback_fourcc)
+/// - If `encode` is true, creates encoder and returns (Some(encoder), codec_fourcc)
+///
+/// # Arguments
+/// * `encode` - Whether to enable encoding
+/// * `codec` - Codec name (supports aliases: H.264, h264, H.265, hevc, etc.)
+/// * `bitrate` - Target bitrate (e.g., "25000", "25Mbps")
+/// * `fps` - Target frame rate
+/// * `fallback_fourcc` - FourCC to use when encoding is disabled
+///
+/// # Errors
+/// Returns `CliError::EncoderUnavailable` if encoding requested but VPU not available
+///
+/// # Examples
+/// ```no_run
+/// use videostream_cli::utils::create_encoder_if_requested;
+/// let (encoder, fourcc) = create_encoder_if_requested(
+///     true, "h264", "25000", 30, 0x56595559
+/// ).unwrap();
+/// assert!(encoder.is_some());
+/// ```
+pub fn create_encoder_if_requested(
+    encode: bool,
+    codec: &str,
+    bitrate: &str,
+    fps: i32,
+    fallback_fourcc: u32,
+) -> Result<(Option<encoder::Encoder>, u32), CliError> {
+    if !encode {
+        return Ok((None, fallback_fourcc));
+    }
+
+    // Check encoder availability first
+    if !encoder::is_available().unwrap_or(false) {
+        return Err(CliError::EncoderUnavailable(
+            "VPU encoder not available on this system".to_string(),
+        ));
+    }
+
+    // Normalize codec alias and convert to FourCC
+    let normalized_codec = normalize_codec_alias(codec)?;
+    let codec_fourcc = codec_to_fourcc(normalized_codec)?;
+
+    // Parse bitrate and map to encoder profile
+    let bitrate_kbps = parse_bitrate(bitrate)?;
+    let profile = bitrate_to_encoder_profile(bitrate_kbps);
+
+    log::info!(
+        "Creating encoder: {} at {} kbps (profile: {:?})",
+        normalized_codec.to_uppercase(),
+        bitrate_kbps,
+        profile
+    );
+
+    // Create encoder
+    let enc = encoder::Encoder::create(profile as u32, codec_fourcc, fps)?;
+
+    Ok((Some(enc), codec_fourcc))
+}
+
+/// Create decoder if requested, with automatic availability check
+///
+/// Returns `Option<Decoder>`:
+/// - If `decode` is false, returns None
+/// - If `decode` is true, creates H.264 decoder and returns Some(decoder)
+///
+/// # Arguments
+/// * `decode` - Whether to enable decoding
+/// * `codec` - Codec name (supports aliases: H.264, h264, H.265, hevc, etc.)
+/// * `fps` - Frame rate hint for decoder
+///
+/// # Errors
+/// Returns `CliError::EncoderUnavailable` if decoding requested but VPU not available
+///
+/// # Examples
+/// ```no_run
+/// use videostream_cli::utils::create_decoder_if_requested;
+/// let decoder = create_decoder_if_requested(true, "h264", 30).unwrap();
+/// assert!(decoder.is_some());
+/// ```
+pub fn create_decoder_if_requested(
+    decode: bool,
+    codec: &str,
+    fps: i32,
+) -> Result<Option<videostream::decoder::Decoder>, CliError> {
+    use videostream::decoder;
+
+    if !decode {
+        return Ok(None);
+    }
+
+    // Check decoder availability first
+    if !decoder::is_available().unwrap_or(false) {
+        return Err(CliError::EncoderUnavailable(
+            "VPU decoder not available on this system".to_string(),
+        ));
+    }
+
+    // Normalize codec alias
+    let normalized_codec = normalize_codec_alias(codec)?;
+
+    // Map to decoder input codec enum
+    let decoder_codec = match normalized_codec {
+        "h264" => decoder::DecoderInputCodec::H264,
+        "h265" => decoder::DecoderInputCodec::HEVC,
+        _ => {
+            return Err(CliError::InvalidArgs(format!(
+                "Unsupported decoder codec: {}",
+                codec
+            )))
+        }
+    };
+
+    log::info!("Creating {} decoder", normalized_codec.to_uppercase());
+
+    // Create decoder
+    let dec = decoder::Decoder::create(decoder_codec, fps)?;
+
+    Ok(Some(dec))
+}
+
+/// Estimate frame size in bytes
+///
+/// Calculates estimated frame size based on:
+/// - **Encoded frames**: `(bitrate_kbps * 1000) / (fps * 8)` bytes per frame
+/// - **Raw frames**: `width * height * bytes_per_pixel`
+///   - YUYV format: 2 bytes per pixel
+///   - NV12 format: 1.5 bytes per pixel
+///   - RGB3 format: 3 bytes per pixel
+///
+/// # Arguments
+/// * `width` - Frame width in pixels
+/// * `height` - Frame height in pixels
+/// * `encoded` - Whether the frame is encoded
+/// * `bitrate` - Target bitrate for encoded frames (e.g., "25000", "25Mbps")
+/// * `fps` - Frame rate
+/// * `format` - Pixel format FourCC (only used for raw frames)
+///
+/// # Examples
+/// ```
+/// use videostream_cli::utils::estimate_frame_size;
+/// // Encoded H.264 at 25Mbps, 30fps
+/// let size = estimate_frame_size(1920, 1080, true, "25000", 30, 0x56595559).unwrap();
+/// assert_eq!(size, 104166); // ~104KB per frame
+///
+/// // Raw YUYV (2 bytes/pixel)
+/// let size = estimate_frame_size(1920, 1080, false, "0", 30, 0x56595559).unwrap();
+/// assert_eq!(size, 4147200); // 1920 * 1080 * 2
+/// ```
+pub fn estimate_frame_size(
+    width: u32,
+    height: u32,
+    encoded: bool,
+    bitrate: &str,
+    fps: i32,
+    format: u32,
+) -> Result<u64, CliError> {
+    if encoded {
+        // Encoded frame size estimate: bitrate / fps / 8 (convert bits to bytes)
+        let bitrate_kbps = parse_bitrate(bitrate)?;
+        Ok((bitrate_kbps as u64 * 1000) / (fps as u64 * 8))
+    } else {
+        // Raw frame size: width * height * bytes_per_pixel
+        // Determine bytes per pixel based on format
+        let bytes_per_pixel = match &fourcc_to_str(format).to_uppercase()[..] {
+            "YUYV" | "UYVY" => 2, // YUV 4:2:2 packed formats
+            "NV12" | "NV21" => {
+                // YUV 4:2:0 planar formats (1.5 bytes per pixel average)
+                return Ok((width as u64 * height as u64 * 3) / 2);
+            }
+            "RGB3" | "BGR3" => 3, // RGB/BGR 24-bit
+            "RGBA" | "BGRA" => 4, // RGB/BGR 32-bit with alpha
+            _ => {
+                log::warn!(
+                    "Unknown format FourCC 0x{:08x}, assuming 2 bytes/pixel",
+                    format
+                );
+                2
+            }
+        };
+
+        Ok(width as u64 * height as u64 * bytes_per_pixel)
+    }
+}
+
+/// Normalize frame count (converts 0 to unlimited)
+///
+/// Converts frame count where 0 means unlimited (u64::MAX).
+///
+/// # Examples
+/// ```
+/// use videostream_cli::utils::normalize_frame_count;
+/// assert_eq!(normalize_frame_count(100), 100);
+/// assert_eq!(normalize_frame_count(0), u64::MAX);
+/// ```
+pub fn normalize_frame_count(count: u64) -> u64 {
+    if count == 0 {
+        u64::MAX
+    } else {
+        count
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -789,5 +1021,164 @@ mod tests {
             bitrate_to_encoder_profile(200000),
             VSLEncoderProfileEnum::Kbps100000
         );
+    }
+
+    /// Test normalize_codec_alias() with various H.264 aliases
+    #[test]
+    fn test_normalize_codec_alias_h264() {
+        assert_eq!(normalize_codec_alias("h264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("H264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("H.264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("h.264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("H-264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("h-264").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("AVC").unwrap(), "h264");
+        assert_eq!(normalize_codec_alias("avc").unwrap(), "h264");
+    }
+
+    /// Test normalize_codec_alias() with various H.265/HEVC aliases
+    #[test]
+    fn test_normalize_codec_alias_h265() {
+        assert_eq!(normalize_codec_alias("h265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("H265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("H.265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("h.265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("H-265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("h-265").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("HEVC").unwrap(), "h265");
+        assert_eq!(normalize_codec_alias("hevc").unwrap(), "h265");
+    }
+
+    /// Test normalize_codec_alias() with unsupported codec
+    #[test]
+    fn test_normalize_codec_alias_invalid() {
+        assert!(normalize_codec_alias("vp9").is_err());
+        assert!(normalize_codec_alias("av1").is_err());
+        assert!(normalize_codec_alias("invalid").is_err());
+    }
+
+    /// Test estimate_frame_size() for encoded frames
+    #[test]
+    fn test_estimate_frame_size_encoded() {
+        // 25Mbps at 30fps = (25000 * 1000) / (30 * 8) = 104166 bytes/frame
+        let size = estimate_frame_size(
+            1920,
+            1080,
+            true,
+            "25000",
+            30,
+            fourcc_from_str("YUYV").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(size, 104166);
+
+        // 5Mbps at 30fps = (5000 * 1000) / (30 * 8) = 20833 bytes/frame
+        let size = estimate_frame_size(
+            1920,
+            1080,
+            true,
+            "5000",
+            30,
+            fourcc_from_str("YUYV").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(size, 20833);
+
+        // Test with Mbps suffix
+        let size = estimate_frame_size(
+            1920,
+            1080,
+            true,
+            "25Mbps",
+            30,
+            fourcc_from_str("YUYV").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(size, 104166);
+    }
+
+    /// Test estimate_frame_size() for raw YUYV frames (2 bytes/pixel)
+    #[test]
+    fn test_estimate_frame_size_raw_yuyv() {
+        let fourcc = fourcc_from_str("YUYV").unwrap();
+
+        // 1920x1080 YUYV = 1920 * 1080 * 2 = 4147200 bytes
+        let size = estimate_frame_size(1920, 1080, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 4147200);
+
+        // 1280x720 YUYV = 1280 * 720 * 2 = 1843200 bytes
+        let size = estimate_frame_size(1280, 720, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 1843200);
+    }
+
+    /// Test estimate_frame_size() for raw NV12 frames (1.5 bytes/pixel)
+    #[test]
+    fn test_estimate_frame_size_raw_nv12() {
+        let fourcc = fourcc_from_str("NV12").unwrap();
+
+        // 1920x1080 NV12 = 1920 * 1080 * 1.5 = 3110400 bytes
+        let size = estimate_frame_size(1920, 1080, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 3110400);
+
+        // 1280x720 NV12 = 1280 * 720 * 1.5 = 1382400 bytes
+        let size = estimate_frame_size(1280, 720, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 1382400);
+    }
+
+    /// Test estimate_frame_size() for raw RGB3 frames (3 bytes/pixel)
+    #[test]
+    fn test_estimate_frame_size_raw_rgb3() {
+        let fourcc = fourcc_from_str("RGB3").unwrap();
+
+        // 1920x1080 RGB3 = 1920 * 1080 * 3 = 6220800 bytes
+        let size = estimate_frame_size(1920, 1080, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 6220800);
+
+        // 1280x720 RGB3 = 1280 * 720 * 3 = 2764800 bytes
+        let size = estimate_frame_size(1280, 720, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 2764800);
+    }
+
+    /// Test estimate_frame_size() for unknown format (defaults to 2 bytes/pixel)
+    #[test]
+    fn test_estimate_frame_size_unknown_format() {
+        // Use an uncommon FourCC that should default to 2 bytes/pixel
+        let fourcc = fourcc_from_str("UNKN").unwrap();
+
+        // Should default to 2 bytes/pixel like YUYV
+        let size = estimate_frame_size(1920, 1080, false, "0", 30, fourcc).unwrap();
+        assert_eq!(size, 4147200); // Same as YUYV
+    }
+
+    /// Test normalize_frame_count() with various values
+    #[test]
+    fn test_normalize_frame_count() {
+        // 0 should become u64::MAX (unlimited)
+        assert_eq!(normalize_frame_count(0), u64::MAX);
+
+        // Non-zero values should pass through unchanged
+        assert_eq!(normalize_frame_count(1), 1);
+        assert_eq!(normalize_frame_count(100), 100);
+        assert_eq!(normalize_frame_count(1000), 1000);
+        assert_eq!(normalize_frame_count(u64::MAX), u64::MAX);
+    }
+
+    /// Test create_encoder_if_requested() with encoding disabled
+    #[test]
+    fn test_create_encoder_disabled() {
+        let fallback_fourcc = fourcc_from_str("YUYV").unwrap();
+
+        let (encoder, fourcc) =
+            create_encoder_if_requested(false, "h264", "25000", 30, fallback_fourcc).unwrap();
+
+        assert!(encoder.is_none());
+        assert_eq!(fourcc, fallback_fourcc);
+    }
+
+    /// Test create_decoder_if_requested() with decoding disabled
+    #[test]
+    fn test_create_decoder_disabled() {
+        let decoder = create_decoder_if_requested(false, "h264", 30).unwrap();
+        assert!(decoder.is_none());
     }
 }

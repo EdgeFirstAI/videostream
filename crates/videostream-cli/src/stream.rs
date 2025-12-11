@@ -74,32 +74,9 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
         );
     }
 
-    // Create encoder if requested
-    let mut encoder_opt = None;
-    let _output_fourcc = if args.encode {
-        if !encoder::is_available().unwrap_or(false) {
-            return Err(CliError::EncoderUnavailable(
-                "VPU encoder not available on this system".to_string(),
-            ));
-        }
-
-        // Parse bitrate and map to encoder profile
-        let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-        let profile = utils::bitrate_to_encoder_profile(bitrate_kbps);
-        log::info!(
-            "Encoding to H.264 at {} kbps (profile: {:?})",
-            bitrate_kbps,
-            profile
-        );
-
-        let codec_fourcc = utils::codec_to_fourcc("h264")?;
-        let enc = encoder::Encoder::create(profile as u32, codec_fourcc, args.fps)?;
-
-        encoder_opt = Some(enc);
-        codec_fourcc // Output is H.264
-    } else {
-        fourcc // Pass through original format
-    };
+    // Create encoder if requested (using helper to reduce complexity)
+    let (encoder_opt, _output_fourcc) =
+        utils::create_encoder_if_requested(args.encode, "h264", &args.bitrate, args.fps, fourcc)?;
 
     // Open camera
     log::info!("Opening camera: {}", args.device);
@@ -125,21 +102,17 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     };
 
     let mut frame_count = 0u64;
-    let max_frames = if args.frames == 0 {
-        u64::MAX
-    } else {
-        args.frames
-    };
+    let max_frames = utils::normalize_frame_count(args.frames);
 
-    // Pre-calculate estimated frame size for metrics (avoid parsing in hot loop)
-    let estimated_frame_size = if args.encode {
-        // Encoded frame size estimate: bitrate / fps / 8 (convert bits to bytes)
-        let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-        ((bitrate_kbps as u64 * 1000) / (args.fps as u64 * 8)) as u64
-    } else {
-        // Raw frame size: width * height * bytes_per_pixel (YUYV = 2 bytes/pixel)
-        (width * height * 2) as u64
-    };
+    // Pre-calculate estimated frame size for metrics (using helper to reduce complexity)
+    let estimated_frame_size = utils::estimate_frame_size(
+        width as u32,
+        height as u32,
+        args.encode,
+        &args.bitrate,
+        args.fps,
+        fourcc,
+    )?;
 
     // Main streaming loop
     log::info!(
