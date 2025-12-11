@@ -505,15 +505,13 @@ jobs:
           ls -la build/src/vsl-* 2>/dev/null || echo "No vsl binaries found"
           ls -la rust-tests/* 2>/dev/null || echo "No rust test binaries found"
 
-          # Set up CLI binary for integration tests
-          # cargo_bin!() macro uses CARGO_BIN_EXE_<name> environment variable
-          # Export it to point to our downloaded binary location
+          # Set up CLI binary path for integration tests
+          # Tests use VIDEOSTREAM_BIN environment variable to locate the binary
           if [ -f rust-tests/videostream ]; then
             chmod +x rust-tests/videostream
-            # Set environment variable for cargo_bin!() macro
-            echo "CARGO_BIN_EXE_videostream=${{ github.workspace }}/rust-tests/videostream" >> $GITHUB_ENV
-            echo "  ✓ CLI binary available at rust-tests/videostream"
-            echo "  ✓ CARGO_BIN_EXE_videostream set for integration tests"
+            echo "VIDEOSTREAM_BIN=${{ github.workspace }}/rust-tests/videostream" >> $GITHUB_ENV
+            echo "  ✓ CLI binary available at: ${{ github.workspace }}/rust-tests/videostream"
+            echo "  ✓ VIDEOSTREAM_BIN environment variable will be set for tests"
           else
             echo "  ⚠ WARNING: CLI binary not found in rust-tests/"
           fi
@@ -572,8 +570,8 @@ jobs:
       - name: Run pre-built Rust tests with hardware access
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
-          # CLI binary location for cargo_bin!() macro in integration tests
-          CARGO_BIN_EXE_videostream: ${{ github.workspace }}/rust-tests/videostream
+          # CLI binary location for integration tests
+          VIDEOSTREAM_BIN: ${{ github.workspace }}/rust-tests/videostream
           # Redirect gcda files to workspace (processed by ubuntu-22.04-arm job)
           GCOV_PREFIX: ${{ github.workspace }}
           GCOV_PREFIX_STRIP: 5
@@ -586,11 +584,11 @@ jobs:
           mkdir -p build/profraw
 
           # Verify CLI binary exists for integration tests
-          if [ -f "$CARGO_BIN_EXE_videostream" ]; then
-            echo "✓ CLI binary found at: $CARGO_BIN_EXE_videostream"
-            ls -lh "$CARGO_BIN_EXE_videostream"
+          if [ -f "$VIDEOSTREAM_BIN" ]; then
+            echo "✓ CLI binary found at: $VIDEOSTREAM_BIN"
+            ls -lh "$VIDEOSTREAM_BIN"
           else
-            echo "⚠ WARNING: CLI binary not found at $CARGO_BIN_EXE_videostream"
+            echo "⚠ WARNING: CLI binary not found at $VIDEOSTREAM_BIN"
             echo "  CLI integration tests may fail"
           fi
           echo ""
