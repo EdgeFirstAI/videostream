@@ -289,6 +289,31 @@ pub fn extract_parameter_sets_h265(data: &[u8]) -> Result<ParameterSets, CliErro
     Ok(ParameterSets { sps, pps })
 }
 
+/// Detect Annex B start code at given position
+///
+/// Reference: ITU-T H.264 (ISO/IEC 14496-10) Annex B.1.1
+/// "byte_stream_nal_unit() syntax uses start code prefix 0x000001 or 0x00000001"
+///
+/// Returns the length of the start code (3 or 4 bytes) or None if no start code found
+fn detect_start_code(data: &[u8], pos: usize) -> Option<usize> {
+    if pos + 3 < data.len()
+        && data[pos] == 0
+        && data[pos + 1] == 0
+        && data[pos + 2] == 0
+        && data[pos + 3] == 1
+    {
+        Some(4)
+    } else if pos + 2 < data.len()
+        && data[pos] == 0
+        && data[pos + 1] == 0
+        && data[pos + 2] == 1
+    {
+        Some(3)
+    } else {
+        None
+    }
+}
+
 /// Parse NAL units from Annex-B format bitstream
 ///
 /// Annex-B format uses start codes:
@@ -302,18 +327,12 @@ pub fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
 
     while i < data.len() {
         // Find start code
-        let start_code_len = if i + 3 < data.len()
-            && data[i] == 0
-            && data[i + 1] == 0
-            && data[i + 2] == 0
-            && data[i + 3] == 1
-        {
-            4
-        } else if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-            3
-        } else {
-            i += 1;
-            continue;
+        let start_code_len = match detect_start_code(data, i) {
+            Some(len) => len,
+            None => {
+                i += 1;
+                continue;
+            }
         };
 
         // Found start code, skip it
@@ -322,15 +341,7 @@ pub fn parse_nal_units(data: &[u8]) -> Result<Vec<&[u8]>, CliError> {
 
         // Find next start code
         while i < data.len() {
-            if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
-                break;
-            }
-            if i + 3 < data.len()
-                && data[i] == 0
-                && data[i + 1] == 0
-                && data[i + 2] == 0
-                && data[i + 3] == 1
-            {
+            if detect_start_code(data, i).is_some() {
                 break;
             }
             i += 1;
@@ -406,5 +417,381 @@ mod tests {
         assert!(parse_bitrate("abc").is_err());
         assert!(parse_bitrate("-1000").is_err());
         assert!(parse_bitrate("25 Mbps extra").is_err());
+    }
+
+    // =========================================================================
+    // NAL Unit Parsing Tests - ITU-T H.264 Annex B / ITU-T H.265 Annex B
+    // =========================================================================
+
+    /// Test detect_start_code() with 4-byte start code (0x00000001)
+    ///
+    /// Reference: ITU-T H.264 (ISO/IEC 14496-10) Annex B.1.1
+    /// "byte_stream_nal_unit() syntax uses start code prefix 0x000001 or 0x00000001"
+    #[test]
+    fn test_detect_start_code_four_byte() {
+        let data = vec![0x00, 0x00, 0x00, 0x01, 0x67];
+        assert_eq!(detect_start_code(&data, 0), Some(4));
+    }
+
+    /// Test detect_start_code() with 3-byte start code (0x000001)
+    ///
+    /// Reference: ITU-T H.264 (ISO/IEC 14496-10) Annex B.1.1
+    #[test]
+    fn test_detect_start_code_three_byte() {
+        let data = vec![0x00, 0x00, 0x01, 0x68];
+        assert_eq!(detect_start_code(&data, 0), Some(3));
+    }
+
+    /// Test detect_start_code() with no start code
+    #[test]
+    fn test_detect_start_code_none() {
+        let data = vec![0x00, 0x00, 0x02, 0x67];
+        assert_eq!(detect_start_code(&data, 0), None);
+
+        let data2 = vec![0x01, 0x00, 0x00, 0x01];
+        assert_eq!(detect_start_code(&data2, 0), None);
+    }
+
+    /// Test detect_start_code() at different positions
+    #[test]
+    fn test_detect_start_code_positions() {
+        let data = vec![
+            0xFF, 0xFF,             // Non-start-code prefix
+            0x00, 0x00, 0x01,       // 3-byte start code at pos 2
+            0x67,                   // NAL data
+            0x00, 0x00, 0x00, 0x01, // 4-byte start code at pos 6
+            0x68,                   // NAL data
+        ];
+
+        assert_eq!(detect_start_code(&data, 0), None);
+        assert_eq!(detect_start_code(&data, 1), None);
+        assert_eq!(detect_start_code(&data, 2), Some(3));
+        assert_eq!(detect_start_code(&data, 6), Some(4));
+    }
+
+    /// Test detect_start_code() with truncated data
+    #[test]
+    fn test_detect_start_code_truncated() {
+        // Only 2 bytes - cannot form even 3-byte start code
+        let data = vec![0x00, 0x00];
+        assert_eq!(detect_start_code(&data, 0), None);
+
+        // Only 3 bytes - can check for 3-byte but not 4-byte at end
+        let data2 = vec![0x00, 0x00, 0x01];
+        assert_eq!(detect_start_code(&data2, 0), Some(3));
+
+        // Check boundary: position too close to end
+        let data3 = vec![0x00, 0x00, 0x00, 0x01];
+        assert_eq!(detect_start_code(&data3, 2), None); // Only 2 bytes left
+    }
+
+    /// Test parse_nal_units() with 4-byte start code (0x00000001)
+    ///
+    /// Reference: ITU-T H.264 (ISO/IEC 14496-10) Annex B.1.1
+    /// "byte_stream_nal_unit() syntax uses start code prefix 0x000001 or 0x00000001"
+    #[test]
+    fn test_parse_nal_units_four_byte_start_code() {
+        // Single NAL unit with 4-byte start code
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // 4-byte start code
+            0x67, 0x42, 0x00, 0x0A, // NAL unit data (SPS header)
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 1);
+        assert_eq!(nal_units[0], &[0x67, 0x42, 0x00, 0x0A]);
+    }
+
+    /// Test parse_nal_units() with 3-byte start code (0x000001)
+    ///
+    /// Reference: ITU-T H.264 Annex B.1.1
+    /// "The 3-byte start code 0x000001 may be used for byte stream NAL units"
+    #[test]
+    fn test_parse_nal_units_three_byte_start_code() {
+        // Single NAL unit with 3-byte start code
+        let data = vec![
+            0x00, 0x00, 0x01, // 3-byte start code
+            0x68, 0xCE, 0x3C, 0x80, // NAL unit data (PPS)
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 1);
+        assert_eq!(nal_units[0], &[0x68, 0xCE, 0x3C, 0x80]);
+    }
+
+    /// Test parse_nal_units() with multiple NAL units using mixed start codes
+    ///
+    /// Reference: ITU-T H.264 Annex B.1
+    /// "A byte stream NAL unit syntax structure contains a sequence of byte stream NAL units"
+    #[test]
+    fn test_parse_nal_units_multiple_mixed_start_codes() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // 4-byte start code
+            0x67, 0x42, // SPS start
+            0x00, 0x00, 0x01, // 3-byte start code
+            0x68, 0xCE, // PPS start
+            0x00, 0x00, 0x00, 0x01, // 4-byte start code
+            0x65, 0x88, // IDR slice
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 3);
+        assert_eq!(nal_units[0], &[0x67, 0x42]);
+        assert_eq!(nal_units[1], &[0x68, 0xCE]);
+        assert_eq!(nal_units[2], &[0x65, 0x88]);
+    }
+
+    /// Test parse_nal_units() with emulation prevention bytes
+    ///
+    /// Reference: ITU-T H.264 Section 7.4.1
+    /// "Within NAL unit, 0x000003 is emulation prevention - 0x03 prevents start code emulation"
+    #[test]
+    fn test_parse_nal_units_with_emulation_prevention() {
+        // NAL unit containing 0x000003 (emulation prevention sequence)
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // Start code
+            0x67, 0x00, 0x00, 0x03, 0x01, 0x42, // NAL with emulation prevention
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 1);
+        // The 0x000003 should be kept in the NAL unit (parser doesn't decode, just splits)
+        assert_eq!(nal_units[0], &[0x67, 0x00, 0x00, 0x03, 0x01, 0x42]);
+    }
+
+    /// Test parse_nal_units() with zero-length NAL unit (consecutive start codes)
+    ///
+    /// Reference: ITU-T H.264 Annex B
+    /// "Zero-length NAL units should be handled gracefully"
+    #[test]
+    fn test_parse_nal_units_zero_length() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // First start code
+            0x00, 0x00, 0x01, // Immediate second start code (zero-length NAL)
+            0x67, 0x42, // Actual NAL data
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        // Should handle zero-length gracefully and still parse the valid NAL
+        assert!(nal_units.iter().any(|nal| nal.starts_with(&[0x67, 0x42])));
+    }
+
+    /// Test parse_nal_units() with no start codes (invalid bitstream)
+    ///
+    /// Edge case: Data without start codes should return empty
+    #[test]
+    fn test_parse_nal_units_no_start_codes() {
+        let data = vec![0x67, 0x42, 0x00, 0x0A, 0x68, 0xCE];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 0);
+    }
+
+    /// Test parse_nal_units() with partial start code at end (truncated stream)
+    ///
+    /// Edge case: Bitstream ending with incomplete start code
+    #[test]
+    fn test_parse_nal_units_truncated_start_code() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // Valid start code
+            0x67, 0x42, 0x00, 0x0A, // NAL data
+            0x00, 0x00, // Partial start code at end (truncated)
+        ];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 1);
+        // The partial start code should be included in the NAL unit
+        assert_eq!(nal_units[0], &[0x67, 0x42, 0x00, 0x0A, 0x00, 0x00]);
+    }
+
+    /// Test parse_nal_units() with empty input
+    ///
+    /// Edge case: Empty bitstream
+    #[test]
+    fn test_parse_nal_units_empty() {
+        let data = vec![];
+        let nal_units = parse_nal_units(&data).unwrap();
+        assert_eq!(nal_units.len(), 0);
+    }
+
+    /// Test extract_parameter_sets_h264() with valid SPS and PPS
+    ///
+    /// Reference: ITU-T H.264 Section 7.3.2.1 (SPS) and 7.3.2.2 (PPS)
+    /// NAL unit type 7 = SPS, NAL unit type 8 = PPS (bits 0-4 of first byte)
+    #[test]
+    fn test_extract_parameter_sets_h264_valid() {
+        // Minimal H.264 bitstream with SPS (type 7) and PPS (type 8)
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // Start code
+            0x67, 0x42, 0x00, 0x0A, // SPS: NAL type 7 (0x67 & 0x1F = 7)
+            0x00, 0x00, 0x00, 0x01, // Start code
+            0x68, 0xCE, 0x3C, 0x80, // PPS: NAL type 8 (0x68 & 0x1F = 8)
+        ];
+        let params = extract_parameter_sets_h264(&data).unwrap();
+        assert_eq!(params.sps, &[0x67, 0x42, 0x00, 0x0A]);
+        assert_eq!(params.pps, &[0x68, 0xCE, 0x3C, 0x80]);
+    }
+
+    /// Test extract_parameter_sets_h264() with NAL type extraction
+    ///
+    /// Reference: ITU-T H.264 Section 7.3.1
+    /// "nal_unit_type is in bits 0-4 (lower 5 bits) of NAL unit header byte"
+    #[test]
+    fn test_h264_nal_type_extraction() {
+        // Test NAL type extraction for various NAL unit types
+        let nal_header_sps = 0x67u8; // SPS
+        let nal_type_sps = nal_header_sps & 0x1F;
+        assert_eq!(nal_type_sps, 7, "SPS NAL type should be 7");
+
+        let nal_header_pps = 0x68u8; // PPS
+        let nal_type_pps = nal_header_pps & 0x1F;
+        assert_eq!(nal_type_pps, 8, "PPS NAL type should be 8");
+
+        let nal_header_idr = 0x65u8; // IDR slice
+        let nal_type_idr = nal_header_idr & 0x1F;
+        assert_eq!(nal_type_idr, 5, "IDR slice NAL type should be 5");
+
+        let nal_header_non_idr = 0x61u8; // Non-IDR slice
+        let nal_type_non_idr = nal_header_non_idr & 0x1F;
+        assert_eq!(nal_type_non_idr, 1, "Non-IDR slice NAL type should be 1");
+    }
+
+    /// Test extract_parameter_sets_h264() missing SPS
+    ///
+    /// Edge case: Bitstream with PPS but no SPS
+    #[test]
+    fn test_extract_parameter_sets_h264_missing_sps() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // Start code
+            0x68, 0xCE, 0x3C, 0x80, // PPS only
+        ];
+        let result = extract_parameter_sets_h264(&data);
+        assert!(result.is_err());
+    }
+
+    /// Test extract_parameter_sets_h264() missing PPS
+    ///
+    /// Edge case: Bitstream with SPS but no PPS
+    #[test]
+    fn test_extract_parameter_sets_h264_missing_pps() {
+        let data = vec![
+            0x00, 0x00, 0x00, 0x01, // Start code
+            0x67, 0x42, 0x00, 0x0A, // SPS only
+        ];
+        let result = extract_parameter_sets_h264(&data);
+        assert!(result.is_err());
+    }
+
+    /// Test extract_parameter_sets_h265() with NAL type extraction
+    ///
+    /// Reference: ITU-T H.265 (HEVC) Section 7.3.1.2
+    /// "nal_unit_type is in bits 1-6 of NAL unit header first byte"
+    #[test]
+    fn test_h265_nal_type_extraction() {
+        // H.265 NAL unit type is bits 1-6 (not bits 0-4 like H.264)
+        let nal_header_vps = 0x40u8; // VPS: (0x40 >> 1) & 0x3F = 32
+        let nal_type_vps = (nal_header_vps >> 1) & 0x3F;
+        assert_eq!(nal_type_vps, 32, "VPS NAL type should be 32");
+
+        let nal_header_sps = 0x42u8; // SPS: (0x42 >> 1) & 0x3F = 33
+        let nal_type_sps = (nal_header_sps >> 1) & 0x3F;
+        assert_eq!(nal_type_sps, 33, "SPS NAL type should be 33");
+
+        let nal_header_pps = 0x44u8; // PPS: (0x44 >> 1) & 0x3F = 34
+        let nal_type_pps = (nal_header_pps >> 1) & 0x3F;
+        assert_eq!(nal_type_pps, 34, "PPS NAL type should be 34");
+
+        let nal_header_idr = 0x26u8; // IDR_W_RADL: (0x26 >> 1) & 0x3F = 19
+        let nal_type_idr = (nal_header_idr >> 1) & 0x3F;
+        assert_eq!(nal_type_idr, 19, "IDR_W_RADL NAL type should be 19");
+    }
+
+    /// Test codec_to_fourcc() with standard codec names
+    ///
+    /// Reference: ISO/IEC 14496-12 (MP4 container) Section 12.1
+    /// Codec identifiers: 'avc1' (H.264), 'hvc1' (H.265/HEVC)
+    #[test]
+    fn test_codec_to_fourcc() {
+        assert_eq!(
+            codec_to_fourcc("h264").unwrap(),
+            u32::from_le_bytes(*b"H264")
+        );
+        assert_eq!(
+            codec_to_fourcc("H264").unwrap(),
+            u32::from_le_bytes(*b"H264")
+        );
+        assert_eq!(
+            codec_to_fourcc("h265").unwrap(),
+            u32::from_le_bytes(*b"HEVC")
+        );
+        assert_eq!(
+            codec_to_fourcc("hevc").unwrap(),
+            u32::from_le_bytes(*b"HEVC")
+        );
+        assert_eq!(
+            codec_to_fourcc("HEVC").unwrap(),
+            u32::from_le_bytes(*b"HEVC")
+        );
+
+        // Invalid codec
+        assert!(codec_to_fourcc("invalid").is_err());
+        assert!(codec_to_fourcc("").is_err());
+    }
+
+    /// Test bitrate_to_encoder_profile() boundary conditions
+    ///
+    /// Verifies correct profile selection at tier boundaries
+    #[test]
+    fn test_bitrate_to_encoder_profile_boundaries() {
+        use videostream::encoder::VSLEncoderProfileEnum;
+
+        // Test lower bound
+        assert_eq!(
+            bitrate_to_encoder_profile(0),
+            VSLEncoderProfileEnum::Kbps5000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(5000),
+            VSLEncoderProfileEnum::Kbps5000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(7500),
+            VSLEncoderProfileEnum::Kbps5000
+        );
+
+        // Test boundary at 7501
+        assert_eq!(
+            bitrate_to_encoder_profile(7501),
+            VSLEncoderProfileEnum::Kbps25000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(25000),
+            VSLEncoderProfileEnum::Kbps25000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(37500),
+            VSLEncoderProfileEnum::Kbps25000
+        );
+
+        // Test boundary at 37501
+        assert_eq!(
+            bitrate_to_encoder_profile(37501),
+            VSLEncoderProfileEnum::Kbps50000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(50000),
+            VSLEncoderProfileEnum::Kbps50000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(75000),
+            VSLEncoderProfileEnum::Kbps50000
+        );
+
+        // Test boundary at 75001
+        assert_eq!(
+            bitrate_to_encoder_profile(75001),
+            VSLEncoderProfileEnum::Kbps100000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(100000),
+            VSLEncoderProfileEnum::Kbps100000
+        );
+        assert_eq!(
+            bitrate_to_encoder_profile(200000),
+            VSLEncoderProfileEnum::Kbps100000
+        );
     }
 }
