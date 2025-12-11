@@ -201,134 +201,139 @@ fn detect_resolution_from_sps(sps: &[u8]) -> Result<(i32, i32), CliError> {
         ));
     }
 
-    // Create a bit reader for exponential-Golomb decoding
     let mut reader = BitReader::new(&sps[1..]); // Skip NAL header
-
-    // Skip profile_idc, constraint flags, reserved bits, level_idc
-    reader.skip_bits(8 + 8); // profile_idc + (6 constraint flags + 2 reserved + level_idc)
+    reader.skip_bits(8 + 8); // Skip profile_idc + constraint flags + level_idc
 
     // Read seq_parameter_set_id
     let _seq_param_id = reader
         .read_ue()
         .ok_or_else(|| CliError::General("Failed to read seq_parameter_set_id".to_string()))?;
 
-    // Check profile for chroma format (high profiles have additional fields)
+    // Parse high profile fields if present
     let profile_idc = sps[1];
-    if matches!(
-        profile_idc,
-        100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134
-    ) {
-        // chroma_format_idc
-        let chroma_format_idc = reader
-            .read_ue()
-            .ok_or_else(|| CliError::General("Failed to read chroma_format_idc".to_string()))?;
+    parse_high_profile_fields(&mut reader, profile_idc)?;
 
-        if chroma_format_idc == 3 {
-            // separate_colour_plane_flag
-            reader.skip_bits(1);
-        }
+    // Parse picture order count fields
+    parse_pic_order_cnt_fields(&mut reader)?;
 
-        // bit_depth_luma_minus8
-        let _bit_depth_luma = reader
-            .read_ue()
-            .ok_or_else(|| CliError::General("Failed to read bit_depth_luma".to_string()))?;
-
-        // bit_depth_chroma_minus8
-        let _bit_depth_chroma = reader
-            .read_ue()
-            .ok_or_else(|| CliError::General("Failed to read bit_depth_chroma".to_string()))?;
-
-        // qpprime_y_zero_transform_bypass_flag
-        reader.skip_bits(1);
-
-        // seq_scaling_matrix_present_flag
-        let scaling_matrix_present = reader.read_bit();
-        if scaling_matrix_present {
-            // Skip scaling lists (complex, varies by chroma format)
-            // For simplicity, we'll try to skip them
-            let num_lists = if chroma_format_idc != 3 { 8 } else { 12 };
-            for _ in 0..num_lists {
-                let present = reader.read_bit();
-                if present {
-                    // Skip the scaling list
-                    // This is complex - for now we'll just hope we can continue
-                    reader.skip_scaling_list();
-                }
-            }
-        }
-    }
-
-    // log2_max_frame_num_minus4
-    let _log2_max_frame_num = reader
-        .read_ue()
-        .ok_or_else(|| CliError::General("Failed to read log2_max_frame_num".to_string()))?;
-
-    // pic_order_cnt_type
-    let pic_order_cnt_type = reader
-        .read_ue()
-        .ok_or_else(|| CliError::General("Failed to read pic_order_cnt_type".to_string()))?;
-
-    if pic_order_cnt_type == 0 {
-        // log2_max_pic_order_cnt_lsb_minus4
-        let _log2_max_poc = reader.read_ue().ok_or_else(|| {
-            CliError::General("Failed to read log2_max_pic_order_cnt".to_string())
-        })?;
-    } else if pic_order_cnt_type == 1 {
-        // delta_pic_order_always_zero_flag
-        reader.skip_bits(1);
-        // offset_for_non_ref_pic
-        let _offset_non_ref = reader.read_se().ok_or_else(|| {
-            CliError::General("Failed to read offset_for_non_ref_pic".to_string())
-        })?;
-        // offset_for_top_to_bottom_field
-        let _offset_top_bottom = reader.read_se().ok_or_else(|| {
-            CliError::General("Failed to read offset_for_top_to_bottom_field".to_string())
-        })?;
-        // num_ref_frames_in_pic_order_cnt_cycle
-        let num_ref_frames = reader.read_ue().ok_or_else(|| {
-            CliError::General("Failed to read num_ref_frames_in_pic_order_cnt_cycle".to_string())
-        })?;
-        // offset_for_ref_frame[i]
-        for _ in 0..num_ref_frames {
-            let _offset = reader.read_se().ok_or_else(|| {
-                CliError::General("Failed to read offset_for_ref_frame".to_string())
-            })?;
-        }
-    }
-
-    // max_num_ref_frames
+    // Read resolution fields
     let _max_num_ref_frames = reader
         .read_ue()
         .ok_or_else(|| CliError::General("Failed to read max_num_ref_frames".to_string()))?;
+    reader.skip_bits(1); // gaps_in_frame_num_value_allowed_flag
 
-    // gaps_in_frame_num_value_allowed_flag
-    reader.skip_bits(1);
-
-    // pic_width_in_mbs_minus1
     let pic_width_in_mbs_minus1 = reader
         .read_ue()
         .ok_or_else(|| CliError::General("Failed to read pic_width_in_mbs_minus1".to_string()))?;
-
-    // pic_height_in_map_units_minus1
     let pic_height_in_map_units_minus1 = reader.read_ue().ok_or_else(|| {
         CliError::General("Failed to read pic_height_in_map_units_minus1".to_string())
     })?;
-
-    // frame_mbs_only_flag
     let frame_mbs_only_flag = reader.read_bit();
 
     // Calculate resolution
     let width = (pic_width_in_mbs_minus1 + 1) * 16;
     let mut height = (pic_height_in_map_units_minus1 + 1) * 16;
-
-    // If not frame_mbs_only (interlaced), height is doubled
     if !frame_mbs_only_flag {
-        height *= 2;
+        height *= 2; // Interlaced video
     }
 
     log::info!("Parsed resolution from SPS: {}x{}", width, height);
-
     Ok((width as i32, height as i32))
+}
+
+/// Parse high profile chroma/bit depth fields (H.264 profiles 100, 110, 122, etc.)
+fn parse_high_profile_fields(reader: &mut BitReader, profile_idc: u8) -> Result<(), CliError> {
+    // Check if this is a high profile
+    if !matches!(
+        profile_idc,
+        100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134
+    ) {
+        return Ok(());
+    }
+
+    let chroma_format_idc = reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read chroma_format_idc".to_string()))?;
+
+    if chroma_format_idc == 3 {
+        reader.skip_bits(1); // separate_colour_plane_flag
+    }
+
+    // bit_depth_luma_minus8 and bit_depth_chroma_minus8
+    reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read bit_depth_luma".to_string()))?;
+    reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read bit_depth_chroma".to_string()))?;
+
+    reader.skip_bits(1); // qpprime_y_zero_transform_bypass_flag
+
+    // Parse scaling matrices if present
+    if reader.read_bit() {
+        parse_scaling_matrices(reader, chroma_format_idc)?;
+    }
+
+    Ok(())
+}
+
+/// Parse scaling matrices (simplified)
+fn parse_scaling_matrices(reader: &mut BitReader, chroma_format_idc: u32) -> Result<(), CliError> {
+    let num_lists = if chroma_format_idc != 3 { 8 } else { 12 };
+    for _ in 0..num_lists {
+        if reader.read_bit() {
+            reader.skip_scaling_list();
+        }
+    }
+    Ok(())
+}
+
+/// Parse picture order count type fields
+fn parse_pic_order_cnt_fields(reader: &mut BitReader) -> Result<(), CliError> {
+    // log2_max_frame_num_minus4
+    reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read log2_max_frame_num".to_string()))?;
+
+    let pic_order_cnt_type = reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read pic_order_cnt_type".to_string()))?;
+
+    match pic_order_cnt_type {
+        0 => parse_poc_type_0(reader),
+        1 => parse_poc_type_1(reader),
+        _ => Ok(()),
+    }
+}
+
+/// Parse picture order count type 0 fields
+fn parse_poc_type_0(reader: &mut BitReader) -> Result<(), CliError> {
+    reader.read_ue().ok_or_else(|| {
+        CliError::General("Failed to read log2_max_pic_order_cnt".to_string())
+    })?;
+    Ok(())
+}
+
+/// Parse picture order count type 1 fields
+fn parse_poc_type_1(reader: &mut BitReader) -> Result<(), CliError> {
+    reader.skip_bits(1); // delta_pic_order_always_zero_flag
+    reader.read_se().ok_or_else(|| {
+        CliError::General("Failed to read offset_for_non_ref_pic".to_string())
+    })?;
+    reader.read_se().ok_or_else(|| {
+        CliError::General("Failed to read offset_for_top_to_bottom_field".to_string())
+    })?;
+
+    let num_ref_frames = reader.read_ue().ok_or_else(|| {
+        CliError::General("Failed to read num_ref_frames_in_pic_order_cnt_cycle".to_string())
+    })?;
+
+    for _ in 0..num_ref_frames {
+        reader.read_se().ok_or_else(|| {
+            CliError::General("Failed to read offset_for_ref_frame".to_string())
+        })?;
+    }
+    Ok(())
 }
 
 /// Simple bit reader for H.264 bitstream parsing

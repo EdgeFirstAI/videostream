@@ -48,53 +48,89 @@ pub struct Args {
     codec: String,
 }
 
-pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
-    log::info!("Recording to file: {}", args.output);
-    log::debug!("Record parameters: {:?}", args);
+/// Parsed recording configuration
+struct RecordConfig {
+    width: i32,
+    height: i32,
+    fourcc: u32,
+    bitrate_kbps: u32,
+    output_fourcc: u32,
+}
 
-    // Validate output file extension
-    let expected_ext = match args.codec.as_str() {
-        "h264" => ".h264",
-        "h265" | "hevc" => ".h265",
-        _ => "",
-    };
-    if !args.output.ends_with(expected_ext) {
-        log::warn!(
-            "Output file doesn't have {} extension (recommended for {})",
-            expected_ext,
-            args.codec.to_uppercase()
-        );
+impl RecordConfig {
+    fn from_args(args: &Args) -> Result<Self, CliError> {
+        // Validate output file extension
+        let expected_ext = match args.codec.as_str() {
+            "h264" => ".h264",
+            "h265" | "hevc" => ".h265",
+            _ => "",
+        };
+        if !args.output.ends_with(expected_ext) {
+            log::warn!(
+                "Output file doesn't have {} extension (recommended for {})",
+                expected_ext,
+                args.codec.to_uppercase()
+            );
+        }
+
+        let (width, height) = utils::parse_resolution(&args.resolution)?;
+        log::debug!("Resolution: {}x{}", width, height);
+
+        let fourcc = utils::fourcc_from_str(&args.format)?;
+        log::debug!("Input format: {} (0x{:08x})", args.format, fourcc);
+
+        let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
+        let output_fourcc = utils::codec_to_fourcc(&args.codec)?;
+        log::info!("Encoding {} at {} kbps", args.codec.to_uppercase(), bitrate_kbps);
+
+        // Check encoder availability
+        if !encoder::is_available().unwrap_or(false) {
+            return Err(CliError::EncoderUnavailable(
+                "VPU encoder not available on this system. Recording requires hardware encoder."
+                    .to_string(),
+            ));
+        }
+
+        Ok(Self {
+            width,
+            height,
+            fourcc,
+            bitrate_kbps,
+            output_fourcc,
+        })
+    }
+}
+
+/// Recording duration and frame limits
+struct RecordLimits {
+    max_frames: u64,
+    max_duration: Option<std::time::Duration>,
+}
+
+impl RecordLimits {
+    fn from_args(args: &Args) -> Self {
+        Self {
+            max_frames: if args.frames == 0 { u64::MAX } else { args.frames },
+            max_duration: args.duration.map(std::time::Duration::from_secs),
+        }
     }
 
-    // Parse resolution
-    let (width, height) = utils::parse_resolution(&args.resolution)?;
-    log::debug!("Resolution: {}x{}", width, height);
-
-    // Parse FOURCC for input format
-    let fourcc = utils::fourcc_from_str(&args.format)?;
-    log::debug!("Input format: {} (0x{:08x})", args.format, fourcc);
-
-    // Parse bitrate and codec
-    let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
-    let output_fourcc = utils::codec_to_fourcc(&args.codec)?;
-    log::info!(
-        "Encoding {} at {} kbps",
-        args.codec.to_uppercase(),
-        bitrate_kbps
-    );
-
-    // Check encoder availability
-    if !encoder::is_available().unwrap_or(false) {
-        return Err(CliError::EncoderUnavailable(
-            "VPU encoder not available on this system. Recording requires hardware encoder."
-                .to_string(),
-        ));
+    fn should_continue(&self, frame_count: u64, elapsed: std::time::Duration) -> bool {
+        if frame_count >= self.max_frames {
+            return false;
+        }
+        if let Some(max_dur) = self.max_duration {
+            if elapsed >= max_dur {
+                log::info!("Duration limit reached");
+                return false;
+            }
+        }
+        true
     }
+}
 
-    // Install signal handler for graceful shutdown
-    let term = utils::install_signal_handler()?;
-
-    // Open camera FIRST (before encoder to avoid DMA conflicts)
+/// Initialize camera with specified configuration
+fn init_camera(args: &Args, width: i32, height: i32, fourcc: u32) -> Result<camera::CameraReader, CliError> {
     log::info!("Opening camera: {}", args.device);
     let cam = camera::create_camera()
         .with_device(&args.device)
@@ -104,16 +140,36 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
 
     log::info!("Starting camera capture");
     cam.start()?;
+    Ok(cam)
+}
 
-    // Create encoder AFTER camera is started
+/// Initialize encoder with specified configuration
+fn init_encoder(args: &Args, config: &RecordConfig) -> Result<encoder::Encoder, CliError> {
     log::info!("Creating {} encoder", args.codec.to_uppercase());
-    let profile = utils::bitrate_to_encoder_profile(bitrate_kbps);
-    let encoder = encoder::Encoder::create(profile as u32, output_fourcc, args.fps)?;
+    let profile = utils::bitrate_to_encoder_profile(config.bitrate_kbps);
+    let encoder = encoder::Encoder::create(profile as u32, config.output_fourcc, args.fps)?;
     log::debug!("Created encoder with profile {:?}", profile);
+    Ok(encoder)
+}
 
-    // Open output file for raw bitstream
-    let mut output_file = File::create(&args.output)
-        .map_err(|e| CliError::General(format!("Failed to create output file: {}", e)))?;
+/// Create output file for bitstream
+fn create_output_file(path: &str) -> Result<File, CliError> {
+    File::create(path)
+        .map_err(|e| CliError::General(format!("Failed to create output file: {}", e)))
+}
+
+pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
+    log::info!("Recording to file: {}", args.output);
+    log::debug!("Record parameters: {:?}", args);
+
+    // Validate and parse arguments
+    let config = RecordConfig::from_args(&args)?;
+
+    // Initialize resources
+    let term = utils::install_signal_handler()?;
+    let cam = init_camera(&args, config.width, config.height, config.fourcc)?;
+    let encoder = init_encoder(&args, &config)?;
+    let mut output_file = create_output_file(&args.output)?;
 
     log::info!("Recording started...");
     log::info!(
@@ -121,27 +177,13 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
         args.codec.to_uppercase()
     );
 
-    // Calculate limits
-    let start_time = Instant::now();
-    let max_frames = if args.frames == 0 {
-        u64::MAX
-    } else {
-        args.frames
-    };
-    let max_duration = args.duration.map(std::time::Duration::from_secs);
-
-    let mut frame_count = 0u64;
-    let crop = encoder::VSLRect::new(0, 0, width, height);
-
     // Main recording loop
-    while frame_count < max_frames && !term.load(Ordering::Relaxed) {
-        // Check duration limit
-        if let Some(max_dur) = max_duration {
-            if start_time.elapsed() >= max_dur {
-                log::info!("Duration limit reached");
-                break;
-            }
-        }
+    let start_time = Instant::now();
+    let limits = RecordLimits::from_args(&args);
+    let mut frame_count = 0u64;
+    let crop = encoder::VSLRect::new(0, 0, config.width, config.height);
+
+    while limits.should_continue(frame_count, start_time.elapsed()) && !term.load(Ordering::Relaxed) {
 
         // Read frame from camera
         log::trace!("Reading frame {} from camera", frame_count);
@@ -151,8 +193,8 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
         // Create output frame for encoded data
         log::trace!("Creating output frame for encoder");
         let output_frame = encoder.new_output_frame(
-            width,
-            height,
+            config.width,
+            config.height,
             -1,                 // duration
             frame_count as i64, // PTS
             frame_count as i64, // DTS
