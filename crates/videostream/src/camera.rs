@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Au-Zone Technologies
 
-use crate::{fourcc::FourCC, vsl, Error};
+use crate::{fourcc::FourCC, Error};
 use dma_buf::DmaBuf;
 use std::{
     ffi::{c_int, CString},

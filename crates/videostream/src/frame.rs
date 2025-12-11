@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Au-Zone Technologies
 
-use crate::{camera::CameraBuffer, client, vsl, Error};
+use crate::{camera::CameraBuffer, client, Error};
 use std::{
     ffi::{CStr, CString},
     io,
