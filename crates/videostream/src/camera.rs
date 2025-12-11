@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Au-Zone Technologies
 
-use crate::{fourcc::FourCC, vsl, Error};
+use crate::{fourcc::FourCC, Error};
 use dma_buf::DmaBuf;
 use std::{
     ffi::{c_int, CString},
@@ -398,8 +398,19 @@ impl CameraBuffer<'_> {
 
 impl Drop for CameraBuffer<'_> {
     fn drop(&mut self) {
+        log::trace!("CameraBuffer::drop() - releasing buffer fd={}", self.raw_fd);
         if let Ok(lib) = ffi::init() {
-            let _ = unsafe { lib.vsl_camera_release_buffer(self.parent.ptr, self.ptr) };
+            let ret = unsafe { lib.vsl_camera_release_buffer(self.parent.ptr, self.ptr) };
+            if ret != 0 {
+                let err = std::io::Error::last_os_error();
+                log::warn!(
+                    "CameraBuffer::drop() - vsl_camera_release_buffer failed: ret={}, errno={:?}",
+                    ret,
+                    err
+                );
+            } else {
+                log::trace!("CameraBuffer::drop() - buffer released successfully");
+            }
         }
     }
 }

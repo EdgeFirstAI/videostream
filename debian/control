@@ -43,7 +43,8 @@ Description: VideoStream Library command-line utilities
  Provides command-line tools for working with VideoStream library.
  .
  This package contains:
-  - vsl-camhost: Camera host utility for frame publishing
+  - videostream: Modern CLI for streaming, recording, and frame operations
+  - vsl-camhost: Camera host utility for frame publishing (legacy)
 
 Package: videostream-samples
 Section: devel

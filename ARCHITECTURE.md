@@ -15,8 +15,9 @@
 5. [Memory Management](#memory-management)
 6. [GStreamer Integration](#gstreamer-integration)
 7. [Hardware Acceleration](#hardware-acceleration)
-8. [Key Implementation Techniques](#key-implementation-techniques)
-9. [Source Code Reference](#source-code-reference)
+8. [CLI Tools and Rust Bindings](#cli-tools-and-rust-bindings)
+9. [Key Implementation Techniques](#key-implementation-techniques)
+10. [Source Code Reference](#source-code-reference)
 
 ---
 
@@ -380,6 +381,185 @@ Hardware-accelerated format conversion and scaling:
 - **G2D library:** NXP's 2D graphics acceleration
 - **Format conversion:** YUV ↔ RGB, NV12 ↔ YUYV, etc.
 - **Scaling:** Arbitrary resolution changes
+
+---
+
+## CLI Tools and Rust Bindings
+
+### VideoStream CLI (`videostream`)
+
+**Implementation:** `crates/videostream-cli/src/`
+
+The `videostream` command-line tool provides high-level operations beyond the core C API, including camera streaming, recording, format conversion, and performance measurement.
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ VideoStream CLI (videostream binary)                        │
+│  ┌───────────┬──────────┬──────────┬──────────┬──────────┐ │
+│  │ stream.rs │record.rs │convert.rs│receive.rs│  info.rs │ │
+│  └─────┬─────┴────┬─────┴────┬─────┴────┬─────┴─────┬────┘ │
+│        │          │          │          │           │      │
+│        └──────────┴──────────┴──────────┴───────────┘      │
+│                            ↓                                │
+│               ┌────────────────────────────┐                │
+│               │ Rust Bindings (videostream)│                │
+│               │  Safe API Layer            │                │
+│               └────────────┬───────────────┘                │
+│                            ↓                                │
+│               ┌────────────────────────────┐                │
+│               │ C Library (libvideostream) │                │
+│               │  Core IPC and Hardware     │                │
+│               └────────────────────────────┘                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Commands
+
+| Command | Purpose | Key Features |
+|---------|---------|--------------|
+| **stream** | Camera → Socket streaming | Raw/encoded frames, VPU encoding, metrics |
+| **record** | Camera → File recording | Annex B H.264/H.265, power-loss resilient |
+| **convert** | Annex B → MP4 container | SPS/PPS extraction, AVCC format |
+| **receive** | Socket → Performance test | Latency measurement, frame validation |
+| **info** | System capabilities | Camera enumeration, VPU detection |
+
+#### Value-Added Features Beyond C API
+
+The CLI provides several capabilities not present in the core C library:
+
+**1. Annex B Bitstream Handling**
+
+- **Recording format:** Raw H.264/H.265 Annex B bitstream (power-loss resilient)
+- **SPS/PPS extraction:** Parse parameter sets from encoder output
+- **Start code detection:** ITU-T H.264/H.265 Annex B.1 compliant parser
+- **NAL unit splitting:** Handles 3-byte (0x000001) and 4-byte (0x00000001) start codes
+- **MP4 muxing:** Convert Annex B to MP4 container with AVCC format conversion
+
+Implementation: `crates/videostream-cli/src/utils.rs` (`parse_nal_units()`, `extract_parameter_sets_h264()`)
+
+**2. Performance Metrics**
+
+- **Latency tracking:** Frame timestamp to receive time (p50/p95/p99 percentiles)
+- **Throughput measurement:** FPS and bandwidth calculations
+- **Drop detection:** Serial number gap analysis
+- **JSON output:** Machine-parseable metrics for CI/CD integration
+
+Implementation: `crates/videostream-cli/src/metrics.rs` (`MetricsCollector`)
+
+**3. Hardware Capability Detection**
+
+- **Camera enumeration:** V4L2 device discovery with format/resolution listing
+- **VPU detection:** Runtime detection of H.264/H.265 encoder/decoder availability
+- **Format validation:** Check camera support for requested pixel formats
+- **JSON schema:** Structured output for automation
+
+Implementation: `crates/videostream-cli/src/info.rs`
+
+**4. Configuration Helpers**
+
+- **Bitrate → profile mapping:** Automatic VPU profile selection (5/25/50/100 Mbps tiers)
+- **Resolution parsing:** "WxH" string to width/height conversion
+- **FOURCC conversion:** Human-readable format strings to 32-bit identifiers
+- **Codec detection:** File extension → codec type auto-detection
+
+Implementation: `crates/videostream-cli/src/utils.rs`
+
+**5. Integration Testing**
+
+The CLI serves as a comprehensive test harness:
+
+- **End-to-end workflows:** Camera → encode → stream → decode → record
+- **Error handling:** Validates all failure paths (missing camera, VPU unavailable, etc.)
+- **Platform verification:** Confirms hardware acceleration availability
+- **CI/CD automation:** Runs on both x86-64 and aarch64 in GitHub Actions
+
+Implementation: `crates/videostream-cli/tests/cli.rs` (39 integration tests)
+
+### Rust Bindings (`videostream` crate)
+
+**Implementation:** `crates/videostream/src/`
+
+Safe Rust API wrapping the C library with idiomatic error handling and memory safety.
+
+#### Key Abstractions
+
+| Module | Purpose | Core Types |
+|--------|---------|------------|
+| `frame` | Frame lifecycle | `Frame` (RAII wrapper) |
+| `host` | Publisher role | `Host` (socket server) |
+| `client` | Subscriber role | `Client` (socket client) |
+| `camera` | V4L2 capture | `Camera`, `CameraReader` |
+| `encoder` | VPU encoding | `Encoder` (H.264/H.265) |
+| `decoder` | VPU decoding | `Decoder` (H.264/H.265) |
+
+#### Memory Safety
+
+- **RAII wrappers:** Frames automatically freed via `Drop` implementation
+- **Borrow checking:** Rust prevents double-free and use-after-free
+- **Lifetime management:** Camera buffers outlive frame references
+- **Null pointer validation:** All C pointers checked before dereferencing
+
+Example from `crates/videostream-cli/src/record.rs`:
+
+```rust
+// Buffer MUST outlive input_frame (borrows buffer data)
+let buffer = camera.read()?;
+{
+    let input_frame: Frame = (&buffer).try_into()?;
+    encoder.frame(&input_frame, &output_frame, &crop, &mut keyframe)?;
+    // input_frame drops here, before buffer
+}
+// buffer drops here - safe because input_frame is already dropped
+```
+
+### Annex B Bitstream Format
+
+The CLI's recording and conversion features work with ITU-T H.264/H.265 Annex B format:
+
+#### Start Code Structure
+
+```mermaid
+graph TD
+    A["Start Code<br/>4-byte: 0x00000001<br/>3-byte: 0x000001<br/>(ITU-T H.264/H.265 Annex B.1.1)"]
+    B["NAL Unit Header (1 byte)<br/>────────────────────<br/>H.264: bits 0-4 = nal_unit_type<br/>  • type 7 = SPS<br/>  • type 8 = PPS<br/>  • type 5 = IDR<br/>────────────────────<br/>H.265: bits 1-6 = nal_unit_type<br/>  • type 32 = VPS<br/>  • type 33 = SPS<br/>  • type 34 = PPS"]
+    C["NAL Unit Payload<br/>(RBSP - Raw Byte Sequence Payload)<br/>────────────────────<br/>May contain emulation prevention:<br/>0x000003 sequence<br/>(0x03 prevents start code emulation)"]
+
+    A --> B
+    B --> C
+
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#e8f5e9
+```
+
+#### Why Annex B for Recording?
+
+**Power-Loss Resilience:** Annex B streams remain valid even if truncated mid-frame:
+- Each NAL unit has a start code prefix
+- No container-level index or metadata required
+- Decoder can resync at next start code after corruption
+- Suitable for embedded systems with power instability
+
+**Contrast with MP4:** ISO base media file format requires:
+- Complete `moov` atom with frame index at file end
+- Incomplete file = unplayable without recovery
+- Requires `fseek()` for muxing (incompatible with streaming)
+
+#### Annex B → MP4 Conversion
+
+The `convert` command transforms Annex B to MP4 for compatibility:
+
+1. **Parse NAL units:** Split on start codes (3 or 4 bytes)
+2. **Extract SPS/PPS:** Find NAL types 7 and 8 (H.264) or 33/34 (H.265)
+3. **Parse SPS for resolution:** Decode sequence parameter set (Section 7.3.2.1)
+4. **Convert to AVCC format:** Replace start codes with 4-byte length prefixes
+5. **Write MP4 container:** Create `ftyp`, `moov`, and `mdat` atoms
+
+Implementation: `crates/videostream-cli/src/convert.rs` (`detect_resolution_from_sps()`)
+
+Reference: ITU-T H.264 (ISO/IEC 14496-10) Annex B, ITU-T H.265 (ISO/IEC 23008-2) Annex B
 
 ---
 

@@ -52,7 +52,7 @@ format:
 	@echo "Formatting C code..."
 	@find . -not \( -path ./build -prune \) -not \( -path ./ext -prune \) \( -iname \*.h -o -iname \*.c \) -type f -print0 | xargs -I{} -0 clang-format -i {}
 	@echo "Formatting Rust code..."
-	@cargo +nightly fmt --all || echo "Warning: cargo +nightly fmt failed (nightly toolchain may not be installed)"
+	@cargo fmt --all
 	@if [ -d "venv" ] && [ -f "venv/bin/autopep8" ]; then \
 		echo "Formatting Python code..."; \
 		bash -c "source venv/bin/activate && find videostream tests -name '*.py' -exec autopep8 --in-place --aggressive --aggressive {} \;"; \
@@ -66,7 +66,7 @@ lint:
 	@echo "Running linters..."
 	@if [ -f "Cargo.toml" ]; then \
 		echo "  Running clippy..."; \
-		cargo clippy --all-targets --all-features -- -D warnings || echo "Warning: clippy failed"; \
+		cargo clippy --workspace --all-targets --all-features -- -D warnings || echo "Warning: clippy failed"; \
 	fi
 	@echo "✓ Linting complete"
 

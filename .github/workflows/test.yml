@@ -204,9 +204,20 @@ jobs:
           set -o pipefail
           # Use Cargo profiling profile for optimized binaries with debug info
           # Note: cargo-llvm-cov's --profile sets the Cargo build profile, not nextest profile
+          # cargo-llvm-cov builds all binaries (including CLI) with instrumentation and runs tests
+          # Integration tests spawn the CLI binary as subprocess, inheriting LLVM_PROFILE_FILE
+          # Subprocess executions generate their own profraw files which are collected
           /usr/bin/time -v cargo llvm-cov nextest --workspace --all-features \
             --profile profiling \
             --lcov --output-path build/coverage_rust.lcov 2>&1 | tee build/test-metrics-rust-${{ matrix.platform.name }}.txt
+
+          # Verify CLI binary was built and is instrumented
+          CLI_BINARY=$(find target/llvm-cov-target -name "videostream" -type f -executable 2>/dev/null | head -1)
+          if [ -n "$CLI_BINARY" ]; then
+            echo "✓ CLI binary built with coverage instrumentation: $CLI_BINARY"
+          else
+            echo "⚠ WARNING: CLI binary not found in coverage target directory"
+          fi
 
       - name: Add skipped Rust tests to JUnit XML
         run: |
@@ -318,12 +329,43 @@ jobs:
           # --cargo-profile = Cargo build profile, -P = nextest profile (hardware runs ignored tests)
           cargo nextest run --workspace --all-features --cargo-profile profiling -P hardware --no-run
 
-          # Copy instrumented test binaries to target/tests for artifact upload
-          mkdir -p target/tests
-          find target/profiling/deps/ -maxdepth 1 -type f -executable \
-            -name "videostream*" -exec cp {} target/tests/ \;
+          # Build instrumented CLI binary for integration tests
+          # CLI integration tests spawn the binary as a subprocess, so it needs coverage instrumentation
+          cargo build --profile profiling --bin videostream
 
-          echo "Instrumented test binaries:"
+          # Copy instrumented test binaries to target/tests for artifact upload
+          # Only copy binaries that are actual test runners (respond to --list)
+          # This excludes [[bin]] targets like the videostream CLI
+          # Note: Look for ALL executables, not just "videostream*" since CLI integration
+          # tests (tests/cli.rs) produce binaries named "cli-<hash>"
+          mkdir -p target/tests
+          find target/profiling/deps/ -maxdepth 1 -type f -executable | \
+            while read bin; do
+              # Skip library files and build artifacts
+              if [[ "$(basename "$bin")" =~ \.(so|a|d|rlib)$ ]]; then
+                continue
+              fi
+
+              # Test binaries accept --list, CLI binaries don't
+              if "$bin" --list >/dev/null 2>&1; then
+                cp "$bin" target/tests/
+                echo "  ✓ Copied test binary: $(basename "$bin")"
+              else
+                echo "  ✗ Skipped non-test binary: $(basename "$bin")"
+              fi
+            done
+
+          # Copy instrumented CLI binary for integration tests that spawn it as subprocess
+          if [ -f target/profiling/videostream ]; then
+            cp target/profiling/videostream target/tests/
+            echo "  ✓ Copied instrumented CLI binary: videostream"
+          else
+            echo "  ✗ ERROR: Instrumented CLI binary not found"
+            exit 1
+          fi
+
+          echo ""
+          echo "Instrumented test binaries ready for hardware testing:"
           ls -la target/tests/
 
       - name: Generate C/C++ coverage reports (after all tests that call into libvideostream.so)
@@ -463,6 +505,17 @@ jobs:
           ls -la build/src/vsl-* 2>/dev/null || echo "No vsl binaries found"
           ls -la rust-tests/* 2>/dev/null || echo "No rust test binaries found"
 
+          # Set up CLI binary path for integration tests
+          # Tests use VIDEOSTREAM_BIN environment variable to locate the binary
+          if [ -f rust-tests/videostream ]; then
+            chmod +x rust-tests/videostream
+            echo "VIDEOSTREAM_BIN=${{ github.workspace }}/rust-tests/videostream" >> $GITHUB_ENV
+            echo "  ✓ CLI binary available at: ${{ github.workspace }}/rust-tests/videostream"
+            echo "  ✓ VIDEOSTREAM_BIN environment variable will be set for tests"
+          else
+            echo "  ⚠ WARNING: CLI binary not found in rust-tests/"
+          fi
+
       - name: Create Python virtual environment
         run: |
           python3 -m venv venv
@@ -517,25 +570,45 @@ jobs:
       - name: Run pre-built Rust tests with hardware access
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+          # CLI binary location for integration tests
+          VIDEOSTREAM_BIN: ${{ github.workspace }}/rust-tests/videostream
           # Redirect gcda files to workspace (processed by ubuntu-22.04-arm job)
           GCOV_PREFIX: ${{ github.workspace }}
           GCOV_PREFIX_STRIP: 5
         run: |
           set -o pipefail
           mkdir -p build/rust-test-results
-          
+
           # Set up profraw collection directory
           export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
           mkdir -p build/profraw
 
+          # Verify CLI binary exists for integration tests
+          if [ -f "$VIDEOSTREAM_BIN" ]; then
+            echo "✓ CLI binary found at: $VIDEOSTREAM_BIN"
+            ls -lh "$VIDEOSTREAM_BIN"
+          else
+            echo "⚠ WARNING: CLI binary not found at $VIDEOSTREAM_BIN"
+            echo "  CLI integration tests may fail"
+          fi
+          echo ""
+
           # Track overall test status
           TEST_FAILED=0
-          
+
           # Run each test binary and collect results
           echo "Running pre-built Rust test binaries..."
           for test_bin in rust-tests/*; do
             if [ -x "$test_bin" ] && [ -f "$test_bin" ]; then
               test_name=$(basename "$test_bin")
+
+              # Skip non-test binaries (like the videostream CLI)
+              # Test binaries accept --list, CLI binaries don't
+              if ! "$test_bin" --list >/dev/null 2>&1; then
+                echo "⏭️  Skipped non-test binary: $test_name"
+                continue
+              fi
+
               echo "=== Running $test_name ==="
               # --include-ignored runs tests marked with #[ignore] (camera tests need real hardware)
               # --test-threads=1 for deterministic execution on hardware
@@ -942,7 +1015,7 @@ jobs:
           fi
           echo "Created build/imx8mp.profdata"
           
-          # Find all instrumented binaries (ELF files in deps directory)
+          # Find all instrumented binaries (ELF files in deps directory + CLI binary)
           # Note: Execute permissions are lost during artifact upload/download,
           # so we use 'file' command to identify ELF binaries by content
           # Note: Using profiling profile for optimized binaries with debug info
@@ -950,9 +1023,13 @@ jobs:
           echo "=== Finding instrumented binaries ==="
           echo "Contents of profiling/deps:"
           ls -la target/profiling/deps/ 2>/dev/null | head -30
+          echo ""
+          echo "Contents of profiling/ (top level):"
+          ls -la target/profiling/ 2>/dev/null | head -20
 
           OBJECT_FILES=""
-          # Look for test binaries (videostream-* without extension) and library
+
+          # Look for test binaries in deps directory
           for obj in $(find target/profiling/deps -maxdepth 1 -type f ! -name "*.d" ! -name "*.rlib" ! -name "*.rmeta" 2>/dev/null); do
             if file "$obj" | grep -q "ELF"; then
               if [ -z "$OBJECT_FILES" ]; then
@@ -963,15 +1040,28 @@ jobs:
             fi
           done
 
+          # Also include the CLI binary itself (spawned as subprocess by integration tests)
+          # The CLI binary is at target/profiling/videostream (not in deps/)
+          if [ -f target/profiling/videostream ]; then
+            if file target/profiling/videostream | grep -q "ELF"; then
+              echo "Found CLI binary: target/profiling/videostream"
+              if [ -z "$OBJECT_FILES" ]; then
+                OBJECT_FILES="target/profiling/videostream"
+              else
+                OBJECT_FILES="$OBJECT_FILES --object=target/profiling/videostream"
+              fi
+            fi
+          fi
+
           if [ -z "$OBJECT_FILES" ]; then
-            echo "ERROR: No ELF binaries found in target/profiling/deps/"
-            echo "All files in profiling/deps:"
-            find target/profiling/deps -type f 2>/dev/null | head -30
+            echo "ERROR: No ELF binaries found in target/profiling/"
+            echo "All files in profiling/:"
+            find target/profiling -type f 2>/dev/null | head -50
             exit 1
           fi
-          
+
           echo "Found binaries:"
-          echo "$OBJECT_FILES" | tr ' ' '\n' | grep -v "^$" | head -20
+          echo "$OBJECT_FILES" | tr ' ' '\n' | grep -v "^$" | head -30
           
           # The profraw files were generated on imx8mp where workspace was at /home/runner/work/videostream/videostream
           # Here on ubuntu-22.04-arm, it's at /home/runner/work/videostream/videostream too (same path!)
