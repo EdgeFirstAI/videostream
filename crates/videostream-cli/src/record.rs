@@ -81,7 +81,11 @@ impl RecordConfig {
 
         let bitrate_kbps = utils::parse_bitrate(&args.bitrate)?;
         let output_fourcc = utils::codec_to_fourcc(&args.codec)?;
-        log::info!("Encoding {} at {} kbps", args.codec.to_uppercase(), bitrate_kbps);
+        log::info!(
+            "Encoding {} at {} kbps",
+            args.codec.to_uppercase(),
+            bitrate_kbps
+        );
 
         // Check encoder availability
         if !encoder::is_available().unwrap_or(false) {
@@ -110,7 +114,11 @@ struct RecordLimits {
 impl RecordLimits {
     fn from_args(args: &Args) -> Self {
         Self {
-            max_frames: if args.frames == 0 { u64::MAX } else { args.frames },
+            max_frames: if args.frames == 0 {
+                u64::MAX
+            } else {
+                args.frames
+            },
             max_duration: args.duration.map(std::time::Duration::from_secs),
         }
     }
@@ -130,7 +138,12 @@ impl RecordLimits {
 }
 
 /// Initialize camera with specified configuration
-fn init_camera(args: &Args, width: i32, height: i32, fourcc: u32) -> Result<camera::CameraReader, CliError> {
+fn init_camera(
+    args: &Args,
+    width: i32,
+    height: i32,
+    fourcc: u32,
+) -> Result<camera::CameraReader, CliError> {
     log::info!("Opening camera: {}", args.device);
     let cam = camera::create_camera()
         .with_device(&args.device)
@@ -183,8 +196,8 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
     let mut frame_count = 0u64;
     let crop = encoder::VSLRect::new(0, 0, config.width, config.height);
 
-    while limits.should_continue(frame_count, start_time.elapsed()) && !term.load(Ordering::Relaxed) {
-
+    while limits.should_continue(frame_count, start_time.elapsed()) && !term.load(Ordering::Relaxed)
+    {
         // Read frame from camera
         log::trace!("Reading frame {} from camera", frame_count);
         let buffer = cam.read()?;

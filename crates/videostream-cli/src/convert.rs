@@ -308,18 +308,18 @@ fn parse_pic_order_cnt_fields(reader: &mut BitReader) -> Result<(), CliError> {
 
 /// Parse picture order count type 0 fields
 fn parse_poc_type_0(reader: &mut BitReader) -> Result<(), CliError> {
-    reader.read_ue().ok_or_else(|| {
-        CliError::General("Failed to read log2_max_pic_order_cnt".to_string())
-    })?;
+    reader
+        .read_ue()
+        .ok_or_else(|| CliError::General("Failed to read log2_max_pic_order_cnt".to_string()))?;
     Ok(())
 }
 
 /// Parse picture order count type 1 fields
 fn parse_poc_type_1(reader: &mut BitReader) -> Result<(), CliError> {
     reader.skip_bits(1); // delta_pic_order_always_zero_flag
-    reader.read_se().ok_or_else(|| {
-        CliError::General("Failed to read offset_for_non_ref_pic".to_string())
-    })?;
+    reader
+        .read_se()
+        .ok_or_else(|| CliError::General("Failed to read offset_for_non_ref_pic".to_string()))?;
     reader.read_se().ok_or_else(|| {
         CliError::General("Failed to read offset_for_top_to_bottom_field".to_string())
     })?;
@@ -329,9 +329,9 @@ fn parse_poc_type_1(reader: &mut BitReader) -> Result<(), CliError> {
     })?;
 
     for _ in 0..num_ref_frames {
-        reader.read_se().ok_or_else(|| {
-            CliError::General("Failed to read offset_for_ref_frame".to_string())
-        })?;
+        reader
+            .read_se()
+            .ok_or_else(|| CliError::General("Failed to read offset_for_ref_frame".to_string()))?;
     }
     Ok(())
 }
