@@ -336,10 +336,16 @@ jobs:
           # Copy instrumented test binaries to target/tests for artifact upload
           # Only copy binaries that are actual test runners (respond to --list)
           # This excludes [[bin]] targets like the videostream CLI
+          # Note: Look for ALL executables, not just "videostream*" since CLI integration
+          # tests (tests/cli.rs) produce binaries named "cli-<hash>"
           mkdir -p target/tests
-          find target/profiling/deps/ -maxdepth 1 -type f -executable \
-            -name "videostream*" | \
+          find target/profiling/deps/ -maxdepth 1 -type f -executable | \
             while read bin; do
+              # Skip library files and build artifacts
+              if [[ "$(basename "$bin")" =~ \.(so|a|d|rlib)$ ]]; then
+                continue
+              fi
+
               # Test binaries accept --list, CLI binaries don't
               if "$bin" --list >/dev/null 2>&1; then
                 cp "$bin" target/tests/
