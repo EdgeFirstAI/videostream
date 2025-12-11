@@ -1,0 +1,33 @@
+[package]
+name = "videostream-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Command-line interface for VideoStream library - camera streaming, recording, and frame operations"
+repository = "https://github.com/EdgeFirstAI/videostream"
+homepage = "https://github.com/EdgeFirstAI/videostream"
+keywords = ["video", "camera", "v4l2", "streaming", "h264"]
+categories = ["multimedia::video", "command-line-utilities"]
+
+[[bin]]
+name = "videostream"
+path = "src/main.rs"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+serial_test = "3.0"
+
+[dependencies]
+# VideoStream library
+videostream = { path = "../videostream" }
+
+# CLI dependencies (from workspace)
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+signal-hook.workspace = true
+mp4.workspace = true
+env_logger.workspace = true
+log.workspace = true

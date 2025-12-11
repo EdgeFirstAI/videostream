@@ -25,6 +25,11 @@ Rust Dependencies:
     - Low-level FFI bindings for VideoStream Library
     - Internal component - part of this project
 
+  * log 0.4.28 (Apache-2.0 OR MIT)
+    - Logging facade
+    - Copyright (c) 2014 The Rust Project Developers
+    - https://github.com/rust-lang/log
+
 C/C++ Dependencies:
 
   * GStreamer (LGPL-2.1-or-later)

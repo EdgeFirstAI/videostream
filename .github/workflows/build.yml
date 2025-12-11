@@ -123,6 +123,25 @@ jobs:
         run: |
           cmake --build build -j$(nproc)
 
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
+
+      - name: Build Rust CLI (videostream binary)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          # Build CLI with Release profile for distribution
+          cargo build --release -p videostream-cli
+
+          # Install CLI binary to build directory for packaging
+          mkdir -p build/usr/bin
+          cp target/release/videostream build/usr/bin/
+          chmod +x build/usr/bin/videostream
+
+          echo "Built CLI binary:"
+          ls -lh target/release/videostream
+          file target/release/videostream
+
       - name: Create ZIP package
         run: |
           cpack
@@ -169,6 +188,9 @@ jobs:
             libgstreamer-plugins-base1.0-dev \
             python3-dev \
             libxml2-dev libxslt1-dev zlib1g-dev
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
 
       - name: Set manylinux2014 build flags
         run: |
