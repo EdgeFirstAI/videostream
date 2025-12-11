@@ -10,7 +10,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serial_test::serial;
 use std::{
-    fs,
+    env, fs,
     path::PathBuf,
     process::{Command as StdCommand, Stdio},
     thread,
@@ -18,13 +18,27 @@ use std::{
 };
 
 /// Helper to create a Command for the videostream binary
+/// Uses VIDEOSTREAM_BIN environment variable if set, otherwise uses cargo run
 fn videostream_cmd() -> Command {
-    Command::new(assert_cmd::cargo::cargo_bin!("videostream"))
+    if let Ok(bin_path) = env::var("VIDEOSTREAM_BIN") {
+        Command::new(bin_path)
+    } else {
+        // Default: use cargo run (works in dev, CI build runners)
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "--bin", "videostream", "--"]);
+        cmd
+    }
 }
 
 /// Get the path to the videostream binary for std::process::Command
 fn videostream_bin() -> PathBuf {
-    assert_cmd::cargo::cargo_bin!("videostream").to_path_buf()
+    if let Ok(bin_path) = env::var("VIDEOSTREAM_BIN") {
+        PathBuf::from(bin_path)
+    } else {
+        // In development/CI, we'll use the cargo-built binary
+        // This is a fallback that won't work for subprocess spawning via std::process::Command
+        panic!("VIDEOSTREAM_BIN environment variable must be set for tests that spawn subprocesses")
+    }
 }
 
 /// Get the test data directory (target/testdata/videostream-cli)
