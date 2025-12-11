@@ -6,7 +6,7 @@ use crate::metrics::MetricsCollector;
 use crate::utils;
 use clap::Args as ClapArgs;
 use std::sync::atomic::Ordering;
-use videostream::{client::Client, client::Reconnect, decoder};
+use videostream::{client::Client, client::Reconnect};
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -46,29 +46,13 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     client.set_timeout(timeout_secs)?;
     log::debug!("Set timeout to {:.1} seconds", timeout_secs);
 
-    // Create decoder if requested
-    let mut decoder_opt = None;
-    if args.decode {
-        if !decoder::is_available().unwrap_or(false) {
-            return Err(CliError::EncoderUnavailable(
-                "VPU decoder not available on this system".to_string(),
-            ));
-        }
-
-        // Try H.264 first, most common
-        let dec = decoder::Decoder::create(decoder::DecoderInputCodec::H264, 30)?;
-        log::info!("Created H.264 decoder");
-        decoder_opt = Some(dec);
-    }
+    // Create decoder if requested (using helper to reduce complexity)
+    let decoder_opt = utils::create_decoder_if_requested(args.decode, "h264", 30)?;
 
     // Create metrics collector
     let mut metrics_collector = MetricsCollector::new();
     let mut frame_count = 0u64;
-    let max_frames = if args.frames == 0 {
-        u64::MAX
-    } else {
-        args.frames
-    };
+    let max_frames = utils::normalize_frame_count(args.frames);
 
     // Receive frames
     log::info!(

@@ -59,14 +59,11 @@ struct HardwareInfo {
 pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     log::debug!("Executing info command: {:?}", args);
 
-    // Determine what to show
-    let show_all = args.all;
+    // Determine what to show: if --all or no specific flags, show everything
+    let show_all = args.all || !(args.camera || args.encoder || args.decoder);
     let show_camera = show_all || args.camera;
     let show_encoder = show_all || args.encoder;
     let show_decoder = show_all || args.decoder;
-
-    // If nothing specific requested, show all
-    let show_all = show_all || !(show_camera || show_encoder || show_decoder);
 
     let mut info = SystemInfo {
         camera: None,
