@@ -303,11 +303,7 @@ fn detect_start_code(data: &[u8], pos: usize) -> Option<usize> {
         && data[pos + 3] == 1
     {
         Some(4)
-    } else if pos + 2 < data.len()
-        && data[pos] == 0
-        && data[pos + 1] == 0
-        && data[pos + 2] == 1
-    {
+    } else if pos + 2 < data.len() && data[pos] == 0 && data[pos + 1] == 0 && data[pos + 2] == 1 {
         Some(3)
     } else {
         None
@@ -456,11 +452,11 @@ mod tests {
     #[test]
     fn test_detect_start_code_positions() {
         let data = vec![
-            0xFF, 0xFF,             // Non-start-code prefix
-            0x00, 0x00, 0x01,       // 3-byte start code at pos 2
-            0x67,                   // NAL data
+            0xFF, 0xFF, // Non-start-code prefix
+            0x00, 0x00, 0x01, // 3-byte start code at pos 2
+            0x67, // NAL data
             0x00, 0x00, 0x00, 0x01, // 4-byte start code at pos 6
-            0x68,                   // NAL data
+            0x68, // NAL data
         ];
 
         assert_eq!(detect_start_code(&data, 0), None);
