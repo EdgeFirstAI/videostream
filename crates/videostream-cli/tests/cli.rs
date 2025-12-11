@@ -20,14 +20,22 @@ use std::{
 /// Helper to create a Command for the videostream binary
 /// Uses VIDEOSTREAM_BIN environment variable if set, otherwise uses cargo run
 fn videostream_cmd() -> Command {
-    if let Ok(bin_path) = env::var("VIDEOSTREAM_BIN") {
+    let mut cmd = if let Ok(bin_path) = env::var("VIDEOSTREAM_BIN") {
         Command::new(bin_path)
     } else {
         // Default: use cargo run (works in dev, CI build runners)
-        let mut cmd = Command::new("cargo");
-        cmd.args(["run", "--bin", "videostream", "--"]);
-        cmd
+        let mut c = Command::new("cargo");
+        c.args(["run", "--bin", "videostream", "--"]);
+        c
+    };
+
+    // Explicitly pass LD_LIBRARY_PATH for hardware testing
+    // (assert_cmd::Command doesn't automatically inherit environment)
+    if let Ok(ld_library_path) = env::var("LD_LIBRARY_PATH") {
+        cmd.env("LD_LIBRARY_PATH", ld_library_path);
     }
+
+    cmd
 }
 
 /// Get the path to the videostream binary for std::process::Command
@@ -323,7 +331,8 @@ fn test_stream_and_receive() {
     fs::remove_file(socket_path).ok();
 
     // Start stream in background (use std::process::Command for background process)
-    let mut stream_process = StdCommand::new(videostream_bin())
+    let mut stream_cmd = StdCommand::new(videostream_bin());
+    stream_cmd
         .arg("stream")
         .arg(socket_path)
         .arg("--device")
@@ -331,9 +340,19 @@ fn test_stream_and_receive() {
         .arg("--frames")
         .arg("100")
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start stream command");
+        .stderr(Stdio::null());
+
+    // Ensure coverage instrumentation works for subprocess by explicitly passing
+    // coverage-related environment variables (std::process::Command inherits env by default,
+    // but we make it explicit for clarity and to ensure LD_LIBRARY_PATH is set)
+    if let Ok(profile_file) = env::var("LLVM_PROFILE_FILE") {
+        stream_cmd.env("LLVM_PROFILE_FILE", profile_file);
+    }
+    if let Ok(ld_library_path) = env::var("LD_LIBRARY_PATH") {
+        stream_cmd.env("LD_LIBRARY_PATH", ld_library_path);
+    }
+
+    let mut stream_process = stream_cmd.spawn().expect("Failed to start stream command");
 
     // Give stream time to start
     thread::sleep(Duration::from_secs(2));
@@ -350,8 +369,10 @@ fn test_stream_and_receive() {
         .success()
         .stdout(predicate::str::contains("frames_processed"));
 
-    // Kill stream process
-    stream_process.kill().ok();
+    // Terminate stream process gracefully to allow coverage data to be written
+    // Note: The stream process should exit naturally after 100 frames
+    // If it hasn't exited yet, wait for it to finish (don't use .kill() as it
+    // prevents coverage profraw data from being written)
     stream_process.wait().ok();
 
     // Verify JSON output contains expected metrics
@@ -381,7 +402,8 @@ fn test_stream_encoded_and_receive_decoded() {
         fs::remove_file(socket_path).ok();
 
         // Start encoded stream in background (use std::process::Command for background process)
-        let mut stream_process = StdCommand::new(videostream_bin())
+        let mut stream_cmd = StdCommand::new(videostream_bin());
+        stream_cmd
             .arg("stream")
             .arg(socket_path)
             .arg("--device")
@@ -390,9 +412,14 @@ fn test_stream_encoded_and_receive_decoded() {
             .arg("--frames")
             .arg("1000") // Stream enough frames for the test
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Failed to start encoded stream");
+            .stderr(Stdio::null());
+
+        // Ensure coverage instrumentation works for subprocess
+        if let Ok(profile_file) = env::var("LLVM_PROFILE_FILE") {
+            stream_cmd.env("LLVM_PROFILE_FILE", profile_file);
+        }
+
+        let mut stream_process = stream_cmd.spawn().expect("Failed to start encoded stream");
 
         // Give stream more time to fully initialize and start posting frames
         thread::sleep(Duration::from_secs(4));
