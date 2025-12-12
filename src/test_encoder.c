@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
+//
+// TESTING LAYER: 3 (Hardware Integration)
+// REQUIREMENTS:
+//   - i.MX 8M Plus VPU encoder (/dev/video0)
+//   - DMA heap (/dev/dma_heap/linux,cma)
+// DESCRIPTION:
+//   Tests VPU H.264/HEVC encoder with synthetic frames.
+//   Validates encoder creation, frame encoding, and bitstream output.
 
 #include "videostream.h"
 #include <errno.h>

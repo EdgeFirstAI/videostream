@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
+//
+// TESTING LAYER: 3 (Hardware Integration)
+// REQUIREMENTS:
+//   - i.MX 8M Plus VPU decoder (/dev/video1)
+//   - DMA heap (/dev/dma_heap/linux,cma)
+//   - H.264 bitstream file (tmp.h264)
+// DESCRIPTION:
+//   Tests VPU H.264 decoder with real bitstream.
+//   Validates decoder creation, frame decoding, and NV12 output.
 
 #include "videostream.h"
 #include <errno.h>
