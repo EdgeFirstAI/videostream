@@ -206,59 +206,122 @@ vsl_alloc_framebuf(VSLDecoder* decoder)
 #ifndef NDEBUG
     printf("vpu registering %i frame bufs\n", bufNum);
 #endif
-    VpuMemDesc*     vpuMem   = calloc(sizeof(VpuMemDesc), 1);
+
     VpuFrameBuffer* frameBuf = calloc(sizeof(VpuFrameBuffer), bufNum);
-    for (int i = 0; i < bufNum; i++) {
-        int totalSize = (ySize + uSize + vSize + mvSize) * 1;
-        vpuMem->nSize = totalSize;
-        ret           = VPU_DecGetMem(vpuMem);
-        if (VPU_DEC_RET_SUCCESS != ret) {
-            printf("%s: vpu malloc frame buf failure: ret=%d\n",
-                   __FUNCTION__,
-                   ret);
-            free(vpuMem);
-            free(frameBuf);
-            return;
-        }
-        // fill frameBuf
-        unsigned char* ptr     = (unsigned char*) vpuMem->nPhyAddr;
-        unsigned char* ptrVirt = (unsigned char*) vpuMem->nVirtAddr;
 
-        /* fill stride info */
-        frameBuf[i].nStrideY = yStride;
-        frameBuf[i].nStrideC = uStride;
+    // Allocate arrays to store dmabuf FDs and maps
+    decoder->frameBufFds  = calloc(bufNum, sizeof(int));
+    decoder->frameBufMaps = calloc(bufNum, sizeof(void*));
 
-        /* fill phy addr*/
-        frameBuf[i].pbufY     = ptr;
-        frameBuf[i].pbufCb    = ptr + ySize;
-        frameBuf[i].pbufCr    = ptr + ySize + uSize;
-        frameBuf[i].pbufMvCol = ptr + ySize + uSize + vSize;
+    // Try DMA heap allocation first for cross-process sharing
+    int dmabuf_result =
+        vsl_decoder_alloc_frame_buffers_dmabuf(bufNum,
+                                               yStride,
+                                               ySize,
+                                               uSize,
+                                               vSize,
+                                               mvSize,
+                                               frameBuf,
+                                               decoder->frameBufFds,
+                                               decoder->frameBufMaps);
 
-        /* fill virt addr */
-        frameBuf[i].pbufVirtY     = ptrVirt;
-        frameBuf[i].pbufVirtCb    = ptrVirt + ySize;
-        frameBuf[i].pbufVirtCr    = ptrVirt + ySize + uSize;
-        frameBuf[i].pbufVirtMvCol = ptrVirt + ySize + uSize + vSize;
+    if (dmabuf_result == 0) {
+        // Success - store buffer info for cleanup
+        decoder->frameBufCount  = bufNum;
+        decoder->frameBufYSize  = ySize;
+        decoder->frameBufUSize  = uSize;
+        decoder->frameBufVSize  = vSize;
+        decoder->frameBufMvSize = mvSize;
+
+#ifndef NDEBUG
+        printf("%s: allocated %d frame buffers via DMA heap\n",
+               __FUNCTION__,
+               bufNum);
+#endif
+    } else {
+        // Fallback to legacy VPU_DecGetMem (won't work for cross-process)
+        fprintf(stderr,
+                "%s: DMA heap allocation failed, falling back to "
+                "VPU_DecGetMem\n",
+                __FUNCTION__);
+
+        free(decoder->frameBufFds);
+        free(decoder->frameBufMaps);
+        decoder->frameBufFds   = NULL;
+        decoder->frameBufMaps  = NULL;
+        decoder->frameBufCount = 0;
+
+        VpuMemDesc* vpuMem = calloc(sizeof(VpuMemDesc), 1);
+        for (int i = 0; i < bufNum; i++) {
+            int totalSize = (ySize + uSize + vSize + mvSize) * 1;
+            vpuMem->nSize = totalSize;
+            ret           = VPU_DecGetMem(vpuMem);
+            if (VPU_DEC_RET_SUCCESS != ret) {
+                printf("%s: vpu malloc frame buf failure: ret=%d\n",
+                       __FUNCTION__,
+                       ret);
+                free(vpuMem);
+                free(frameBuf);
+                return;
+            }
+            // fill frameBuf
+            unsigned char* ptr     = (unsigned char*) vpuMem->nPhyAddr;
+            unsigned char* ptrVirt = (unsigned char*) vpuMem->nVirtAddr;
+
+            /* fill stride info */
+            frameBuf[i].nStrideY = yStride;
+            frameBuf[i].nStrideC = uStride;
+
+            /* fill phy addr*/
+            frameBuf[i].pbufY     = ptr;
+            frameBuf[i].pbufCb    = ptr + ySize;
+            frameBuf[i].pbufCr    = ptr + ySize + uSize;
+            frameBuf[i].pbufMvCol = ptr + ySize + uSize + vSize;
+
+            /* fill virt addr */
+            frameBuf[i].pbufVirtY     = ptrVirt;
+            frameBuf[i].pbufVirtCb    = ptrVirt + ySize;
+            frameBuf[i].pbufVirtCr    = ptrVirt + ySize + uSize;
+            frameBuf[i].pbufVirtMvCol = ptrVirt + ySize + uSize + vSize;
 
 #ifdef ILLEGAL_MEMORY_DEBUG
-        memset(frameBuf[i].pbufVirtY, 0, ySize);
-        memset(frameBuf[i].pbufVirtCb, 0, uSize);
-        memset(frameBuf[i].pbufVirtCr, 0, uSize);
+            memset(frameBuf[i].pbufVirtY, 0, ySize);
+            memset(frameBuf[i].pbufVirtCb, 0, uSize);
+            memset(frameBuf[i].pbufVirtCr, 0, uSize);
 #endif
 
-        frameBuf[i].pbufY_tilebot      = 0;
-        frameBuf[i].pbufCb_tilebot     = 0;
-        frameBuf[i].pbufVirtY_tilebot  = 0;
-        frameBuf[i].pbufVirtCb_tilebot = 0;
+            frameBuf[i].pbufY_tilebot      = 0;
+            frameBuf[i].pbufCb_tilebot     = 0;
+            frameBuf[i].pbufVirtY_tilebot  = 0;
+            frameBuf[i].pbufVirtCb_tilebot = 0;
+        }
+        free(vpuMem);
+
+        fprintf(stderr,
+                "%s: WARNING: frame buffers allocated with VPU_DecGetMem, "
+                "cannot be shared across processes\n",
+                __FUNCTION__);
     }
+
     ret = VPU_DecRegisterFrameBuffer(decoder->handle, frameBuf, bufNum);
     if (VPU_DEC_RET_SUCCESS != ret) {
         printf("%s: vpu register frame failure: ret=%d\n", __FUNCTION__, ret);
-        free(vpuMem);
+        if (decoder->frameBufFds) {
+            vsl_decoder_free_frame_buffers_dmabuf(decoder->frameBufCount,
+                                                  decoder->frameBufYSize,
+                                                  decoder->frameBufUSize,
+                                                  decoder->frameBufVSize,
+                                                  decoder->frameBufMvSize,
+                                                  decoder->frameBufFds,
+                                                  decoder->frameBufMaps);
+            free(decoder->frameBufFds);
+            free(decoder->frameBufMaps);
+            decoder->frameBufFds  = NULL;
+            decoder->frameBufMaps = NULL;
+        }
         free(frameBuf);
         return;
     }
-    free(vpuMem);
     free(frameBuf);
 #ifndef NDEBUG
     printf("vpu registered frame bufs\n");
@@ -434,6 +497,19 @@ vsl_decoder_release(VSLDecoder* decoder)
                __FUNCTION__,
                vpuRet);
         ret = 1;
+    }
+
+    // Free DMA heap frame buffers if allocated
+    if (decoder->frameBufFds) {
+        vsl_decoder_free_frame_buffers_dmabuf(decoder->frameBufCount,
+                                              decoder->frameBufYSize,
+                                              decoder->frameBufUSize,
+                                              decoder->frameBufVSize,
+                                              decoder->frameBufMvSize,
+                                              decoder->frameBufFds,
+                                              decoder->frameBufMaps);
+        free(decoder->frameBufFds);
+        free(decoder->frameBufMaps);
     }
 
     free(decoder->virtMem);

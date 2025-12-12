@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
+//
+// TESTING LAYER: 2 (Cross-Process IPC)
+// REQUIREMENTS:
+//   - Linux with POSIX shared memory (shm_open)
+//   - No camera or VPU hardware required
+// DESCRIPTION:
+//   Tests POSIX shared memory fallback when DMA heap unavailable.
+//   Validates frame allocation, sharing, and GStreamer integration.
 
 /**
  * @file test_shm.c

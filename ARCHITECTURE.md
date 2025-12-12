@@ -262,6 +262,86 @@ VideoStream prefers DmaBuf for zero-copy frame sharing:
 
 **Implementation:** See `v4l2_export_dmabuf()` in `lib/v4l2.c` and `vsl_frame_paddr()` in include/videostream.h (line 862)
 
+### VPU Encoder/Decoder DMA Heap Allocation
+
+**Problem**: VPU wrapper library (`VPU_EncGetMem`, `VPU_DecGetMem`) allocates contiguous memory without providing dmabuf FDs, preventing cross-process sharing of encoded/decoded frames.
+
+**Solution**: Custom DMA heap allocators that provide both hardware-accessible physical addresses and shareable file descriptors.
+
+#### Encoder Output Allocation
+
+**File**: `lib/encoder_hantro_dmabuf.c`
+
+**Function**: `vsl_encoder_new_output_frame_dmabuf()`
+
+**Process**:
+1. Allocate 1MB buffer from `/dev/dma_heap/linux,cma-uncached` (preferred) or `/dev/dma_heap/linux,cma`
+2. Get physical address via custom `DMA_BUF_IOCTL_PHYS` ioctl
+3. `mmap()` buffer for CPU access
+4. Return frame with:
+   - `frame->handle` = dmabuf FD (for IPC)
+   - `frame->info.paddr` = physical address (for VPU hardware)
+   - `frame->map` = virtual address (for CPU)
+
+**VPU Integration**:
+```c
+// lib/encoder_hantro.c
+VpuEncEncParam params;
+params.nInPhyOutput = frame->info.paddr;    // VPU writes to this physical address
+params.nInVirtOutput = (unsigned long)frame->map;  // CPU can read from here
+params.nInOutputBufLen = frame->mapsize;     // 1MB pre-allocated
+VPU_EncEncodeFrame(encoder->handle, &params);
+// VPU writes encoded data, updates frame->info.size with actual bytes
+```
+
+**Size Strategy**:
+- Pre-allocate 1MB (sufficient for 1080p H.264/HEVC keyframes)
+- Actual encoded size varies (keyframes: 50-200KB, P-frames: 10-50KB)
+- VPU updates `frame->info.size` with actual compressed size
+
+**Fallback**: If DMA heap unavailable, falls back to `VPU_EncGetMem()` with warning that cross-process sharing won't work.
+
+#### Decoder Frame Buffer Allocation
+
+**File**: `lib/decoder_hantro_dmabuf.c`
+
+**Function**: `vsl_decoder_alloc_frame_buffers_dmabuf()`
+
+**Complexity**: Decoder requires multiple buffers (typically 5-10) for H.264/HEVC reference frames.
+
+**Process**: For each frame buffer:
+1. Calculate total size: Y plane + Cb plane + Cr plane + MV data
+2. Allocate from DMA heap
+3. Get physical address via `DMA_BUF_IOCTL_PHYS`
+4. `mmap()` for CPU access
+5. Fill `VpuFrameBuffer` structure with plane addresses
+6. Store dmabuf FD in decoder structure for cleanup
+
+**VPU Integration**:
+```c
+// lib/decoder_hantro.c
+VpuFrameBuffer frameBuf[bufNum];
+// Fill each buffer with addresses from dmabuf allocations
+frameBuf[i].pbufY = phys_addr;
+frameBuf[i].pbufVirtY = virt_addr;
+// ... similar for Cb, Cr, MV planes
+VPU_DecRegisterFrameBuffer(decoder->handle, frameBuf, bufNum);
+// VPU writes decoded frames to these physical addresses
+```
+
+**Cleanup**: `vsl_decoder_release()` closes all dmabuf FDs and unmaps all buffers.
+
+**Tracking**: Decoder structure extended to track:
+- `frameBufCount`: Number of buffers allocated
+- `frameBufFds[]`: Array of dmabuf file descriptors
+- `frameBufMaps[]`: Array of mmap pointers
+- `frameBufYSize`, `frameBufUSize`, etc.: Sizes for cleanup
+
+**Result**: Both encoder output and decoder output frames can now be shared across processes via `SCM_RIGHTS`, enabling:
+- Camera → Encoder → Host → Client → Decoder pipelines
+- Zero-copy throughout entire video processing chain
+- Hardware acceleration with cross-process IPC
+
 ### POSIX Shared Memory Fallback
 
 When DmaBuf unavailable:

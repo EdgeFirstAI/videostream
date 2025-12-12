@@ -398,6 +398,15 @@ vsl_encode_frame(VSLEncoder*    encoder,
     return 0;
 }
 
+// Forward declaration for DMA heap-based allocation
+VSLFrame*
+vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
+                                    int               width,
+                                    int               height,
+                                    int64_t           duration,
+                                    int64_t           pts,
+                                    int64_t           dts);
+
 VSL_API
 VSLFrame*
 vsl_encoder_new_output_frame(const VSLEncoder* encoder,
@@ -407,49 +416,70 @@ vsl_encoder_new_output_frame(const VSLEncoder* encoder,
                              int64_t           pts,
                              int64_t           dts)
 {
-    VpuMemDesc* memDesc = calloc(1, sizeof(VpuMemDesc));
-    if (!memDesc) {
-        fprintf(stderr,
-                "%s: memDesc allocation failed: %d\n",
-                __FUNCTION__,
-                errno);
-        return NULL;
-    }
+    // Use DMA heap allocation for cross-process frame sharing
+    // This provides a valid dmabuf FD that can be sent via SCM_RIGHTS
+    VSLFrame* frame = vsl_encoder_new_output_frame_dmabuf(encoder,
+                                                          width,
+                                                          height,
+                                                          duration,
+                                                          pts,
+                                                          dts);
 
-    memDesc->nSize = 1024 * 1024;
-
-#ifndef NDEBUG
-    printf("out size: %d\n", memDesc->nSize);
-#endif
-
-    VpuEncRetCode ret = VPU_EncGetMem(memDesc);
-    if (VPU_ENC_RET_SUCCESS != ret) {
-
-        fprintf(stderr, "%s: VPU_EncGetMem failed: %d\n", __FUNCTION__, ret);
-        free(memDesc);
-        return NULL;
-    }
-
-    VSLFrame* frame = vsl_frame_init(width,
-                                     height,
-                                     -1, // prevent form calculating stride,
-                                         // it's not relevant for encoded frame
-                                     encoder->outputFourcc,
-                                     memDesc, // memDesc as userptr, used to
-                                              // free the EWL memory
-                                     vsl_encoder_frame_cleanup);
     if (!frame) {
-        fprintf(stderr, "%s: vsl_frame_init failed\n", __FUNCTION__);
-        free(memDesc);
-        return NULL;
-    }
+        fprintf(stderr,
+                "%s: DMA heap allocation failed, falling back to "
+                "VPU_EncGetMem\n",
+                __FUNCTION__);
 
-    frame->map           = (void*) memDesc->nVirtAddr;
-    frame->mapsize       = memDesc->nSize;
-    frame->info.paddr    = memDesc->nPhyAddr;
-    frame->info.duration = duration;
-    frame->info.dts      = dts;
-    frame->info.pts      = pts;
+        // Fallback to legacy VPU_EncGetMem (won't work for cross-process)
+        VpuMemDesc* memDesc = calloc(1, sizeof(VpuMemDesc));
+        if (!memDesc) {
+            fprintf(stderr,
+                    "%s: memDesc allocation failed: %d\n",
+                    __FUNCTION__,
+                    errno);
+            return NULL;
+        }
+
+        memDesc->nSize = 1024 * 1024;
+
+        VpuEncRetCode ret = VPU_EncGetMem(memDesc);
+        if (VPU_ENC_RET_SUCCESS != ret) {
+            fprintf(stderr,
+                    "%s: VPU_EncGetMem failed: %d\n",
+                    __FUNCTION__,
+                    ret);
+            free(memDesc);
+            return NULL;
+        }
+
+        frame = vsl_frame_init(width,
+                               height,
+                               -1, // prevent form calculating stride,
+                                   // it's not relevant for encoded frame
+                               encoder->outputFourcc,
+                               memDesc, // memDesc as userptr, used to
+                                        // free the EWL memory
+                               vsl_encoder_frame_cleanup);
+        if (!frame) {
+            fprintf(stderr, "%s: vsl_frame_init failed\n", __FUNCTION__);
+            VPU_EncFreeMem(memDesc);
+            free(memDesc);
+            return NULL;
+        }
+
+        frame->map           = (void*) memDesc->nVirtAddr;
+        frame->mapsize       = memDesc->nSize;
+        frame->info.paddr    = memDesc->nPhyAddr;
+        frame->info.duration = duration;
+        frame->info.dts      = dts;
+        frame->info.pts      = pts;
+
+        fprintf(stderr,
+                "%s: WARNING: frame allocated with VPU_EncGetMem (handle=-1), "
+                "cannot be shared across processes\n",
+                __FUNCTION__);
+    }
 
     return frame;
 }

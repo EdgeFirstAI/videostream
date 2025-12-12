@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
+//
+// TESTING LAYER: 2 (Cross-Process IPC)
+// REQUIREMENTS:
+//   - Linux with POSIX shared memory or DMA heap
+//   - No camera or VPU hardware required
+// DESCRIPTION:
+//   Tests host-side IPC: frame creation, publishing, client connections.
+//   Uses synthetic frames (no camera).  Run with test_client.c.
 
 /**
  * @file test_host.c

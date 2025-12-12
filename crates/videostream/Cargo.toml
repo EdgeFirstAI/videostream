@@ -24,6 +24,7 @@ log.workspace = true
 [dev-dependencies]
 rand.workspace = true
 serial_test.workspace = true
+env_logger = "0.11"
 
 [package.metadata.release]
 # Workspace-level files (pyproject.toml, include/videostream.h, debian/changelog)

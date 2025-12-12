@@ -183,8 +183,10 @@ if(ENABLE_VPU)
     set(ENCODER_SRCS
         lib/decoder_hantro.c
         lib/decoder_hantro.h
+        lib/decoder_hantro_dmabuf.c
         lib/encoder_hantro.c
-        lib/encoder_hantro.h)
+        lib/encoder_hantro.h
+        lib/encoder_hantro_dmabuf.c)
     set(ENCODER_LIBS vpu_wrapper)
 endif()
 
