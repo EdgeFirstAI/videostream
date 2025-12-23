@@ -1,13 +1,73 @@
 # VideoStream Testing Strategy
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Hardware Requirements](#hardware-requirements)
+3. [Test Layers](#test-layers)
+   - [Layer 1: Unit Tests](#layer-1-unit-tests-generic-platform)
+   - [Layer 2: Cross-Process IPC Tests](#layer-2-cross-process-ipc-tests-generic-linux)
+   - [Layer 3: Integration Tests](#layer-3-integration-tests-imx-8m-plus-hardware)
+4. [GitHub Actions CI](#github-actions-ci)
+5. [On-Target Testing](#on-target-testing-imx-8m-plus)
+6. [Coverage Collection](#coverage-collection)
+7. [Benchmark Reporting](#benchmark-reporting)
+8. [Test Data](#test-data)
+9. [Adding New Tests](#adding-new-tests)
+10. [Troubleshooting Tests](#troubleshooting-tests)
+11. [Summary](#summary)
+
+---
+
 ## Overview
 
 VideoStream employs a multi-layered testing approach spanning C, Rust, and Python codebases with platform-specific and hardware-specific test tiers.
+
+```mermaid
+flowchart TB
+    subgraph L3["Layer 3: Integration Tests"]
+        HW[Hardware Pipeline Tests]
+        VPU[VPU Encoder/Decoder]
+        CAM[Camera Capture]
+    end
+
+    subgraph L2["Layer 2: Cross-Process IPC"]
+        IPC[Host-Client IPC]
+        SHM[Shared Memory]
+        FD[FD Passing]
+    end
+
+    subgraph L1["Layer 1: Unit Tests"]
+        FOURCC[FourCC Handling]
+        FRAME[Frame Lifecycle]
+        NAL[NAL Parsing]
+    end
+
+    L1 --> L2
+    L2 --> L3
+
+    style L3 fill:#f9a,stroke:#333
+    style L2 fill:#fa9,stroke:#333
+    style L1 fill:#9f9,stroke:#333
+```
 
 **Testing Pyramid**:
 1. **Unit Tests**: Fast, isolated, no hardware dependencies
 2. **Cross-Process IPC Tests**: Multi-process with shared memory (generic Linux)
 3. **Integration Tests**: Full pipeline with hardware (i.MX 8M Plus required)
+
+---
+
+## Hardware Requirements
+
+| Test Category | Hardware Requirements | Notes |
+|---------------|----------------------|-------|
+| **Unit Tests** | Any Linux (x86_64, aarch64) | No hardware dependencies |
+| **IPC Tests** | Any Linux with POSIX shared memory | No camera or VPU required |
+| **VPU Encoder Tests** | NXP i.MX 8M Plus EVK or compatible | Hantro VC8000e encoder |
+| **VPU Decoder Tests** | NXP i.MX 8M Plus EVK or compatible | Hantro VC8000d decoder |
+| **Camera Tests** | i.MX 8M Plus with OV5640 or compatible | Camera on /dev/video3 |
+| **DMA Heap Tests** | Kernel 5.10+ with CONFIG_DMABUF_HEAPS | /dev/dma_heap/linux,cma |
 
 ---
 
@@ -108,14 +168,14 @@ Camera → VPU Encoder → Host → Client → VPU Decoder
 # Set library path (if not installed system-wide)
 export LD_LIBRARY_PATH=/path/to/build:$LD_LIBRARY_PATH
 
-# Run all hardware tests
-cargo test --package videostream --test integration_pipeline -- --ignored --nocapture
+# Run all hardware tests (--test-threads=1 ensures camera tests don't run concurrently)
+cargo test --package videostream --test integration_pipeline -- --ignored --nocapture --test-threads=1
 
 # Run specific test
-cargo test test_camera_encode_h264_pipeline -- --ignored --nocapture
+cargo test test_camera_encode_h264_pipeline -- --ignored --nocapture --test-threads=1
 
 # With debug logging
-RUST_LOG=debug cargo test test_camera_encode_h264_pipeline -- --ignored --nocapture
+RUST_LOG=debug cargo test test_camera_encode_h264_pipeline -- --ignored --nocapture --test-threads=1
 ```
 
 **Performance Validation**:
@@ -128,9 +188,63 @@ RUST_LOG=debug cargo test test_camera_encode_h264_pipeline -- --ignored --nocapt
 
 **CI**: Not automated (requires physical hardware access)
 
+#### VPU Decoder Behavior
+
+The Hantro VPU decoder exhibits normal H.264 behavior with an **alternating frame pattern**:
+
+**Characteristics**:
+- **50% decode success rate**: Only every other `decode_frame()` call returns a frame
+- **Pattern**: SFSFSFSF... (Success, Fail, Success, Fail...)
+- **Latency**: Bimodal distribution
+  - Buffered frames: 0-4ms (returns previously decoded frame)
+  - Processing frames: 200-250ms (processes new input frame)
+
+**Why This Happens**:
+- H.264 uses inter-frame prediction (P/B frames depend on reference frames)
+- VPU maintains internal buffer for reference frames
+- Decoder pipeline: Accept frame N → Process internally → Return frame N on next call
+
+**Example Flow**:
+```
+Call 1: decode_frame(frame_1) → Buffer internally, return NULL (~200ms)
+Call 2: decode_frame(frame_2) → Return frame_1, buffer frame_2 (0-4ms)
+Call 3: decode_frame(frame_3) → Return frame_2, buffer frame_3 (~200ms)
+Call 4: decode_frame(frame_4) → Return frame_3, buffer frame_4 (0-4ms)
+```
+
+**Production Implications**:
+- Applications must buffer/skip frames to compensate for alternating pattern
+- Effective decode rate: 15 FPS from 30 FPS input (every other frame)
+- Verify decoded output size = 1,382,400 bytes for 1280×720 NV12
+
+**Validation**: Integration tests verify this behavior pattern programmatically.
+
 ---
 
 ## GitHub Actions CI
+
+```mermaid
+flowchart LR
+    subgraph CI["GitHub Actions"]
+        PR[Pull Request] --> BUILD[Build]
+        BUILD --> TEST[Test]
+        TEST --> COV[Coverage]
+    end
+
+    subgraph Platforms["Test Platforms"]
+        X86[ubuntu-latest x86_64]
+        ARM[aarch64 cross-compile]
+    end
+
+    subgraph Manual["Manual Testing"]
+        HW[i.MX 8M Plus Hardware]
+    end
+
+    TEST --> X86
+    BUILD --> ARM
+    X86 -.->|artifacts| HW
+    ARM -.->|artifacts| HW
+```
 
 ### Workflows
 
@@ -229,12 +343,12 @@ export LD_LIBRARY_PATH=/tmp/vsl/lib:/usr/lib
 # Verify devices
 ls -la /dev/video* /dev/dma_heap/*
 
-# Run integration tests
-./bin/integration_pipeline --ignored --nocapture
+# Run integration tests (--test-threads=1 ensures camera tests don't run concurrently)
+./bin/integration_pipeline --ignored --nocapture --test-threads=1
 
 # Run specific test with debug output
 RUST_LOG=debug ./bin/integration_pipeline test_camera_encode_h264_pipeline \
-  -- --ignored --nocapture
+  -- --ignored --nocapture --test-threads=1
 
 # Test CLI
 ./bin/videostream stream /tmp/test.sock -d /dev/video3 -r 1280x720 \
@@ -268,22 +382,81 @@ ffplay -f h264 -framerate 30 /tmp/test.h264
 
 ---
 
-## Coverage Limitations
+## Coverage Collection
 
-### What's Covered
+```mermaid
+flowchart TB
+    subgraph Build["Build Phase"]
+        C_BUILD["C Build<br/>-DENABLE_COVER=ON"]
+        RUST_BUILD["Rust Build<br/>cargo-llvm-cov"]
+    end
 
-**Well-Tested**:
-- Core frame lifecycle (alloc, init, attach, release)
-- IPC protocol (socket, FD passing, serialization)
-- Reference counting
-- Memory management (dmabuf, shared memory)
-- FourCC handling
-- Timestamp calculations
+    subgraph Test["Test Execution"]
+        C_TEST[C Tests via CTest]
+        RUST_TEST[Rust Tests]
+    end
 
-**Test Types**:
-- Unit: ~70% line coverage (C library)
-- Unit: ~60% line coverage (Rust crate)
-- Integration: Manual on hardware
+    subgraph Process["Coverage Processing"]
+        LCOV[lcov/genhtml]
+        LLVM[llvm-cov export]
+    end
+
+    subgraph Report["Reports"]
+        HTML[HTML Report]
+        COV_INFO[coverage.info]
+    end
+
+    C_BUILD --> C_TEST
+    RUST_BUILD --> RUST_TEST
+    C_TEST --> LCOV
+    RUST_TEST --> LLVM
+    LCOV --> HTML
+    LCOV --> COV_INFO
+    LLVM --> HTML
+```
+
+### C Library Coverage (lcov)
+
+**Build with Coverage**:
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVER=ON
+cmake --build build
+```
+
+**Run Tests and Collect**:
+```bash
+cd build
+ctest --output-on-failure
+
+# Generate coverage report
+lcov --capture --directory . --output-file coverage.info
+lcov --remove coverage.info '/usr/*' 'ext/*' --output-file coverage.info
+genhtml coverage.info --output-directory coverage
+```
+
+**View Report**: Open `build/coverage/index.html`
+
+### Rust Crate Coverage (cargo-llvm-cov)
+
+**Install Tool**:
+```bash
+cargo install cargo-llvm-cov
+```
+
+**Run with Coverage**:
+```bash
+cargo llvm-cov --package videostream --html
+```
+
+**View Report**: Open `target/llvm-cov/html/index.html`
+
+### Coverage Targets
+
+| Component | Target | Current |
+|-----------|--------|---------|
+| C Library | 70% | ~70% |
+| Rust Crate | 60% | ~60% |
+| Integration | Manual | Hardware-dependent |
 
 ### What's Not Covered
 
@@ -292,9 +465,52 @@ ffplay -f h264 -framerate 30 /tmp/test.h264
 - Camera capture (hardware-specific)
 - DMA heap allocation (requires kernel 5.10+ with i.MX patches)
 - Multi-threaded stress tests (difficult to automate reliably)
-- Performance regression tests (require dedicated hardware)
 
 **Rationale**: Hardware-dependent code requires manual validation on actual hardware. CI tests focus on portable, deterministic components.
+
+---
+
+## Benchmark Reporting
+
+### Performance Metrics
+
+Integration tests collect the following metrics:
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| **Frame Rate** | Frames per second delivered | ≥25 fps (encoded), ≥30 fps (raw) |
+| **IPC Latency** | Time from host publish to client receive | <1 ms |
+| **Encode Latency** | VPU encoder processing time | 28-35 ms (H.264 720p) |
+| **Drop Rate** | Frames lost in pipeline | <5% |
+| **Warmup Frames** | Frames before stable operation | <10 |
+
+### Pipeline Analysis Tool
+
+Use `tools/analyze_pipeline.py` for detailed performance analysis:
+
+```bash
+# Capture test output to log file
+RUST_LOG=debug cargo test test_camera_encode_h264_pipeline \
+  -- --ignored --nocapture 2>&1 | tee pipeline.log
+
+# Analyze with Python tool
+source venv/bin/activate
+python tools/analyze_pipeline.py pipeline.log
+```
+
+**Output Includes**:
+- Latency histograms (per-stage breakdown)
+- Throughput metrics (FPS, Mbps)
+- Frame timing distribution
+- Warmup period analysis
+
+### Expected Performance (i.MX 8M Plus)
+
+| Pipeline | Latency | Throughput | Notes |
+|----------|---------|------------|-------|
+| Raw IPC | <1 ms | 30 fps | No encoding |
+| Camera → H.264 → IPC | ~32 ms | 30 fps | VPU encode dominates |
+| Full Encode-Decode | ~100 ms | 15 fps | VPU decode alternating pattern |
 
 ---
 
@@ -356,7 +572,7 @@ fn test_hardware_feature() {
 }
 ```
 
-**Run**: `cargo test test_hardware_feature -- --ignored --nocapture`
+**Run**: `cargo test test_hardware_feature -- --ignored --nocapture --test-threads=1`
 
 **Best Practices**:
 - Use `#[ignore]` for hardware tests
