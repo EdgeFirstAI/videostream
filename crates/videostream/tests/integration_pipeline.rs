@@ -66,7 +66,7 @@ impl Default for PipelineConfig {
             codec: Some("h264"),
             fps: 30,
             bitrate_kbps: 5000, // 5 Mbps
-            frame_count: 60,    // 2 seconds at 30fps
+            frame_count: 100,   // ~3.3 seconds at 30fps - testing for timing spikes
         }
     }
 }
@@ -288,11 +288,12 @@ fn run_encode_pipeline_test(
         };
 
         let profile = bitrate_to_profile(config.bitrate_kbps);
-        Some(encoder::Encoder::create(
+        let enc = encoder::Encoder::create(
             profile as u32,
             codec_fourcc,
             config.fps,
-        )?)
+        )?;
+        Some(enc)
     } else {
         None
     };
@@ -321,24 +322,51 @@ fn run_encode_pipeline_test(
     // Spawn client thread
     let socket_path = config.socket_path.clone();
     let frame_count = config.frame_count;
+    let codec = config.codec;
+    let fps = config.fps;
     let client_handle = thread::spawn(move || {
         let client = client::Client::new(&socket_path, client::Reconnect::Yes)
             .expect("Failed to create client");
 
+        // Create decoder if encoding is enabled
+        let decoder = if codec.is_some() {
+            let decoder_codec = match codec.unwrap() {
+                "h264" => decoder::DecoderInputCodec::H264,
+                "hevc" => decoder::DecoderInputCodec::HEVC,
+                _ => decoder::DecoderInputCodec::H264,
+            };
+            match decoder::Decoder::create(decoder_codec, fps) {
+                Ok(dec) => Some(dec),
+                Err(e) => {
+                    eprintln!("Failed to create decoder: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // Give host time to start
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(500));
 
         let mut received = 0;
         let mut bytes = 0u64;
         let mut keyframes = 0;
+        let mut decoded = 0;
 
+        let mut last_frame_time = Instant::now();
         while received < frame_count && !shutdown_clone.load(Ordering::Relaxed) {
-            match client.get_frame(timestamp().unwrap() + 1_000_000_000) {
+            let before_get_frame = Instant::now();
+            // Use reasonable timeout to detect if no more frames are coming
+            match client.get_frame(timestamp().unwrap() - 10_000_000_000) {
                 Ok(frame) => {
+                    let get_frame_duration = before_get_frame.elapsed();
                     received += 1;
 
                     // Check frame properties
+                    let before_metadata = Instant::now();
                     let size = frame.size().unwrap_or(0);
+                    let metadata_duration = before_metadata.elapsed();
                     bytes += size as u64;
 
                     // Check if it's a keyframe (size > average indicates keyframe for encoded frames)
@@ -349,19 +377,87 @@ fn run_encode_pipeline_test(
                         }
                     }
 
-                    if received % 30 == 0 {
-                        log::debug!("Client received {} frames ({} bytes)", received, bytes);
+                    // Decode frame if decoder is enabled
+                    let mut decode_duration = Duration::from_micros(0);
+                    let mut decoded_size = 0usize;
+                    if let Some(ref dec) = decoder {
+                        let before_decode = Instant::now();
+
+                        // Get frame data for decoding using mmap
+                        if let Ok(frame_data) = frame.mmap() {
+                            if !frame_data.is_empty() {
+                                match dec.decode_frame(frame_data) {
+                                    Ok((ret_code, bytes_consumed, decoded_frame)) => {
+                                        decode_duration = before_decode.elapsed();
+
+                                        if let Some(df) = decoded_frame {
+                                            decoded += 1;
+                                            decoded_size = df.size().unwrap_or(0) as usize;
+
+                                            if received < 5 {
+                                                println!("[CLIENT] Decoded frame {}: ret={:?}, consumed={}, decoded_size={}, decode_time={}ms",
+                                                         received, ret_code, bytes_consumed, decoded_size, decode_duration.as_millis());
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if received < 10 {
+                                            println!("[CLIENT] Decode error on frame {}: {:?}", received, e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let frame_interval = last_frame_time.elapsed();
+                    last_frame_time = Instant::now();
+
+                    // Log first few frames with detailed timing for debugging
+                    if received <= 5 {
+                        if decoder.is_some() {
+                            println!("[CLIENT] Frame {}: get_frame={}ms, decode={}ms, interval={}ms, encoded={} bytes, decoded={} bytes",
+                                     received,
+                                     get_frame_duration.as_millis(),
+                                     decode_duration.as_millis(),
+                                     frame_interval.as_millis(),
+                                     size,
+                                     decoded_size);
+                        } else {
+                            println!("[CLIENT] Frame {}: get_frame={}ms, interval={}ms, size={} bytes",
+                                     received,
+                                     get_frame_duration.as_millis(),
+                                     frame_interval.as_millis(),
+                                     size);
+                        }
+                    }
+
+                    // Warn on timing anomalies
+                    if get_frame_duration.as_millis() > 500 {
+                        eprintln!("WARNING: Frame {} get_frame took {}ms!", received, get_frame_duration.as_millis());
+                    }
+
+                    if decode_duration.as_millis() > 300 {
+                        eprintln!("WARNING: Frame {} decode took {}ms!", received, decode_duration.as_millis());
                     }
                 }
                 Err(e) => {
-                    log::warn!("Client frame receive error: {}", e);
+                    eprintln!("Frame receive error: {} (received {} so far)", e, received);
                     thread::sleep(Duration::from_millis(10));
                 }
             }
+
+            // Check if we should exit
+            if received < 10 && shutdown_clone.load(Ordering::Relaxed) {
+                break;
+            }
         }
 
-        (received, bytes, keyframes)
+        (received, bytes, keyframes, decoded)
     });
+
+    // Give client thread time to connect
+    thread::sleep(Duration::from_millis(1000));
 
     // Producer thread: capture → encode → publish
     let start_time = Instant::now();
@@ -405,13 +501,15 @@ fn run_encode_pipeline_test(
 
         // Post to host
         let now = timestamp()?;
-        let expires = now + 100_000_000; // 100ms expiration
+        let expires = now + 90_000_000; // 90ms expiration for real-time processing
         host.post(output_frame, expires, -1, -1, -1)?;
 
-        // Poll for client activity
-        if host.poll(1)? > 0 {
-            host.process()?;
-        }
+        // Poll for client activity (100ms timeout)
+        host.poll(100)?;
+        // CRITICAL: Always call process() to expire old frames, not just when there's client activity.
+        // vsl_host_process() does two things: service clients AND expire frames.
+        // If we only call it when poll() > 0, frames never expire and DMA memory exhausts.
+        host.process()?;
 
         if (i + 1) % 30 == 0 {
             log::debug!("Captured and published {} frames", i + 1);
@@ -420,13 +518,30 @@ fn run_encode_pipeline_test(
 
     metrics.duration_ms = start_time.elapsed().as_millis() as u64;
 
-    // Signal shutdown and wait for client
-    shutdown.store(true, Ordering::Relaxed);
-    let (received, bytes, keyframes) = client_handle.join().unwrap();
+    // Continue processing host events (expire frames, service clients)
+    // until client thread finishes receiving all frames
+    let mut wait_iterations = 0;
+    let (received, bytes, keyframes, decoded) = loop {
+        // Check if client thread has finished
+        if client_handle.is_finished() {
+            break client_handle.join().unwrap();
+        }
+
+        // Continue servicing the host to expire frames and handle client
+        host.poll(10)?;
+        host.process()?;
+        wait_iterations += 1;
+        if wait_iterations > 500 {
+            eprintln!("WARNING: Client thread timeout after 5 seconds");
+            break (0, 0, 0, 0); // Timeout
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
 
     metrics.frames_received = received;
     metrics.bytes_transferred = bytes;
     metrics.keyframes += keyframes;
+    metrics.frames_decoded = decoded;
     metrics.dropped_frames = config.frame_count.saturating_sub(received);
 
     Ok(metrics)
