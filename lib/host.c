@@ -26,6 +26,13 @@
 #define LOCK_TIMEOUT (250 * 1000 * 1000)
 #define MAX_FRAMES_PER_CLIENT 20
 
+// Timing instrumentation
+static inline int64_t get_timestamp_us() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
+
 struct socket_and_frames {
     SOCKET    one_socket;
     VSLFrame* frames[MAX_FRAMES_PER_CLIENT];
@@ -131,7 +138,7 @@ disconnect_client_index(VSLHost* host, int index)
 
     memset(client->frames,
            0,
-           sizeof(sizeof(VSLFrame*) * MAX_FRAMES_PER_CLIENT));
+           sizeof(VSLFrame*) * MAX_FRAMES_PER_CLIENT);
 }
 
 static void
@@ -174,7 +181,7 @@ insert_frame(VSLHost* host, VSLFrame* frame)
 
         // We always double the buffer array so we must memset to 0 from the end
         // of the new buffer for the length of the old buffer.
-        memset(&new_frames[host->n_frames], 0, host->n_frames);
+        memset(&new_frames[host->n_frames], 0, host->n_frames * sizeof(VSLFrame*));
         frame_idx    = host->n_frames;
         host->frames = new_frames;
         host->n_frames *= 2;
@@ -405,18 +412,18 @@ vsl_host_post(VSLHost*  host,
 
     for (int i = 1; i < host->n_sockets; i++) {
         if (host->sockets[i].one_socket != -1) {
+            int64_t before_sendmsg = get_timestamp_us();
             ssize_t ret = sendmsg(host->sockets[i].one_socket, &msg, 0);
+            int64_t after_sendmsg = get_timestamp_us();
+            int64_t duration_us = after_sendmsg - before_sendmsg;
+
             if (ret == -1) {
-#ifndef NDEBUG
-                if (errno != EPIPE) {
-                    fprintf(stderr,
-                            "%s failed to send to connection %d: %s\n",
-                            __FUNCTION__,
-                            i,
-                            strerror(errno));
-                }
-#endif
+                fprintf(stderr, "[TIMING][HOST] sendmsg to socket %d FAILED after %lld us: %s\n",
+                        i, (long long)duration_us, strerror(errno));
                 disconnect_client_index(host, i);
+            } else if (duration_us > 1000) {
+                fprintf(stderr, "[TIMING][HOST] sendmsg to socket %d took %lld us (%.2f ms)\n",
+                        i, (long long)duration_us, duration_us / 1000.0);
             }
         }
     }

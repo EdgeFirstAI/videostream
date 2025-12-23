@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -831,6 +832,21 @@ vsl_camera_open_device(const char* filename)
                 ctx->dev_name,
                 errno,
                 strerror(errno));
+        return NULL;
+    }
+
+    // Acquire exclusive lock on camera device to prevent concurrent access
+    // from multiple tests/processes. Lock is automatically released on close().
+    if (flock(ctx->fd, LOCK_EX | LOCK_NB) == -1) {
+        fprintf(stderr,
+                "Cannot acquire exclusive lock on '%s': %s\n",
+                ctx->dev_name,
+                strerror(errno));
+        fprintf(stderr,
+                "Another process may be using the camera. ");
+        fprintf(stderr,
+                "If running tests, use --test-threads=1 to serialize.\n");
+        close(ctx->fd);
         return NULL;
     }
 
