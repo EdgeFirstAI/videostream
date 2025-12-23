@@ -19,6 +19,7 @@
 
 #ifndef _WIN32
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -26,6 +27,14 @@
 
 #define INITIAL_BUFF_SIZE 1000
 #define SOCKET_ERROR -1
+
+// Timing instrumentation
+static inline int64_t get_timestamp_us() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
+
 struct vsl_client {
     void*              userptr;
     char*              path;
@@ -154,16 +163,8 @@ get_socket(struct sockaddr_un addr, socklen_t addrlen)
         return -1;
     }
 
-    if (socket_blocking(sock, 1)) {
-        fprintf(stderr,
-                "%s failed to set socket blocking: %s\n",
-                __FUNCTION__,
-                strerror(errno));
-        close(sock);
-        errno = ECONNREFUSED;
-        return -1;
-    }
-
+    // Connect with blocking socket (connect() on non-blocking sockets
+    // requires special handling with poll/select)
     if (connect(sock, (struct sockaddr*) &addr, addrlen)) {
 #ifndef NDEBUG
         fprintf(stderr,
@@ -172,6 +173,17 @@ get_socket(struct sockaddr_un addr, socklen_t addrlen)
                 addr.sun_path,
                 strerror(errno));
 #endif
+        close(sock);
+        errno = ECONNREFUSED;
+        return -1;
+    }
+
+    // Set to non-blocking AFTER successful connection
+    if (socket_blocking(sock, 0)) {
+        fprintf(stderr,
+                "%s failed to set socket non-blocking: %s\n",
+                __FUNCTION__,
+                strerror(errno));
         close(sock);
         errno = ECONNREFUSED;
         return -1;
@@ -359,8 +371,19 @@ vsl_frame_wait(VSLClient* client, int64_t until)
         while (true) {
 
             if (client->sock >= 0) {
+                // Restart watchdog timer before each operation
+                restart_timer(client);
+
+                // Call recvmsg() directly (non-blocking) to drain queue
+                int64_t before_recvmsg = get_timestamp_us();
                 errno = 0;
                 ret   = recvmsg(client->sock, &msg, 0);
+                int64_t after_recvmsg = get_timestamp_us();
+                int64_t duration_us = after_recvmsg - before_recvmsg;
+                if (duration_us > 5000) {
+                    fprintf(stderr, "[TIMING][CLIENT] recvmsg took %lld us (%.2f ms)\n",
+                            (long long)duration_us, duration_us / 1000.0);
+                }
             } else {
 #ifndef NDEBUG
                 printf("%s client not connected\n", __FUNCTION__);
@@ -378,6 +401,40 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 #endif
 
             if (ret == -1) {
+                // For non-blocking sockets, EAGAIN/EWOULDBLOCK means no data available
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // No data available, use poll() to wait for next frame
+                    struct pollfd pfd;
+                    pfd.fd     = client->sock;
+                    pfd.events = POLLIN;
+
+                    restart_timer(client);
+                    int poll_ret = poll(&pfd, 1, client->sock_timeout_secs * 1000);
+
+                    if (poll_ret == -1) {
+                        if (errno == EINTR) {
+                            continue; // Interrupted, try again
+                        }
+                        fprintf(stderr, "%s poll error: %s\n", __FUNCTION__, strerror(errno));
+                        if (!client->reconnect) {
+                            pthread_mutex_unlock(&client->lock);
+                            return NULL;
+                        }
+                        client->is_reconnecting = true;
+                        shutdown(client->sock, SHUT_RDWR);
+                        close(client->sock);
+                        client->sock = SOCKET_ERROR;
+                    } else if (poll_ret == 0) {
+                        // Timeout
+                        errno = ETIMEDOUT;
+                        pthread_mutex_unlock(&client->lock);
+                        return NULL;
+                    }
+                    // poll() succeeded, data is ready, continue loop to call recvmsg() again
+                    continue;
+                }
+
+                // Real error (not EAGAIN)
                 if (!client->reconnect) {
                     fprintf(stderr,
                             "%s read error: %s\n",
