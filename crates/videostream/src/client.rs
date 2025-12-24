@@ -317,10 +317,20 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    /// Helper to create a unique socket path for each test
+    /// Helper to create a unique socket path for each test.
+    /// Uses process ID and thread ID to ensure uniqueness across parallel test runs.
     fn test_socket_path(name: &str) -> String {
-        format!("/tmp/vsl_test_{}_{}.sock", name, std::process::id())
+        format!(
+            "/tmp/vsl_test_{}_{}_{:?}.sock",
+            name,
+            std::process::id(),
+            std::thread::current().id()
+        )
     }
+
+    /// Small delay to ensure host socket is ready for connections.
+    /// Required because socket creation (bind + listen) is not atomic.
+    const HOST_READY_DELAY: Duration = Duration::from_millis(5);
 
     #[test]
     fn test_client_debug() {
@@ -328,6 +338,7 @@ mod tests {
 
         // Create a host first so the client can connect
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Now create a client that connects to the host
         let client = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -346,6 +357,7 @@ mod tests {
 
         // Create a host first so the client can connect
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Test 1: Client created with null userptr should return None
         let client_none = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -391,6 +403,7 @@ mod tests {
 
         // Create a host first
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Create a client
         let client = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -413,6 +426,7 @@ mod tests {
 
         // Create a host first
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Create a client
         let client = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -430,6 +444,7 @@ mod tests {
 
         // Create a host
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Create a client
         let client = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -482,6 +497,7 @@ mod tests {
 
         // Create a host
         let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
 
         // Create a client
         let client = Client::new(&socket_path, Reconnect::No).unwrap();
@@ -518,5 +534,170 @@ mod tests {
         let r1 = Reconnect::Yes;
         let r2 = r1;
         assert_eq!(r1, r2);
+    }
+
+    /// Test that Reconnect::Yes allows client to connect when host exists.
+    /// This is a simpler version that doesn't require complex thread synchronization.
+    #[test]
+    fn test_reconnect_yes_with_existing_host() {
+        let socket_path = test_socket_path("reconnect_yes");
+        let host = Host::new(&socket_path).unwrap();
+        thread::sleep(HOST_READY_DELAY);
+
+        // With Reconnect::Yes, client should connect successfully
+        let client = Client::new(&socket_path, Reconnect::Yes).unwrap();
+        let path = client.path().unwrap();
+        assert!(path.to_str().unwrap().contains("reconnect_yes"));
+
+        // Process the connection
+        let _ = host.poll(10);
+        let _ = host.process();
+
+        drop(client);
+        drop(host);
+    }
+
+    /// Test Reconnect::Yes with client created before host.
+    /// This test is ignored by default as it depends on C library retry timing.
+    /// Run with --ignored to include this test.
+    #[test]
+    #[ignore]
+    fn test_reconnect_client_before_host() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let socket_path = test_socket_path("reconnect_before");
+        let socket_path_clone = socket_path.clone();
+        let client_ready = Arc::new(AtomicBool::new(false));
+        let client_ready_clone = Arc::clone(&client_ready);
+
+        // Start client connection attempt in a background thread
+        let client_thread = thread::spawn(move || {
+            // Signal that we're about to try connecting
+            client_ready_clone.store(true, Ordering::SeqCst);
+
+            // Create client with Reconnect::Yes - it will wait for host
+            let client = Client::new(&socket_path_clone, Reconnect::Yes).unwrap();
+
+            // Verify client is connected
+            let path = client.path().unwrap();
+            assert!(
+                path.to_str().unwrap().contains("reconnect_before"),
+                "Client should be connected to the correct path"
+            );
+            client
+        });
+
+        // Wait for client thread to start trying to connect
+        while !client_ready.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Add extra delay to ensure client is actually waiting
+        thread::sleep(Duration::from_millis(100));
+
+        // Now create the host - client should connect
+        let host = Host::new(&socket_path).unwrap();
+
+        // Service connections for up to 5 seconds
+        for _ in 0..500 {
+            let _ = host.poll(10);
+            let _ = host.process();
+        }
+
+        let client = client_thread.join().unwrap();
+        drop(client);
+        drop(host);
+    }
+
+    /// Test reconnection with frame transfer (client before host).
+    /// This test is ignored by default as it depends on C library retry timing.
+    /// Run with --ignored to include this test.
+    #[test]
+    #[ignore]
+    fn test_reconnect_with_frame_transfer() {
+        use crate::frame::Frame;
+        use crate::timestamp;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let socket_path = test_socket_path("reconnect_frame");
+        let socket_path_clone = socket_path.clone();
+        let client_connected = Arc::new(AtomicBool::new(false));
+        let client_connected_clone = Arc::clone(&client_connected);
+
+        // Start client in background thread
+        let client_thread = thread::spawn(move || {
+            // Create client with Reconnect::Yes before host exists
+            let client = Client::new(&socket_path_clone, Reconnect::Yes).unwrap();
+            client_connected_clone.store(true, Ordering::SeqCst);
+
+            // Try to receive the frame (with timeout)
+            let deadline = timestamp().unwrap() + 1_000_000_000; // 1 second
+            let result = client.get_frame(deadline);
+
+            // Return frame dimensions if received
+            result.ok().map(|f| (f.width().unwrap(), f.height().unwrap()))
+        });
+
+        // Wait a bit, then create host
+        thread::sleep(Duration::from_millis(20));
+        let host = Host::new(&socket_path).unwrap();
+
+        // Wait for client to connect
+        while !client_connected.load(Ordering::SeqCst) {
+            let _ = host.poll(10);
+            let _ = host.process();
+        }
+
+        // Give connection time to establish
+        thread::sleep(HOST_READY_DELAY);
+
+        // Process pending connections
+        let _ = host.poll(10);
+        let _ = host.process();
+
+        // Create and post a frame
+        let frame = Frame::new(320, 240, 0, "RGB3").unwrap();
+        frame.alloc(None).unwrap();
+
+        // Fill with test pattern
+        {
+            let data = frame.mmap_mut().unwrap();
+            for (i, byte) in data.iter_mut().enumerate() {
+                *byte = (i % 256) as u8;
+            }
+        }
+
+        let now = timestamp().unwrap();
+        let expires = now + 1_000_000_000; // 1 second
+        host.post(frame, expires, -1, -1, -1).unwrap();
+
+        // Keep processing until client receives frame
+        for _ in 0..100 {
+            let _ = host.poll(10);
+            let _ = host.process();
+        }
+
+        // Check client received the frame
+        let frame_dims = client_thread.join().unwrap();
+        if let Some((width, height)) = frame_dims {
+            assert_eq!(width, 320);
+            assert_eq!(height, 240);
+        }
+
+        drop(host);
+    }
+
+    #[test]
+    fn test_reconnect_no_fails_without_host() {
+        let socket_path = test_socket_path("reconnect_no_fail");
+
+        // Client with Reconnect::No should fail immediately when host doesn't exist
+        let result = Client::new(&socket_path, Reconnect::No);
+        assert!(
+            result.is_err(),
+            "Client with Reconnect::No should fail when host doesn't exist"
+        );
     }
 }

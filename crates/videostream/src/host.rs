@@ -370,9 +370,20 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// Helper to create a unique socket path for each test.
+    /// Uses process ID and thread ID to ensure uniqueness across parallel test runs.
+    fn test_socket_path(name: &str) -> PathBuf {
+        PathBuf::from(format!(
+            "/tmp/vsl_host_{}_{}_{:?}.sock",
+            name,
+            std::process::id(),
+            std::thread::current().id()
+        ))
+    }
+
     #[test]
     fn test_host() {
-        let path = PathBuf::from("/tmp/test.vsl");
+        let path = test_socket_path("basic");
         let host = Host::new(&path).unwrap();
         assert_eq!(path, host.path().unwrap());
         assert!(path.exists());
@@ -393,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_host_sockets() {
-        let path = PathBuf::from("/tmp/test_sockets.vsl");
+        let path = test_socket_path("sockets");
         let host = Host::new(&path).unwrap();
 
         // Should have at least the listening socket
@@ -409,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_host_poll_timeout() {
-        let path = PathBuf::from("/tmp/test_poll.vsl");
+        let path = test_socket_path("poll");
         let host = Host::new(&path).unwrap();
 
         // Poll with immediate timeout should return 0 (no activity)
@@ -419,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_host_process() {
-        let path = PathBuf::from("/tmp/test_process.vsl");
+        let path = test_socket_path("process");
         let host = Host::new(&path).unwrap();
 
         // Process should handle timeout when no activity
@@ -431,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_host_drop_frame() {
-        let path = PathBuf::from("/tmp/test_drop.vsl");
+        let path = test_socket_path("drop_frame");
         let host = Host::new(&path).unwrap();
 
         let frame = crate::frame::Frame::new(640, 480, 0, "RGB3").unwrap();
@@ -445,12 +456,12 @@ mod tests {
 
     #[test]
     fn test_host_debug() {
-        let path = PathBuf::from("/tmp/test_debug.vsl");
+        let path = test_socket_path("debug");
         let host = Host::new(&path).unwrap();
         let debug_str = format!("{:?}", host);
 
         // Debug output should contain Host and path info
         assert!(debug_str.contains("Host"));
-        assert!(debug_str.contains("test_debug.vsl"));
+        assert!(debug_str.contains("debug"));
     }
 }
