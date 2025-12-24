@@ -842,8 +842,7 @@ vsl_camera_open_device(const char* filename)
                 "Cannot acquire exclusive lock on '%s': %s\n",
                 ctx->dev_name,
                 strerror(errno));
-        fprintf(stderr,
-                "Another process may be using the camera. ");
+        fprintf(stderr, "Another process may be using the camera. ");
         fprintf(stderr,
                 "If running tests, use --test-threads=1 to serialize.\n");
         close(ctx->fd);

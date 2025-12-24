@@ -3,10 +3,10 @@ use videostream::{camera, encoder, fourcc::FourCC, frame::Frame, host, timestamp
 
 fn bitrate_to_profile(bitrate_kbps: u32) -> u8 {
     match bitrate_kbps {
-        0..=1000 => 0,     // Low
-        1001..=3000 => 1,  // Medium
-        3001..=7000 => 2,  // High
-        _ => 3,            // Very high
+        0..=1000 => 0,    // Low
+        1001..=3000 => 1, // Medium
+        3001..=7000 => 2, // High
+        _ => 3,           // Very high
     }
 }
 
@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Open camera
     println!("[HOST] Opening camera...");
-    let camera_device = std::env::var("CAMERA_DEVICE").unwrap_or_else(|_| "/dev/video3".to_string());
+    let camera_device =
+        std::env::var("CAMERA_DEVICE").unwrap_or_else(|_| "/dev/video3".to_string());
     let cam = camera::create_camera()
         .with_device(&camera_device)
         .with_resolution(1280, 720)
@@ -43,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create host
     println!("[HOST] Creating host...");
-    let mut host = host::Host::new(&socket_path)?;
+    let host = host::Host::new(&socket_path)?;
     println!("[HOST] Host created at {}", socket_path);
 
     // Give client time to connect
