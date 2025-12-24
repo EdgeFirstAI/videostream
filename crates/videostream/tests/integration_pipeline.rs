@@ -288,11 +288,7 @@ fn run_encode_pipeline_test(
         };
 
         let profile = bitrate_to_profile(config.bitrate_kbps);
-        let enc = encoder::Encoder::create(
-            profile as u32,
-            codec_fourcc,
-            config.fps,
-        )?;
+        let enc = encoder::Encoder::create(profile as u32, codec_fourcc, config.fps)?;
         Some(enc)
     } else {
         None
@@ -329,8 +325,8 @@ fn run_encode_pipeline_test(
             .expect("Failed to create client");
 
         // Create decoder if encoding is enabled
-        let decoder = if codec.is_some() {
-            let decoder_codec = match codec.unwrap() {
+        let decoder = if let Some(codec_str) = codec {
+            let decoder_codec = match codec_str {
                 "h264" => decoder::DecoderInputCodec::H264,
                 "hevc" => decoder::DecoderInputCodec::HEVC,
                 _ => decoder::DecoderInputCodec::H264,
@@ -366,7 +362,7 @@ fn run_encode_pipeline_test(
                     // Check frame properties
                     let before_metadata = Instant::now();
                     let size = frame.size().unwrap_or(0);
-                    let metadata_duration = before_metadata.elapsed();
+                    let _metadata_duration = before_metadata.elapsed();
                     bytes += size as u64;
 
                     // Check if it's a keyframe (size > average indicates keyframe for encoded frames)
@@ -402,7 +398,10 @@ fn run_encode_pipeline_test(
                                     }
                                     Err(e) => {
                                         if received < 10 {
-                                            println!("[CLIENT] Decode error on frame {}: {:?}", received, e);
+                                            println!(
+                                                "[CLIENT] Decode error on frame {}: {:?}",
+                                                received, e
+                                            );
                                         }
                                     }
                                 }
@@ -424,21 +423,31 @@ fn run_encode_pipeline_test(
                                      size,
                                      decoded_size);
                         } else {
-                            println!("[CLIENT] Frame {}: get_frame={}ms, interval={}ms, size={} bytes",
-                                     received,
-                                     get_frame_duration.as_millis(),
-                                     frame_interval.as_millis(),
-                                     size);
+                            println!(
+                                "[CLIENT] Frame {}: get_frame={}ms, interval={}ms, size={} bytes",
+                                received,
+                                get_frame_duration.as_millis(),
+                                frame_interval.as_millis(),
+                                size
+                            );
                         }
                     }
 
                     // Warn on timing anomalies
                     if get_frame_duration.as_millis() > 500 {
-                        eprintln!("WARNING: Frame {} get_frame took {}ms!", received, get_frame_duration.as_millis());
+                        eprintln!(
+                            "WARNING: Frame {} get_frame took {}ms!",
+                            received,
+                            get_frame_duration.as_millis()
+                        );
                     }
 
                     if decode_duration.as_millis() > 300 {
-                        eprintln!("WARNING: Frame {} decode took {}ms!", received, decode_duration.as_millis());
+                        eprintln!(
+                            "WARNING: Frame {} decode took {}ms!",
+                            received,
+                            decode_duration.as_millis()
+                        );
                     }
                 }
                 Err(e) => {

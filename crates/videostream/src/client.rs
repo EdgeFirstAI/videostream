@@ -637,7 +637,9 @@ mod tests {
             let result = client.get_frame(deadline);
 
             // Return frame dimensions if received
-            result.ok().map(|f| (f.width().unwrap(), f.height().unwrap()))
+            result
+                .ok()
+                .map(|f| (f.width().unwrap(), f.height().unwrap()))
         });
 
         // Wait a bit, then create host

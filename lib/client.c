@@ -29,7 +29,9 @@
 #define SOCKET_ERROR -1
 
 // Timing instrumentation
-static inline int64_t get_timestamp_us() {
+static inline int64_t
+get_timestamp_us()
+{
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
@@ -376,13 +378,15 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 
                 // Call recvmsg() directly (non-blocking) to drain queue
                 int64_t before_recvmsg = get_timestamp_us();
-                errno = 0;
-                ret   = recvmsg(client->sock, &msg, 0);
-                int64_t after_recvmsg = get_timestamp_us();
-                int64_t duration_us = after_recvmsg - before_recvmsg;
+                errno                  = 0;
+                ret                    = recvmsg(client->sock, &msg, 0);
+                int64_t after_recvmsg  = get_timestamp_us();
+                int64_t duration_us    = after_recvmsg - before_recvmsg;
                 if (duration_us > 5000) {
-                    fprintf(stderr, "[TIMING][CLIENT] recvmsg took %lld us (%.2f ms)\n",
-                            (long long)duration_us, duration_us / 1000.0);
+                    fprintf(stderr,
+                            "[TIMING][CLIENT] recvmsg took %lld us (%.2f ms)\n",
+                            (long long) duration_us,
+                            duration_us / 1000.0);
                 }
             } else {
 #ifndef NDEBUG
@@ -401,7 +405,8 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 #endif
 
             if (ret == -1) {
-                // For non-blocking sockets, EAGAIN/EWOULDBLOCK means no data available
+                // For non-blocking sockets, EAGAIN/EWOULDBLOCK means no data
+                // available
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     // No data available, use poll() to wait for next frame
                     struct pollfd pfd;
@@ -409,13 +414,17 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                     pfd.events = POLLIN;
 
                     restart_timer(client);
-                    int poll_ret = poll(&pfd, 1, client->sock_timeout_secs * 1000);
+                    int poll_ret =
+                        poll(&pfd, 1, client->sock_timeout_secs * 1000);
 
                     if (poll_ret == -1) {
                         if (errno == EINTR) {
                             continue; // Interrupted, try again
                         }
-                        fprintf(stderr, "%s poll error: %s\n", __FUNCTION__, strerror(errno));
+                        fprintf(stderr,
+                                "%s poll error: %s\n",
+                                __FUNCTION__,
+                                strerror(errno));
                         if (!client->reconnect) {
                             pthread_mutex_unlock(&client->lock);
                             return NULL;
@@ -430,7 +439,8 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                         pthread_mutex_unlock(&client->lock);
                         return NULL;
                     }
-                    // poll() succeeded, data is ready, continue loop to call recvmsg() again
+                    // poll() succeeded, data is ready, continue loop to call
+                    // recvmsg() again
                     continue;
                 }
 

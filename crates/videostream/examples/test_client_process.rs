@@ -80,7 +80,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let duration = start.elapsed();
-    println!("[CLIENT] Received {} frames in {:.2}s", received, duration.as_secs_f64());
+    println!(
+        "[CLIENT] Received {} frames in {:.2}s",
+        received,
+        duration.as_secs_f64()
+    );
     println!(
         "[CLIENT] Throughput: {:.1} FPS, {:.2} MB total, {} keyframes",
         received as f64 / duration.as_secs_f64(),
