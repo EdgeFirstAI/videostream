@@ -857,6 +857,27 @@ vsl_frame_unlock(VSLFrame* frame)
 
     do {
         if (client->sock >= 0) {
+            // Wait for response with poll() since socket is non-blocking
+            struct pollfd pfd      = {.fd = client->sock, .events = POLLIN};
+            int           poll_ret = poll(&pfd, 1, 5000); // 5 second timeout
+            if (poll_ret == -1) {
+                fprintf(stderr,
+                        "%s poll error: %s\n",
+                        __FUNCTION__,
+                        strerror(errno));
+                shutdown(client->sock, SHUT_RDWR);
+                close(client->sock);
+                client->sock = SOCKET_ERROR;
+                pthread_mutex_unlock(&client->lock);
+                return -1;
+            } else if (poll_ret == 0) {
+                fprintf(stderr,
+                        "%s timeout waiting for unlock response\n",
+                        __FUNCTION__);
+                pthread_mutex_unlock(&client->lock);
+                errno = ETIMEDOUT;
+                return -1;
+            }
             ret = recv(client->sock, &event, sizeof(event), 0);
         } else {
             // If client was disconnected, no frame is locked, so there is no
@@ -869,6 +890,10 @@ vsl_frame_unlock(VSLFrame* frame)
         }
 
         if (ret == -1) {
+            // Handle EAGAIN/EWOULDBLOCK - shouldn't happen after poll() but be
+            // safe
+            if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
+
             fprintf(stderr,
                     "%s read error: %s\n",
                     __FUNCTION__,
