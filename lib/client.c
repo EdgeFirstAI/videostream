@@ -857,9 +857,12 @@ vsl_frame_unlock(VSLFrame* frame)
 
     do {
         if (client->sock >= 0) {
-            // Wait for response with poll() since socket is non-blocking
-            struct pollfd pfd      = {.fd = client->sock, .events = POLLIN};
-            int           poll_ret = poll(&pfd, 1, 5000); // 5 second timeout
+            // Use poll() to wait for data since socket is non-blocking
+            struct pollfd pfd;
+            pfd.fd       = client->sock;
+            pfd.events   = POLLIN;
+            pfd.revents  = 0;
+            int poll_ret = poll(&pfd, 1, 1000); // 1 second timeout
             if (poll_ret == -1) {
                 fprintf(stderr,
                         "%s poll error: %s\n",
@@ -871,9 +874,13 @@ vsl_frame_unlock(VSLFrame* frame)
                 pthread_mutex_unlock(&client->lock);
                 return -1;
             } else if (poll_ret == 0) {
+                // Timeout - protocol state is now indeterminate, close socket
                 fprintf(stderr,
                         "%s timeout waiting for unlock response\n",
                         __FUNCTION__);
+                shutdown(client->sock, SHUT_RDWR);
+                close(client->sock);
+                client->sock = SOCKET_ERROR;
                 pthread_mutex_unlock(&client->lock);
                 errno = ETIMEDOUT;
                 return -1;
