@@ -90,10 +90,9 @@ def test_bad_attach():
     with pytest.raises(Exception):
         frame.attach(9000)
 
-    # The 0 fd should typically be stdin, attach doesn't fail but mmap does.
-    frame.attach(0)
+    # fd 0 (stdin) is now correctly rejected by attach to prevent fd corruption
     with pytest.raises(Exception):
-        frame.map()
+        frame.attach(0)
 
 
 @pytest.mark.parametrize("fourcc,stride", [
