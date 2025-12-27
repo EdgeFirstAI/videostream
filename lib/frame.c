@@ -220,7 +220,16 @@ vsl_frame_mmap(VSLFrame* frame, size_t* size)
                      frame->handle,
                      frame->info.offset);
     if (map == MAP_FAILED) {
-        fprintf(stderr, "%s: mmap failed: %s\n", __FUNCTION__, strerror(errno));
+        fprintf(stderr,
+                "%s: mmap failed: %s (frame=%p, fd=%d, size=%zu, offset=%zd, "
+                "allocator=%d)\n",
+                __FUNCTION__,
+                strerror(errno),
+                (void*) frame,
+                frame->handle,
+                frame->info.size,
+                frame->info.offset,
+                frame->allocator);
         return NULL;
     }
 
@@ -419,7 +428,9 @@ frame_alloc_shm(VSLFrame* frame)
 static void
 frame_unalloc_shm(VSLFrame* frame)
 {
-    close(frame->handle);
+    if (frame->handle > 2) {
+        close(frame->handle);
+    }
     frame->handle = -1;
     shm_unlink(frame->path);
     frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
@@ -488,7 +499,9 @@ frame_alloc_dma(VSLFrame* frame)
 static void
 frame_unalloc_dma(VSLFrame* frame)
 {
-    close(frame->handle);
+    if (frame->handle > 2) {
+        close(frame->handle);
+    }
     frame->handle    = -1;
     frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
 }
@@ -595,8 +608,17 @@ vsl_frame_unalloc(VSLFrame* frame)
     case VSL_FRAME_ALLOCATOR_EXTERNAL:
         /* Owned externally.
            NOTE: When using vslsink externally allocated frame is provided with
-           duplicated fd which must be closed to avoid leak */
-        if (frame->handle != -1) {
+           duplicated fd which must be closed to avoid leak.
+           However, if there's a cleanup callback, the owner (e.g., VPU decoder)
+           manages the fd and we should NOT close it here. The cleanup callback
+           can access the handle before we clear it. */
+        if (frame->cleanup) {
+            // Owner has cleanup callback - they manage the fd
+            // Don't close, don't clear - cleanup callback may need the handle
+            return;
+        }
+        // No cleanup callback - this is a dup'd fd that we should close
+        if (frame->handle >= 0) {
             close(frame->handle);
             frame->handle = -1;
         }
@@ -618,6 +640,16 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
 {
     if (!frame) {
         errno = EINVAL;
+        return -1;
+    }
+
+    // Reject fd <= 0 as these are invalid or reserved (stdin)
+    if (fd <= 0) {
+        fprintf(stderr,
+                "%s: invalid fd %d (must be > 0)\n",
+                __FUNCTION__,
+                fd);
+        errno = EBADF;
         return -1;
     }
 
@@ -665,6 +697,19 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
     frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
 
     if (frame->handle == -1) { return -1; }
+
+    // Detect if dup returned a stdio fd (shouldn't happen unless stdio was closed)
+    if (frame->handle >= 0 && frame->handle <= 2) {
+        fprintf(stderr,
+                "%s: ERROR: dup(%d) returned stdio fd %d - fd 0/1/2 was closed!\n",
+                __FUNCTION__,
+                fd,
+                frame->handle);
+        close(frame->handle);
+        frame->handle = -1;
+        errno         = EBADF;
+        return -1;
+    }
     return 0;
 }
 

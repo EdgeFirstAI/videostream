@@ -171,6 +171,10 @@ vsl_decoder_alloc_frame_buffers_dmabuf(int             bufNum,
         unsigned char* ptr     = (unsigned char*) dma_phys.phys;
         unsigned char* ptrVirt = (unsigned char*) map;
 
+        /* fill buffer id and ion fd */
+        frameBuf[i].nBufferId = i;
+        frameBuf[i].nIonFd    = dmabuf_fds[i];
+
         /* fill stride info */
         frameBuf[i].nStrideY = yStride;
         frameBuf[i].nStrideC = uStride;

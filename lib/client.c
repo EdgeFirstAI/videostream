@@ -352,6 +352,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
         memset(&iov, 0, sizeof(iov));
         memset(&aux, 0, sizeof(aux));
         memset(&event, 0, sizeof(event));
+        aux.handle = -1; // Initialize to invalid fd (not 0 which is stdin)
         msg.msg_iov        = &iov;
         msg.msg_iovlen     = 1;
         msg.msg_control    = &aux;
@@ -537,13 +538,13 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 
         // non-frame event.
         if (!event.info.serial) {
-            close(aux.handle);
+            if (aux.handle > 2) { close(aux.handle); }
             continue;
         }
 
         // Ignore expired frame events.
         if (event.info.expires && event.info.expires < vsl_timestamp()) {
-            close(aux.handle);
+            if (aux.handle > 2) { close(aux.handle); }
             continue;
         }
 
@@ -555,7 +556,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                    event.info.timestamp,
                    until);
 #endif
-            close(aux.handle);
+            if (aux.handle > 2) { close(aux.handle); }
             continue;
         }
 
@@ -575,10 +576,32 @@ vsl_frame_wait(VSLClient* client, int64_t until)
            event.info.fourcc >> 24);
 #endif
 
+    // Debug: check if aux.handle is valid
+    // After recvmsg, msg_controllen is updated to indicate how much was received
+    if (aux.handle <= 2) {
+        fprintf(stderr,
+                "%s: WARNING: aux.handle=%d (should be > 2), "
+                "msg_controllen=%zu (expected %zu)\n",
+                __FUNCTION__,
+                aux.handle,
+                msg.msg_controllen,
+                sizeof(aux));
+    }
+
+    // If we received fd 0, something closed stdin. Reject this frame.
+    if (aux.handle == 0) {
+        fprintf(stderr,
+                "%s: ERROR: received fd 0 - stdin was closed somewhere!\n",
+                __FUNCTION__);
+        pthread_mutex_unlock(&client->lock);
+        errno = EBADF;
+        return NULL;
+    }
+
     VSLFrame* frame = calloc(1, sizeof(VSLFrame));
     if (!frame) {
         pthread_mutex_unlock(&client->lock);
-        close(aux.handle);
+        if (aux.handle > 2) { close(aux.handle); }
         return NULL;
     }
 

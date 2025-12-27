@@ -394,6 +394,17 @@ vsl_host_post(VSLHost*  host,
     event.error = VSL_FRAME_SUCCESS;
     memcpy(&event.info, &frame->info, sizeof(struct vsl_frame_info));
 
+    // Validate frame handle before sending (must be > 2 to avoid stdio fds)
+    if (frame->handle <= 2) {
+        fprintf(stderr,
+                "%s: refusing to send frame with invalid handle %d\n",
+                __FUNCTION__,
+                frame->handle);
+        pthread_mutex_unlock(&host->lock);
+        errno = EBADF;
+        return -1;
+    }
+
     struct vsl_aux aux;
     memset(&aux, 0, sizeof(aux));
     aux.handle         = frame->handle;
