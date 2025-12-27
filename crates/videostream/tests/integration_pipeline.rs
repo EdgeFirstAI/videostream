@@ -70,9 +70,9 @@ impl Default for PipelineConfig {
             camera_format: FourCC(*b"YUYV"),
             codec: Some("h264"),
             fps: 30,
-            bitrate_kbps: 5000, // 5 Mbps
-            frame_count: 100,   // ~3.3 seconds at 30fps - testing for timing spikes
-            warmup_frames: 10,  // VPU encoder/decoder warmup period
+            bitrate_kbps: 5000,  // 5 Mbps
+            frame_count: 100,    // ~3.3 seconds at 30fps - testing for timing spikes
+            warmup_frames: 10,   // VPU encoder/decoder warmup period
             decode_output: true, // Decode received H.264/HEVC frames
         }
     }
@@ -197,7 +197,7 @@ fn test_camera_encode_h265_pipeline() {
     let config = PipelineConfig {
         codec: Some("hevc"),
         camera_format: FourCC(*b"NV12"), // NV12 is more efficient for VPU
-        decode_output: false, // Don't decode - this test focuses on encode/transmit path
+        decode_output: false,            // Don't decode - this test focuses on encode/transmit path
         ..Default::default()
     };
 
