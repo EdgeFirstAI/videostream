@@ -400,9 +400,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
     printf("%s: VPU_DecDecodeBuf ret code: %x\n", __FUNCTION__, ret_code);
 #endif
 
-    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) {
-        vsl_alloc_framebuf(decoder);
-    }
+    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) { vsl_alloc_framebuf(decoder); }
 
     // check init info
     if (ret_code & VPU_DEC_INIT_OK) {

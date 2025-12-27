@@ -352,10 +352,10 @@ vsl_frame_wait(VSLClient* client, int64_t until)
         memset(&iov, 0, sizeof(iov));
         memset(&aux, 0, sizeof(aux));
         memset(&event, 0, sizeof(event));
-        aux.handle = -1; // Initialize to invalid fd (not 0 which is stdin)
-        msg.msg_iov        = &iov;
-        msg.msg_iovlen     = 1;
-        msg.msg_control    = &aux;
+        aux.handle      = -1; // Initialize to invalid fd (not 0 which is stdin)
+        msg.msg_iov     = &iov;
+        msg.msg_iovlen  = 1;
+        msg.msg_control = &aux;
         msg.msg_controllen = sizeof(aux);
         iov.iov_base       = &event;
         iov.iov_len        = sizeof(event);
@@ -577,7 +577,8 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 #endif
 
     // Debug: check if aux.handle is valid
-    // After recvmsg, msg_controllen is updated to indicate how much was received
+    // After recvmsg, msg_controllen is updated to indicate how much was
+    // received
     if (aux.handle <= 2) {
         fprintf(stderr,
                 "%s: WARNING: aux.handle=%d (should be > 2), "

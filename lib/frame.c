@@ -428,9 +428,7 @@ frame_alloc_shm(VSLFrame* frame)
 static void
 frame_unalloc_shm(VSLFrame* frame)
 {
-    if (frame->handle > 2) {
-        close(frame->handle);
-    }
+    if (frame->handle > 2) { close(frame->handle); }
     frame->handle = -1;
     shm_unlink(frame->path);
     frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
@@ -499,9 +497,7 @@ frame_alloc_dma(VSLFrame* frame)
 static void
 frame_unalloc_dma(VSLFrame* frame)
 {
-    if (frame->handle > 2) {
-        close(frame->handle);
-    }
+    if (frame->handle > 2) { close(frame->handle); }
     frame->handle    = -1;
     frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
 }
@@ -645,10 +641,7 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
 
     // Reject fd <= 0 as these are invalid or reserved (stdin)
     if (fd <= 0) {
-        fprintf(stderr,
-                "%s: invalid fd %d (must be > 0)\n",
-                __FUNCTION__,
-                fd);
+        fprintf(stderr, "%s: invalid fd %d (must be > 0)\n", __FUNCTION__, fd);
         errno = EBADF;
         return -1;
     }
@@ -698,10 +691,12 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
 
     if (frame->handle == -1) { return -1; }
 
-    // Detect if dup returned a stdio fd (shouldn't happen unless stdio was closed)
+    // Detect if dup returned a stdio fd (shouldn't happen unless stdio was
+    // closed)
     if (frame->handle >= 0 && frame->handle <= 2) {
         fprintf(stderr,
-                "%s: ERROR: dup(%d) returned stdio fd %d - fd 0/1/2 was closed!\n",
+                "%s: ERROR: dup(%d) returned stdio fd %d - fd 0/1/2 was "
+                "closed!\n",
                 __FUNCTION__,
                 fd,
                 frame->handle);
