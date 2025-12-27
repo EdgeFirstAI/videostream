@@ -384,12 +384,19 @@ vsl_decode_frame(VSLDecoder*  decoder,
         int kick_config = VPU_DEC_IN_KICK;
         VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &kick_config);
 
-        VpuBufferNode emptyData = {};
-        int           kick_ret  = 0;
-        VPU_DecDecodeBuf(decoder->handle, &emptyData, &kick_ret);
+        // Use heap allocation for emptyData to avoid potential stack issues
+        // with VPU wrapper modifying the buffer structure
+        VpuBufferNode* emptyData = calloc(1, sizeof(VpuBufferNode));
+        int            kick_ret  = 0;
+        if (emptyData) {
+            VPU_DecDecodeBuf(decoder->handle, emptyData, &kick_ret);
+            free(emptyData);
 
-        // Merge KICK result with original
-        if (kick_ret & VPU_DEC_OUTPUT_DIS) { ret_code |= VPU_DEC_OUTPUT_DIS; }
+            // Merge KICK result with original
+            if (kick_ret & VPU_DEC_OUTPUT_DIS) {
+                ret_code |= VPU_DEC_OUTPUT_DIS;
+            }
+        }
 
         // Reset to NORMAL mode for next call
         int normal_config = VPU_DEC_IN_NORMAL;
