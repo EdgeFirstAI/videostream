@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
+
 #define Align(ptr, align) \
     ((int) (((unsigned long) ptr + (align) - 1) / (align) * (align)))
 
@@ -372,12 +372,37 @@ vsl_decode_frame(VSLDecoder*  decoder,
 
     int ret_code = 0;
     int vsl_ret  = 0;
+
     VPU_DecDecodeBuf(decoder->handle, &inData, &ret_code);
+
+    // If consumed but no output, use KICK mode to poll for output without
+    // waiting. This avoids the 200ms timeout that occurs when the VPU input
+    // buffer is empty after consuming a frame.
+    int consumed = (ret_code & VPU_DEC_ONE_FRM_CONSUMED) ? 1 : 0;
+    int output   = (ret_code & VPU_DEC_OUTPUT_DIS) ? 1 : 0;
+    if (consumed && !output) {
+        int kick_config = VPU_DEC_IN_KICK;
+        VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &kick_config);
+
+        VpuBufferNode emptyData = {};
+        int           kick_ret  = 0;
+        VPU_DecDecodeBuf(decoder->handle, &emptyData, &kick_ret);
+
+        // Merge KICK result with original
+        if (kick_ret & VPU_DEC_OUTPUT_DIS) { ret_code |= VPU_DEC_OUTPUT_DIS; }
+
+        // Reset to NORMAL mode for next call
+        int normal_config = VPU_DEC_IN_NORMAL;
+        VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &normal_config);
+    }
+
 #ifndef NDEBUG
     printf("%s: VPU_DecDecodeBuf ret code: %x\n", __FUNCTION__, ret_code);
 #endif
 
-    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) { vsl_alloc_framebuf(decoder); }
+    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) {
+        vsl_alloc_framebuf(decoder);
+    }
 
     // check init info
     if (ret_code & VPU_DEC_INIT_OK) {
