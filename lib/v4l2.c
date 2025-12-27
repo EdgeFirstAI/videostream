@@ -36,6 +36,13 @@ VSL_API
 int
 vsl_camera_buffer_dma_fd(const vsl_camera_buffer* buffer)
 {
+    if (buffer->dmafd <= 0) {
+        fprintf(stderr,
+                "%s: WARNING: buffer %d has invalid dmafd=%d\n",
+                __FUNCTION__,
+                buffer->bufID,
+                buffer->dmafd);
+    }
     return buffer->dmafd;
 }
 
