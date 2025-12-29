@@ -117,8 +117,12 @@ vsl_encoder_init(VSLEncoder*    encoder,
                  const VSLRect* cropRegion)
 {
     VpuEncRetCode       ret;
-    VpuMemInfo          sMemInfo          = {};
-    VpuEncOpenParamSimp sEncOpenParamSimp = {};
+    VpuMemInfo          sMemInfo;
+    VpuEncOpenParamSimp sEncOpenParamSimp;
+
+    // Use memset to avoid aarch64 stack issues with designated initializers
+    memset(&sMemInfo, 0, sizeof(sMemInfo));
+    memset(&sEncOpenParamSimp, 0, sizeof(sEncOpenParamSimp));
 
     encoder->inputFourcc = inputFourcc;
     if (cropRegion) {
@@ -355,12 +359,14 @@ vsl_encode_frame(VSLEncoder*    encoder,
         return -1;
     }
 
-    VpuEncEncParam sEncEncParam = {};
-    sEncEncParam.nPicWidth      = encoder->outWidth;
-    sEncEncParam.nPicHeight     = encoder->outHeight;
-    sEncEncParam.nFrameRate     = encoder->fps;
-    sEncEncParam.nQuantParam    = 35;
-    sEncEncParam.nInPhyInput    = source->info.paddr + source->info.offset;
+    // Use memset to avoid aarch64 stack issues with designated initializers
+    VpuEncEncParam sEncEncParam;
+    memset(&sEncEncParam, 0, sizeof(sEncEncParam));
+    sEncEncParam.nPicWidth   = encoder->outWidth;
+    sEncEncParam.nPicHeight  = encoder->outHeight;
+    sEncEncParam.nFrameRate  = encoder->fps;
+    sEncEncParam.nQuantParam = 35;
+    sEncEncParam.nInPhyInput = source->info.paddr + source->info.offset;
     sEncEncParam.nInVirtInput =
         (unsigned long) source->map + source->info.offset;
     sEncEncParam.nInInputSize = (int) source->info.size;
