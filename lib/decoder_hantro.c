@@ -179,8 +179,9 @@ vsl_decoder_create(VSLDecoderCodec inputCodec, int fps)
 static void
 vsl_alloc_framebuf(VSLDecoder* decoder)
 {
-    VpuDecInitInfo initInfo = {};
-    VpuDecRetCode  ret      = VPU_DecGetInitialInfo(decoder->handle, &initInfo);
+    VpuDecInitInfo initInfo;
+    memset(&initInfo, 0, sizeof(initInfo));
+    VpuDecRetCode ret = VPU_DecGetInitialInfo(decoder->handle, &initInfo);
     if (VPU_DEC_RET_SUCCESS != ret) {
         fprintf(stdout,
                 "%s: VPU_DecGetInitialInfo failure: %x\n",
@@ -363,7 +364,10 @@ vsl_decode_frame(VSLDecoder*  decoder,
     VpuDecFrameLengthInfo decFrmLengthInfo;
     int                   totalDecConsumedBytes = 0; // stuffer + frame
 
-    VpuBufferNode inData    = {};
+    // Use explicit field assignment to avoid aarch64 stack issues with
+    // designated initializers (see commit 5048052)
+    VpuBufferNode inData;
+    memset(&inData, 0, sizeof(inData));
     inData.pVirAddr         = (unsigned char*) (uintptr_t) data;
     inData.nSize            = data_length;
     inData.pPhyAddr         = NULL;
