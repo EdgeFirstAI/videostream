@@ -362,11 +362,13 @@ vsl_decode_frame(VSLDecoder*  decoder,
     VpuDecRetCode         ret;
     VpuDecOutFrameInfo    frameInfo;
     VpuDecFrameLengthInfo decFrmLengthInfo;
+    VpuBufferNode         inData;
     int                   totalDecConsumedBytes = 0; // stuffer + frame
 
-    // Use explicit field assignment to avoid aarch64 stack issues with
-    // designated initializers (see commit 5048052)
-    VpuBufferNode inData;
+    // Initialize all stack-allocated VPU structures to avoid aarch64 stack
+    // issues and undefined behavior from uninitialized memory
+    memset(&frameInfo, 0, sizeof(frameInfo));
+    memset(&decFrmLengthInfo, 0, sizeof(decFrmLengthInfo));
     memset(&inData, 0, sizeof(inData));
     inData.pVirAddr         = (unsigned char*) (uintptr_t) data;
     inData.nSize            = data_length;
