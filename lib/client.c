@@ -411,8 +411,9 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     // No data available, use poll() to wait for next frame
                     struct pollfd pfd;
-                    pfd.fd     = client->sock;
-                    pfd.events = POLLIN;
+                    pfd.fd      = client->sock;
+                    pfd.events  = POLLIN;
+                    pfd.revents = 0;
 
                     restart_timer(client);
                     int poll_ret =
