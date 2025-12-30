@@ -352,9 +352,6 @@ frame_cleanup(VSLFrame* frame)
     }
 }
 
-// Debug counter for stack smashing investigation
-static int _decode_call_count = 0;
-
 VSLDecoderRetCode
 vsl_decode_frame(VSLDecoder*  decoder,
                  const void*  data,
@@ -367,9 +364,6 @@ vsl_decode_frame(VSLDecoder*  decoder,
     VpuDecFrameLengthInfo decFrmLengthInfo;
     VpuBufferNode         inData;
     int                   totalDecConsumedBytes = 0; // stuffer + frame
-
-    _decode_call_count++;
-    fprintf(stderr, "[DECODE:%d] ENTER data_length=%u\n", _decode_call_count, data_length);
 
     // Initialize all stack-allocated VPU structures to avoid aarch64 stack
     // issues and undefined behavior from uninitialized memory
@@ -385,9 +379,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int ret_code = 0;
     int vsl_ret  = 0;
 
-    fprintf(stderr, "[DECODE:%d] before VPU_DecDecodeBuf\n", _decode_call_count);
     VPU_DecDecodeBuf(decoder->handle, &inData, &ret_code);
-    fprintf(stderr, "[DECODE:%d] after VPU_DecDecodeBuf ret_code=0x%x\n", _decode_call_count, ret_code);
 
     // If consumed but no output, use KICK mode to poll for output without
     // waiting. This avoids the 200ms timeout that occurs when the VPU input
@@ -395,7 +387,6 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int consumed = (ret_code & VPU_DEC_ONE_FRM_CONSUMED) ? 1 : 0;
     int output   = (ret_code & VPU_DEC_OUTPUT_DIS) ? 1 : 0;
     if (consumed && !output) {
-        fprintf(stderr, "[DECODE:%d] KICK mode: consumed=%d output=%d\n", _decode_call_count, consumed, output);
         int kick_config = VPU_DEC_IN_KICK;
         VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &kick_config);
 
@@ -404,9 +395,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
         VpuBufferNode* emptyData = calloc(1, sizeof(VpuBufferNode));
         int            kick_ret  = 0;
         if (emptyData) {
-            fprintf(stderr, "[DECODE:%d] before KICK VPU_DecDecodeBuf\n", _decode_call_count);
             VPU_DecDecodeBuf(decoder->handle, emptyData, &kick_ret);
-            fprintf(stderr, "[DECODE:%d] after KICK VPU_DecDecodeBuf kick_ret=0x%x\n", _decode_call_count, kick_ret);
             free(emptyData);
 
             // Merge KICK result with original
@@ -418,19 +407,16 @@ vsl_decode_frame(VSLDecoder*  decoder,
         // Reset to NORMAL mode for next call
         int normal_config = VPU_DEC_IN_NORMAL;
         VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &normal_config);
-        fprintf(stderr, "[DECODE:%d] KICK mode done\n", _decode_call_count);
     }
 
-    fprintf(stderr, "[DECODE:%d] checking flags\n", _decode_call_count);
+#ifndef NDEBUG
+    printf("%s: VPU_DecDecodeBuf ret code: %x\n", __FUNCTION__, ret_code);
+#endif
 
-    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) {
-        fprintf(stderr, "[DECODE:%d] RESOLUTION_CHANGED\n", _decode_call_count);
-        vsl_alloc_framebuf(decoder);
-    }
+    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) { vsl_alloc_framebuf(decoder); }
 
     // check init info
     if (ret_code & VPU_DEC_INIT_OK) {
-        fprintf(stderr, "[DECODE:%d] INIT_OK\n", _decode_call_count);
         // process init info
         VpuDecInitInfo* initInfo = calloc(sizeof(VpuDecInitInfo), 1);
         ret = VPU_DecGetInitialInfo(decoder->handle, initInfo);
@@ -464,9 +450,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
 
     if (ret_code & VPU_DEC_ONE_FRM_CONSUMED ||
         ret_code & VPU_DEC_NO_ENOUGH_INBUF) {
-        fprintf(stderr, "[DECODE:%d] before VPU_DecGetConsumedFrameInfo\n", _decode_call_count);
         ret = VPU_DecGetConsumedFrameInfo(decoder->handle, &decFrmLengthInfo);
-        fprintf(stderr, "[DECODE:%d] after VPU_DecGetConsumedFrameInfo ret=%d\n", _decode_call_count, ret);
         if (VPU_DEC_RET_SUCCESS != ret) {
             printf("%s: vpu get consumed frame info failure: ret=%d\n",
                    __FUNCTION__,
@@ -489,9 +473,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
     }
 
     if (ret_code & VPU_DEC_OUTPUT_DIS) {
-        fprintf(stderr, "[DECODE:%d] before VPU_DecGetOutputFrame\n", _decode_call_count);
         ret = VPU_DecGetOutputFrame(decoder->handle, &frameInfo);
-        fprintf(stderr, "[DECODE:%d] after VPU_DecGetOutputFrame ret=%d\n", _decode_call_count, ret);
         if (VPU_DEC_RET_SUCCESS != ret) {
             printf("%s: vpu get output frame failure: ret=%d\n",
                    __FUNCTION__,
@@ -535,7 +517,6 @@ vsl_decode_frame(VSLDecoder*  decoder,
         // https://www.nxp.com/docs/en/user-guide/i.MX_AA_Graphics_User's_Guide.pdf
         // G2D 2.5.1 Color space conversion from YUV to RGB
     }
-    fprintf(stderr, "[DECODE:%d] EXIT vsl_ret=0x%x\n", _decode_call_count, vsl_ret);
     return vsl_ret;
 }
 
