@@ -49,6 +49,8 @@ vsl_decoder_init(VSLDecoder* decoder, VSLDecoderCodec inputCodec)
     ret = VPU_DecGetMem(&decoder->phyMem);
     if (ret != VPU_DEC_RET_SUCCESS) {
         fprintf(stderr, "%s: VPU_DecGetMem failed: %d\n", __FUNCTION__, ret);
+        free(decoder->virtMem);
+        decoder->virtMem = NULL;
         free(sMemInfo);
         free(sDecOpenParam);
         return -1;
@@ -81,6 +83,8 @@ vsl_decoder_init(VSLDecoder* decoder, VSLDecoderCodec inputCodec)
     if (ret != VPU_DEC_RET_SUCCESS) {
         VPU_DecFreeMem(&decoder->phyMem);
         fprintf(stderr, "%s: VPU_DecOpen failed: %d\n", __FUNCTION__, ret);
+        free(decoder->virtMem);
+        decoder->virtMem = NULL;
         free(sMemInfo);
         free(sDecOpenParam);
         return -1;
@@ -391,18 +395,16 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int consumed = (ret_code & VPU_DEC_ONE_FRM_CONSUMED) ? 1 : 0;
     int output   = (ret_code & VPU_DEC_OUTPUT_DIS) ? 1 : 0;
     if (consumed && !output) {
-        // Use heap allocation for emptyData to avoid potential stack issues
-        // with VPU wrapper modifying the buffer structure
-        VpuBufferNode* emptyData = calloc(1, sizeof(VpuBufferNode));
-        int            kick_ret  = 0;
-        if (emptyData) {
-            VPU_DecDecodeBuf(decoder->handle, emptyData, &kick_ret);
-            free(emptyData);
+        // Use stack allocation for secondary decode poll (B-frame output check)
+        // This avoids malloc/free overhead in the hot path
+        VpuBufferNode emptyData;
+        memset(&emptyData, 0, sizeof(emptyData));
+        int kick_ret = 0;
+        VPU_DecDecodeBuf(decoder->handle, &emptyData, &kick_ret);
 
-            // Merge result with original
-            if (kick_ret & VPU_DEC_OUTPUT_DIS) {
-                ret_code |= VPU_DEC_OUTPUT_DIS;
-            }
+        // Merge result with original
+        if (kick_ret & VPU_DEC_OUTPUT_DIS) {
+            ret_code |= VPU_DEC_OUTPUT_DIS;
         }
     }
 

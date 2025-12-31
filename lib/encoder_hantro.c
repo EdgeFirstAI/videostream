@@ -133,7 +133,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
     ret = VPU_EncQueryMem(&sMemInfo);
     if (ret != VPU_ENC_RET_SUCCESS) {
         fprintf(stderr, "%s: VPU_EncQueryMem failed: %d\n", __FUNCTION__, ret);
-        return -1;
+        goto err_crop;
     }
 
     // we know what to expect, one phy (idx 1) and one virt (idx 0) block, check
@@ -145,7 +145,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
                 "%s: VPU_EncQueryMem returned unexpected memory block "
                 "layout.\n",
                 __FUNCTION__);
-        return -1;
+        goto err_crop;
     }
 
     sMemInfo.MemSubBlock[0].pVirtAddr =
@@ -157,7 +157,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
     ret = VPU_EncGetMem(&encoder->phyMem);
     if (ret != VPU_ENC_RET_SUCCESS) {
         fprintf(stderr, "%s: VPU_EncGetMem failed: %d\n", __FUNCTION__, ret);
-        return -1;
+        goto err_virtmem;
     }
 
     sMemInfo.MemSubBlock[1].pVirtAddr =
@@ -171,7 +171,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
                 "%s: unsupported output codec: %d\n",
                 __FUNCTION__,
                 encoder->outputFourcc);
-        return -1;
+        goto err_phymem;
     }
 
     sEncOpenParamSimp.eFormat = vpuCodec;
@@ -183,7 +183,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
                 "%s: unsupported input color format: %d\n",
                 __FUNCTION__,
                 inputFourcc);
-        return -1;
+        goto err_phymem;
     }
 
     sEncOpenParamSimp.nChromaInterleave = chromaInterleave;
@@ -241,7 +241,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
     ret = VPU_EncOpenSimp(&encoder->handle, &sMemInfo, &sEncOpenParamSimp);
     if (ret != VPU_ENC_RET_SUCCESS) {
         fprintf(stderr, "%s: VPU_EncOpenSimp failed: %d\n", __FUNCTION__, ret);
-        return -1;
+        goto err_phymem;
     }
 
     VpuEncInitInfo sEncInitInfo;
@@ -252,10 +252,24 @@ vsl_encoder_init(VSLEncoder*    encoder,
                 "%s: VPU_EncGetInitialInfo failed: %d\n",
                 __FUNCTION__,
                 ret);
-        return -1;
+        goto err_handle;
     }
 
     return 0;
+
+err_handle:
+    VPU_EncClose(encoder->handle);
+    encoder->handle = NULL;
+err_phymem:
+    VPU_EncFreeMem(&encoder->phyMem);
+    encoder->phyMem.nPhyAddr = 0;
+err_virtmem:
+    free(encoder->virtMem);
+    encoder->virtMem = NULL;
+err_crop:
+    free(encoder->cropRegion);
+    encoder->cropRegion = NULL;
+    return -1;
 }
 
 VSL_API
@@ -317,10 +331,10 @@ vsl_encode_frame(VSLEncoder*    encoder,
                                    cropRegion)) {
             return -1;
         }
-    } else if (cropRegion && cropRegion->width != encoder->cropRegion->width &&
-               cropRegion->height != encoder->cropRegion->height &&
-               cropRegion->x != encoder->cropRegion->x &&
-               cropRegion->y != encoder->cropRegion->y) {
+    } else if (cropRegion && (cropRegion->width != encoder->cropRegion->width ||
+               cropRegion->height != encoder->cropRegion->height ||
+               cropRegion->x != encoder->cropRegion->x ||
+               cropRegion->y != encoder->cropRegion->y)) {
         fprintf(stderr,
                 "Changing crop region is not supported for Hantro VC8000e "
                 "encoder!\n");
