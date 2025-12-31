@@ -173,7 +173,7 @@ insert_frame(VSLHost* host, VSLFrame* frame)
 
     if (frame_idx == -1) {
         VSLFrame** new_frames =
-            realloc(host->frames, 2 * host->n_frames * sizeof(VSLFrame));
+            realloc(host->frames, 2 * host->n_frames * sizeof(VSLFrame*));
         if (!new_frames) {
             errno = ENOMEM;
             return -1;
@@ -288,7 +288,7 @@ vsl_host_init(const char* path)
     }
 
     host->n_sockets = 1;
-    host->sockets = calloc(host->n_sockets, sizeof(struct socket_and_frames*));
+    host->sockets = calloc(host->n_sockets, sizeof(struct socket_and_frames));
 
     if (!host->sockets) {
         close(sock);
