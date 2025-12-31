@@ -104,7 +104,10 @@ vsl_decoder_init(VSLDecoder* decoder, VSLDecoderCodec inputCodec)
                 ret);
     }
 
-    config_param = VPU_DEC_IN_NORMAL;
+    // Use KICK mode for non-blocking operation. NORMAL mode has a ~200ms
+    // timeout which is too slow for 30fps real-time decoding. KICK mode
+    // returns immediately with whatever output is available.
+    config_param = VPU_DEC_IN_KICK;
     ret =
         VPU_DecConfig(&decoder->handle, VPU_DEC_CONF_INPUTTYPE, &config_param);
     if (ret != VPU_DEC_RET_SUCCESS) {
@@ -379,17 +382,15 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int ret_code = 0;
     int vsl_ret  = 0;
 
+    // Decoder is initialized in KICK mode for non-blocking operation.
+    // This returns immediately without the 200ms timeout of NORMAL mode.
     VPU_DecDecodeBuf(decoder->handle, &inData, &ret_code);
 
-    // If consumed but no output, use KICK mode to poll for output without
-    // waiting. This avoids the 200ms timeout that occurs when the VPU input
-    // buffer is empty after consuming a frame.
+    // If consumed but no output, poll again with empty buffer to check if
+    // output is ready (common with B-frames which need future reference frames)
     int consumed = (ret_code & VPU_DEC_ONE_FRM_CONSUMED) ? 1 : 0;
     int output   = (ret_code & VPU_DEC_OUTPUT_DIS) ? 1 : 0;
     if (consumed && !output) {
-        int kick_config = VPU_DEC_IN_KICK;
-        VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &kick_config);
-
         // Use heap allocation for emptyData to avoid potential stack issues
         // with VPU wrapper modifying the buffer structure
         VpuBufferNode* emptyData = calloc(1, sizeof(VpuBufferNode));
@@ -398,15 +399,11 @@ vsl_decode_frame(VSLDecoder*  decoder,
             VPU_DecDecodeBuf(decoder->handle, emptyData, &kick_ret);
             free(emptyData);
 
-            // Merge KICK result with original
+            // Merge result with original
             if (kick_ret & VPU_DEC_OUTPUT_DIS) {
                 ret_code |= VPU_DEC_OUTPUT_DIS;
             }
         }
-
-        // Reset to NORMAL mode for next call
-        int normal_config = VPU_DEC_IN_NORMAL;
-        VPU_DecConfig(decoder->handle, VPU_DEC_CONF_INPUTTYPE, &normal_config);
     }
 
 #ifndef NDEBUG
