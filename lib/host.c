@@ -431,13 +431,25 @@ vsl_host_post(VSLHost*  host,
             int64_t duration_us   = after_sendmsg - before_sendmsg;
 
             if (ret == -1) {
-                fprintf(stderr,
-                        "[TIMING][HOST] sendmsg to socket %d FAILED after %lld "
-                        "us: %s\n",
-                        i,
-                        (long long) duration_us,
-                        strerror(errno));
-                disconnect_client_index(host, i);
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Socket buffer full - client is busy, drop frame for this
+                    // client but don't disconnect. This is normal backpressure.
+#ifndef NDEBUG
+                    fprintf(stderr,
+                            "[HOST] sendmsg to socket %d: buffer full, dropping "
+                            "frame (client busy)\n",
+                            i);
+#endif
+                } else {
+                    // Real error - disconnect client
+                    fprintf(stderr,
+                            "[TIMING][HOST] sendmsg to socket %d FAILED after "
+                            "%lld us: %s\n",
+                            i,
+                            (long long) duration_us,
+                            strerror(errno));
+                    disconnect_client_index(host, i);
+                }
             } else if (duration_us > 1000) {
                 fprintf(stderr,
                         "[TIMING][HOST] sendmsg to socket %d took %lld us "
@@ -760,6 +772,19 @@ service_client(VSLHost* host, int sock)
 
     ssize_t ret = send(sock, &event, sizeof(event), 0);
     if (ret == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Socket buffer full - response couldn't be sent but we already
+            // processed the lock/unlock request. Set ENOMSG so caller doesn't
+            // disconnect the client. Client will timeout waiting for response
+            // and can retry the operation.
+#ifndef NDEBUG
+            fprintf(stderr,
+                    "%s send: buffer full, response dropped (client busy)\n",
+                    __FUNCTION__);
+#endif
+            errno = ENOMSG;
+            return -1;
+        }
         if (errno != ECONNRESET) {
 #ifndef NDEBUG
             fprintf(stderr,
