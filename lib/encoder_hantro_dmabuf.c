@@ -136,8 +136,11 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
                 "%s: DMA_BUF_IOCTL_PHYS failed: %s\n",
                 __FUNCTION__,
                 strerror(errno));
+        // Close handle and clear it to prevent double-close in vsl_frame_release
         close(frame->handle);
+        frame->handle = -1;
         free(frame->path);
+        frame->path = NULL;
         vsl_frame_release(frame);
         return NULL;
     }
@@ -163,8 +166,11 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
 
     if (map == MAP_FAILED) {
         fprintf(stderr, "%s: mmap failed: %s\n", __FUNCTION__, strerror(errno));
+        // Close handle and clear it to prevent double-close in vsl_frame_release
         close(frame->handle);
+        frame->handle = -1;
         free(frame->path);
+        frame->path = NULL;
         vsl_frame_release(frame);
         return NULL;
     }
