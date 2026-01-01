@@ -5,3 +5,4 @@ from .library import lib, version
 from .frame import Frame
 from .client import Client
 from .host import Host
+from .decoder import Decoder, DecoderCodec, CodecBackend, DecodeReturnCode

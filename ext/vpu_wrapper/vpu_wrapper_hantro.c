@@ -1303,6 +1303,14 @@ VPU_DecDecodeBuf(VpuDecHandle   InHandle,
     VpuDecHandleInternal* pVpuObj;
     VpuDecObj*            pObj;
     VpuDecRetCode         ret = VPU_DEC_RET_SUCCESS;
+
+    // Timing instrumentation
+    static int      vpu_frame_num = 0;
+    long long       t_start       = monotonic_time();
+    long long       t_getframe    = 0;
+    long long       t_processbuf  = 0;
+    long long       t_decode      = 0;
+
     if (InHandle == NULL) {
         VPU_ERROR("%s: failure: handle is null\n", __FUNCTION__);
         return VPU_DEC_RET_INVALID_HANDLE;
@@ -1312,10 +1320,24 @@ VPU_DecDecodeBuf(VpuDecHandle   InHandle,
     pObj    = &pVpuObj->obj;
 
     *pOutBufRetCode = 0;
+    vpu_frame_num++;
 
+    long long t0 = monotonic_time();
     VPU_DecGetFrame(pObj, pOutBufRetCode);
+    t_getframe = monotonic_time() - t0;
+
     if (*pOutBufRetCode & VPU_DEC_OUTPUT_DIS ||
         *pOutBufRetCode & VPU_DEC_OUTPUT_EOS) {
+        // Log getframe-only path (frame already available)
+        if (vpu_frame_num <= 10 || vpu_frame_num % 30 == 0 ||
+            t_getframe > 10000000) {
+            fprintf(stderr,
+                    "[VPU-TIMING] frame=%d getframe=%lldns (output ready) "
+                    "ret=0x%x\n",
+                    vpu_frame_num,
+                    t_getframe,
+                    *pOutBufRetCode);
+        }
         return VPU_DEC_RET_SUCCESS;
     }
 
@@ -1345,7 +1367,9 @@ VPU_DecDecodeBuf(VpuDecHandle   InHandle,
                 return VPU_DEC_RET_SUCCESS;
             }
         }
+        t0 = monotonic_time();
         VPU_DecProcessInBuf(pObj, pInData);
+        t_processbuf = monotonic_time() - t0;
         *pOutBufRetCode |= VPU_DEC_INPUT_USED;
 
         if (pObj->nBsBufLen < pObj->frame_size) {
@@ -1364,7 +1388,23 @@ VPU_DecDecodeBuf(VpuDecHandle   InHandle,
         VPU_ERROR("VPU_DecDecodeBuf bConsume VPU_DEC_INPUT_USED");
     }
 
+    t0  = monotonic_time();
     ret = VPU_DecDecode(pObj, pOutBufRetCode);
+    t_decode = monotonic_time() - t0;
+
+    // Log full decode path timing
+    long long t_total = monotonic_time() - t_start;
+    if (vpu_frame_num <= 10 || vpu_frame_num % 30 == 0 || t_total > 10000000) {
+        fprintf(stderr,
+                "[VPU-TIMING] frame=%d getframe=%lldns processbuf=%lldns "
+                "decode=%lldns total=%lldns ret=0x%x\n",
+                vpu_frame_num,
+                t_getframe,
+                t_processbuf,
+                t_decode,
+                t_total,
+                *pOutBufRetCode);
+    }
 
     if (!pObj->bSecureMode) return ret;
 

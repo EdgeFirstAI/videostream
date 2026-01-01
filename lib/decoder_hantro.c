@@ -7,12 +7,14 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define Align(ptr, align) \
     ((int) (((unsigned long) ptr + (align) - 1) / (align) * (align)))
 
 static int
-vsl_decoder_init(VSLDecoder* decoder, VSLDecoderCodec inputCodec)
+vsl_decoder_init_hantro(struct vsl_decoder_hantro* decoder,
+                        VSLDecoderCodec            inputCodec)
 {
     VpuDecRetCode    ret;
     VpuMemInfo*      sMemInfo      = calloc(sizeof(VpuMemInfo), 1);
@@ -125,13 +127,28 @@ vsl_decoder_init(VSLDecoder* decoder, VSLDecoderCodec inputCodec)
     return 0;
 }
 
-VSL_API
 VSLDecoder*
-vsl_decoder_create(VSLDecoderCodec inputCodec, int fps)
+vsl_decoder_create_hantro(uint32_t codec, int fps)
 {
-    VSLDecoder* decoder = (VSLDecoder*) calloc(1, sizeof(VSLDecoder));
+    // Convert fourcc to codec enum
+    VSLDecoderCodec inputCodec;
+    if (codec == VSL_FOURCC('H', '2', '6', '4')) {
+        inputCodec = VSL_DEC_H264;
+    } else if (codec == VSL_FOURCC('H', 'E', 'V', 'C')) {
+        inputCodec = VSL_DEC_HEVC;
+    } else {
+        fprintf(stderr,
+                "%s: unsupported codec: 0x%08x\n",
+                __FUNCTION__,
+                codec);
+        errno = EINVAL;
+        return NULL;
+    }
+
+    struct vsl_decoder_hantro* decoder =
+        calloc(1, sizeof(struct vsl_decoder_hantro));
     if (!decoder) {
-#ifndef DEBUG
+#ifndef NDEBUG
         fprintf(stderr,
                 "%s: decoder struct allocation failed: %s\n",
                 __FUNCTION__,
@@ -140,7 +157,8 @@ vsl_decoder_create(VSLDecoderCodec inputCodec, int fps)
         return NULL;
     }
 
-    decoder->fps = fps;
+    decoder->backend = VSL_CODEC_BACKEND_HANTRO;
+    decoder->fps     = fps;
 
     VpuDecRetCode  ret;
     VpuVersionInfo ver;
@@ -176,15 +194,15 @@ vsl_decoder_create(VSLDecoderCodec inputCodec, int fps)
 #endif
 
     // do not print vpu_wrapper version, no need since it's internal anyway
-    if (vsl_decoder_init(decoder, inputCodec)) {
+    if (vsl_decoder_init_hantro(decoder, inputCodec)) {
         free(decoder);
         return NULL;
     }
-    return decoder;
+    return (VSLDecoder*) decoder;
 }
 
 static void
-vsl_alloc_framebuf(VSLDecoder* decoder)
+vsl_alloc_framebuf_hantro(struct vsl_decoder_hantro* decoder)
 {
     VpuDecInitInfo initInfo;
     memset(&initInfo, 0, sizeof(initInfo));
@@ -336,18 +354,18 @@ vsl_alloc_framebuf(VSLDecoder* decoder)
 #endif
 }
 
-struct frame_cleanup_data {
-    VSLDecoder*        decoder;
-    VpuDecOutFrameInfo frame_info;
+struct hantro_frame_cleanup_data {
+    struct vsl_decoder_hantro* decoder;
+    VpuDecOutFrameInfo         frame_info;
 };
 
-void
-frame_cleanup(VSLFrame* frame)
+static void
+hantro_frame_cleanup(VSLFrame* frame)
 {
     if (!frame) { return; }
     if (!frame->userptr) { return; }
-    struct frame_cleanup_data* _data =
-        (struct frame_cleanup_data*) frame->userptr;
+    struct hantro_frame_cleanup_data* _data =
+        (struct hantro_frame_cleanup_data*) frame->userptr;
     VpuDecRetCode ret =
         VPU_DecOutFrameDisplayed(_data->decoder->handle,
                                  _data->frame_info.pDisplayFrameBuf);
@@ -359,18 +377,38 @@ frame_cleanup(VSLFrame* frame)
     }
 }
 
-VSLDecoderRetCode
-vsl_decode_frame(VSLDecoder*  decoder,
-                 const void*  data,
-                 unsigned int data_length,
-                 size_t*      bytes_used,
-                 VSLFrame**   output_frame)
+// Timing helper for decode instrumentation
+static inline int64_t
+decode_timestamp_us(void)
 {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
+
+VSLDecoderRetCode
+vsl_decode_frame_hantro(VSLDecoder*  decoder_,
+                        const void*  data,
+                        unsigned int data_length,
+                        size_t*      bytes_used,
+                        VSLFrame**   output_frame)
+{
+    struct vsl_decoder_hantro* decoder =
+        (struct vsl_decoder_hantro*) decoder_;
     VpuDecRetCode         ret;
     VpuDecOutFrameInfo    frameInfo;
     VpuDecFrameLengthInfo decFrmLengthInfo;
     VpuBufferNode         inData;
     int                   totalDecConsumedBytes = 0; // stuffer + frame
+
+    // Timing instrumentation
+    int64_t t_start      = decode_timestamp_us();
+    int64_t t_decode1    = 0;
+    int64_t t_decode2    = 0;
+    int64_t t_getinfo    = 0;
+    int64_t t_getoutput  = 0;
+    static int frame_num = 0;
+    frame_num++;
 
     // Initialize all stack-allocated VPU structures to avoid aarch64 stack
     // issues and undefined behavior from uninitialized memory
@@ -386,9 +424,10 @@ vsl_decode_frame(VSLDecoder*  decoder,
     int ret_code = 0;
     int vsl_ret  = 0;
 
-    // Decoder is initialized in KICK mode for non-blocking operation.
-    // This returns immediately without the 200ms timeout of NORMAL mode.
+    // First VPU_DecDecodeBuf call
+    int64_t t0 = decode_timestamp_us();
     VPU_DecDecodeBuf(decoder->handle, &inData, &ret_code);
+    t_decode1 = decode_timestamp_us() - t0;
 
     // If consumed but no output, poll again with empty buffer to check if
     // output is ready (common with B-frames which need future reference frames)
@@ -400,7 +439,9 @@ vsl_decode_frame(VSLDecoder*  decoder,
         VpuBufferNode emptyData;
         memset(&emptyData, 0, sizeof(emptyData));
         int kick_ret = 0;
+        t0           = decode_timestamp_us();
         VPU_DecDecodeBuf(decoder->handle, &emptyData, &kick_ret);
+        t_decode2 = decode_timestamp_us() - t0;
 
         // Merge result with original
         if (kick_ret & VPU_DEC_OUTPUT_DIS) {
@@ -408,11 +449,26 @@ vsl_decode_frame(VSLDecoder*  decoder,
         }
     }
 
+    // Always print timing for first 10 frames, then every 30th frame
+    if (frame_num <= 10 || frame_num % 30 == 0 || t_decode1 > 10000) {
+        fprintf(stderr,
+                "[DECODE-TIMING] frame=%d decode1=%lldus decode2=%lldus "
+                "ret=0x%x consumed=%d output=%d\n",
+                frame_num,
+                (long long) t_decode1,
+                (long long) t_decode2,
+                ret_code,
+                consumed,
+                output);
+    }
+
 #ifndef NDEBUG
     printf("%s: VPU_DecDecodeBuf ret code: %x\n", __FUNCTION__, ret_code);
 #endif
 
-    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) { vsl_alloc_framebuf(decoder); }
+    if (ret_code & VPU_DEC_RESOLUTION_CHANGED) {
+        vsl_alloc_framebuf_hantro(decoder);
+    }
 
     // check init info
     if (ret_code & VPU_DEC_INIT_OK) {
@@ -442,7 +498,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
         decoder->cropRegion.width  = initInfo->PicCropRect.nRight;
         decoder->cropRegion.height = initInfo->PicCropRect.nBottom;
         decoder->outputFourcc      = VSL_FOURCC('N', 'V', '1', '2');
-        vsl_alloc_framebuf(decoder);
+        vsl_alloc_framebuf_hantro(decoder);
         vsl_ret |= VSL_DEC_INIT_INFO;
         free(initInfo);
     }
@@ -488,8 +544,8 @@ vsl_decode_frame(VSLDecoder*  decoder,
                frameInfo.pDisplayFrameBuf->nIonFd);
 #endif
 
-        struct frame_cleanup_data* frame_clean_data =
-            calloc(sizeof(struct frame_cleanup_data), 1);
+        struct hantro_frame_cleanup_data* frame_clean_data =
+            calloc(sizeof(struct hantro_frame_cleanup_data), 1);
         frame_clean_data->decoder    = decoder;
         frame_clean_data->frame_info = frameInfo;
         VSLFrame* out                = vsl_frame_init(decoder->outWidth,
@@ -497,7 +553,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
                                        0,
                                        decoder->outputFourcc,
                                        frame_clean_data,
-                                       frame_cleanup);
+                                       hantro_frame_cleanup);
         out->handle                  = frameInfo.pDisplayFrameBuf->nIonFd;
         out->info.height             = decoder->outHeight;
         out->info.width              = decoder->outWidth;
@@ -519,10 +575,11 @@ vsl_decode_frame(VSLDecoder*  decoder,
     return vsl_ret;
 }
 
-VSL_API
 int
-vsl_decoder_release(VSLDecoder* decoder)
+vsl_decoder_release_hantro(VSLDecoder* decoder_)
 {
+    struct vsl_decoder_hantro* decoder =
+        (struct vsl_decoder_hantro*) decoder_;
     VpuDecRetCode vpuRet;
     int           ret = 0;
 
@@ -562,23 +619,27 @@ vsl_decoder_release(VSLDecoder* decoder)
     return ret;
 }
 
-VSL_API
+// Accessor functions for Hantro decoder
 int
-vsl_decoder_width(const VSLDecoder* decoder)
+vsl_decoder_width_hantro(const VSLDecoder* decoder_)
 {
+    const struct vsl_decoder_hantro* decoder =
+        (const struct vsl_decoder_hantro*) decoder_;
     return decoder->outWidth;
 }
 
-VSL_API
 int
-vsl_decoder_height(const VSLDecoder* decoder)
+vsl_decoder_height_hantro(const VSLDecoder* decoder_)
 {
+    const struct vsl_decoder_hantro* decoder =
+        (const struct vsl_decoder_hantro*) decoder_;
     return decoder->outHeight;
 }
 
-VSL_API
 VSLRect
-vsl_decoder_crop(const VSLDecoder* decoder)
+vsl_decoder_crop_hantro(const VSLDecoder* decoder_)
 {
+    const struct vsl_decoder_hantro* decoder =
+        (const struct vsl_decoder_hantro*) decoder_;
     return decoder->cropRegion;
 }

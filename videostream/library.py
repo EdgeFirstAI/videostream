@@ -220,6 +220,26 @@ def load_symbols(lib: CDLL):
     lib.vsl_frame_wait.argtypes = [c_void_p, c_int64]
     lib.vsl_frame_wait.restype = c_void_p
 
+    # Decoder API
+    lib.vsl_decoder_create.argtypes = [c_uint32, c_int]
+    lib.vsl_decoder_create.restype = c_void_p
+
+    lib.vsl_decoder_create_ex.argtypes = [c_uint32, c_int, c_uint32]
+    lib.vsl_decoder_create_ex.restype = c_void_p
+
+    lib.vsl_decoder_release.argtypes = [c_void_p]
+    lib.vsl_decoder_release.restype = c_int
+
+    lib.vsl_decoder_width.argtypes = [c_void_p]
+    lib.vsl_decoder_width.restype = c_int
+
+    lib.vsl_decoder_height.argtypes = [c_void_p]
+    lib.vsl_decoder_height.restype = c_int
+
+    lib.vsl_decode_frame.argtypes = [
+        c_void_p, c_void_p, c_uint32, POINTER(c_size_t), POINTER(c_void_p)]
+    lib.vsl_decode_frame.restype = c_uint32
+
 
 if 'lib' not in locals():
     lib = load_library()

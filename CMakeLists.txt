@@ -48,6 +48,8 @@ if (UNIX AND NOT APPLE)
     option(ENABLE_G2D "Enable G2D for frame conversion acceleration" ON)
     option(ENABLE_DMABUF "Enable Linux dmabuf support" ON)
     option(ENABLE_VPU "Enable VPU for frame encoding acceleration" ON)
+    option(ENABLE_V4L2_CODEC "Enable V4L2 mem2mem codec backend" ON)
+    option(ENABLE_HANTRO_CODEC "Enable Hantro libcodec.so codec backend" ON)
 endif()
 
 # OpenMP support
@@ -177,16 +179,42 @@ find_package(Threads REQUIRED)
 # External dependencies
 add_subdirectory(ext/stb)
 
-# VPU encoder/decoder support (optional)
-if(ENABLE_VPU)
+# Codec backend support
+# Always include the unified decoder dispatch and backend detection
+set(CODEC_SRCS
+    lib/codec_backend.h
+    lib/codec_backend.c
+    lib/decoder.c
+)
+
+# V4L2 mem2mem codec backend (optional)
+if(ENABLE_V4L2_CODEC)
+    list(APPEND CODEC_SRCS
+        lib/decoder_v4l2.h
+        lib/decoder_v4l2.c
+    )
+endif()
+
+# Hantro/libcodec.so codec backend (optional, requires VPU wrapper)
+if(ENABLE_HANTRO_CODEC AND ENABLE_VPU)
     add_subdirectory(ext/vpu_wrapper)
-    set(ENCODER_SRCS
+    list(APPEND CODEC_SRCS
         lib/decoder_hantro.c
         lib/decoder_hantro.h
         lib/decoder_hantro_dmabuf.c
         lib/encoder_hantro.c
         lib/encoder_hantro.h
-        lib/encoder_hantro_dmabuf.c)
+        lib/encoder_hantro_dmabuf.c
+    )
+    set(ENCODER_LIBS vpu_wrapper)
+elseif(ENABLE_VPU AND NOT ENABLE_HANTRO_CODEC)
+    # Legacy: VPU enabled but Hantro codec disabled - still build wrapper for encoder
+    add_subdirectory(ext/vpu_wrapper)
+    list(APPEND CODEC_SRCS
+        lib/encoder_hantro.c
+        lib/encoder_hantro.h
+        lib/encoder_hantro_dmabuf.c
+    )
     set(ENCODER_LIBS vpu_wrapper)
 endif()
 
@@ -203,7 +231,7 @@ add_library(videostream
     lib/g2d.c
     lib/v4l2.c
     lib/v4l2.h
-    ${ENCODER_SRCS}
+    ${CODEC_SRCS}
 )
 
 target_include_directories(videostream
@@ -243,6 +271,14 @@ endif()
 
 if(ENABLE_DMABUF)
     target_compile_definitions(videostream PRIVATE ENABLE_DMABUF)
+endif()
+
+if(ENABLE_V4L2_CODEC)
+    target_compile_definitions(videostream PRIVATE ENABLE_V4L2_CODEC)
+endif()
+
+if(ENABLE_HANTRO_CODEC AND ENABLE_VPU)
+    target_compile_definitions(videostream PRIVATE ENABLE_HANTRO_CODEC)
 endif()
 
 # Set library version
