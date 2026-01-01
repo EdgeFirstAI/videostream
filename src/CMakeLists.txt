@@ -37,5 +37,11 @@ if(ENABLE_VPU)
     target_link_libraries(vsl-test-encoder-keyframes-4k-tiles videostream m)
 endif(ENABLE_VPU)
 
+# Decoder benchmark - works with V4L2 or Hantro backend
+if(ENABLE_V4L2_CODEC OR ENABLE_HANTRO_CODEC)
+    add_executable(vsl-benchmark-decoder benchmark_decoder.c)
+    target_link_libraries(vsl-benchmark-decoder videostream m)
+endif()
+
 install(TARGETS vsl-camhost COMPONENT runtime RUNTIME DESTINATION bin)
 install(FILES camhost.c COMPONENT samples DESTINATION ${SAMPLES_INSTALL_DIR})

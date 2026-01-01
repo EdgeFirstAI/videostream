@@ -4,10 +4,20 @@
 #ifndef HANTRO_DECODER_H
 #define HANTRO_DECODER_H
 
+#include "codec_backend.h"
 #include "videostream.h"
 #include "vpu_wrapper.h"
 
-struct vsl_decoder {
+/**
+ * Hantro VPU decoder internal state.
+ *
+ * Uses libcodec.so via vpu_wrapper for hardware decoding.
+ * This structure is used when VSL_CODEC_BACKEND_HANTRO is selected.
+ */
+struct vsl_decoder_hantro {
+    // Backend type - MUST be first field for dispatch logic
+    VSLCodecBackend backend;
+
     int             outWidth;
     int             outHeight;
     int             fps;
@@ -50,5 +60,59 @@ vsl_decoder_free_frame_buffers_dmabuf(int    bufNum,
                                       int    mvSize,
                                       int*   dmabuf_fds,
                                       void** dmabuf_maps);
+
+/**
+ * Create a Hantro/libcodec.so-based decoder instance.
+ *
+ * @param codec Codec type (VSL_DEC_H264 or VSL_DEC_HEVC)
+ * @param fps Frame rate hint for buffer management
+ * @return Decoder instance or NULL on failure
+ */
+VSLDecoder*
+vsl_decoder_create_hantro(uint32_t codec, int fps);
+
+/**
+ * Release Hantro decoder and all associated resources.
+ *
+ * @param decoder Decoder instance to release
+ * @return 0 on success, -1 on error
+ */
+int
+vsl_decoder_release_hantro(VSLDecoder* decoder);
+
+/**
+ * Decode a frame using Hantro VPU.
+ *
+ * @param decoder Decoder instance
+ * @param data Compressed frame data
+ * @param data_length Length of compressed data
+ * @param bytes_used Output: bytes consumed from data
+ * @param output_frame Output: decoded frame (if available)
+ * @return VSLDecoderRetCode status
+ */
+VSLDecoderRetCode
+vsl_decode_frame_hantro(VSLDecoder*  decoder,
+                        const void*  data,
+                        unsigned int data_length,
+                        size_t*      bytes_used,
+                        VSLFrame**   output_frame);
+
+/**
+ * Get decoded frame width.
+ */
+int
+vsl_decoder_width_hantro(const VSLDecoder* decoder);
+
+/**
+ * Get decoded frame height.
+ */
+int
+vsl_decoder_height_hantro(const VSLDecoder* decoder);
+
+/**
+ * Get crop region.
+ */
+VSLRect
+vsl_decoder_crop_hantro(const VSLDecoder* decoder);
 
 #endif // HANTRO_DECODER_H

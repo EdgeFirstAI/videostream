@@ -438,8 +438,13 @@ static int
 frame_alloc_dma(VSLFrame* frame)
 {
     frame->info.offset = 0;
-    frame->info.size   = frame_stride(frame->info.fourcc, frame->info.width) *
-                       frame->info.height;
+
+    // If size is already set (e.g., by V4L2 decoder for driver alignment),
+    // respect it. Otherwise calculate from dimensions.
+    if (frame->info.size == 0) {
+        frame->info.size = frame_stride(frame->info.fourcc, frame->info.width) *
+                           frame->info.height;
+    }
 
 #ifndef NDEBUG
     printf("%s path: %s size: %zu\n",
