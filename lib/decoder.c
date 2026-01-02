@@ -130,9 +130,7 @@ vsl_decode_frame(VSLDecoder*  decoder,
 #endif
 
     default:
-        fprintf(stderr,
-                "vsl_decode_frame: unknown backend %d\n",
-                backend);
+        fprintf(stderr, "vsl_decode_frame: unknown backend %d\n", backend);
         errno = EINVAL;
         return VSL_DEC_ERR;
     }
@@ -142,9 +140,7 @@ VSL_API
 int
 vsl_decoder_release(VSLDecoder* decoder)
 {
-    if (!decoder) {
-        return 0;
-    }
+    if (!decoder) { return 0; }
 
     VSLCodecBackend backend = get_decoder_backend(decoder);
 
@@ -160,9 +156,7 @@ vsl_decoder_release(VSLDecoder* decoder)
 #endif
 
     default:
-        fprintf(stderr,
-                "vsl_decoder_release: unknown backend %d\n",
-                backend);
+        fprintf(stderr, "vsl_decoder_release: unknown backend %d\n", backend);
         errno = EINVAL;
         return -1;
     }
@@ -172,9 +166,7 @@ VSL_API
 int
 vsl_decoder_width(const VSLDecoder* decoder)
 {
-    if (!decoder) {
-        return 0;
-    }
+    if (!decoder) { return 0; }
 
     VSLCodecBackend backend = get_decoder_backend(decoder);
 
@@ -198,9 +190,7 @@ VSL_API
 int
 vsl_decoder_height(const VSLDecoder* decoder)
 {
-    if (!decoder) {
-        return 0;
-    }
+    if (!decoder) { return 0; }
 
     VSLCodecBackend backend = get_decoder_backend(decoder);
 
@@ -226,9 +216,7 @@ vsl_decoder_crop(const VSLDecoder* decoder)
 {
     VSLRect empty = {0, 0, 0, 0};
 
-    if (!decoder) {
-        return empty;
-    }
+    if (!decoder) { return empty; }
 
     VSLCodecBackend backend = get_decoder_backend(decoder);
 

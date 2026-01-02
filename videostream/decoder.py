@@ -226,7 +226,8 @@ class Decoder:
 
         frame = None
         if output_frame.value:
-            # Create a Frame from the raw pointer (Frame constructor accepts ptr=)
+            # Create a Frame from the raw pointer (Frame constructor accepts
+            # ptr=)
             frame = Frame(0, 0, 0, ptr=output_frame.value)
 
         return code, bytes_used.value, frame

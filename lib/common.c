@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 #ifndef _WIN32
 #include <netinet/in.h>
@@ -16,6 +17,14 @@
 
 #define DEFAULT_FRAMERATE_NUM 30
 #define DEFAULT_FRAMERATE_DEN 1
+
+int64_t
+vsl_timestamp_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t) ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
 
 int
 socket_blocking(SOCKET sock, int blocking)

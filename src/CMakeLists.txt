@@ -23,7 +23,8 @@ if(GSTREAMER_FOUND)
     target_include_directories(vsl-record PRIVATE ${GSTREAMER_INCLUDE_DIRS})
 endif()
 
-if(ENABLE_VPU)
+# Encoder/decoder tests - work with V4L2 (portable) or Hantro backend
+if(ENABLE_V4L2_CODEC OR ENABLE_HANTRO_CODEC)
     add_executable(vsl-test-encoder test_encoder.c)
     target_link_libraries(vsl-test-encoder videostream m)
 
@@ -35,12 +36,18 @@ if(ENABLE_VPU)
 
     add_executable(vsl-test-encoder-keyframes-4k-tiles test_encoder_keyframes_4k_tiles.c)
     target_link_libraries(vsl-test-encoder-keyframes-4k-tiles videostream m)
-endif(ENABLE_VPU)
+endif()
 
 # Decoder benchmark - works with V4L2 or Hantro backend
 if(ENABLE_V4L2_CODEC OR ENABLE_HANTRO_CODEC)
     add_executable(vsl-benchmark-decoder benchmark_decoder.c)
     target_link_libraries(vsl-benchmark-decoder videostream m)
+endif()
+
+# E2E pipeline benchmark - works with V4L2 (portable) or Hantro backend
+if(ENABLE_V4L2_CODEC OR ENABLE_HANTRO_CODEC)
+    add_executable(vsl-benchmark-e2e benchmark_e2e.c)
+    target_link_libraries(vsl-benchmark-e2e videostream m)
 endif()
 
 install(TARGETS vsl-camhost COMPONENT runtime RUNTIME DESTINATION bin)

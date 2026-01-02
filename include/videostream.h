@@ -1289,6 +1289,28 @@ VSLEncoder*
 vsl_encoder_create(VSLEncoderProfile profile, uint32_t outputFourcc, int fps);
 
 /**
+ * @brief Creates VSLEncoder instance with explicit backend selection
+ *
+ * Extended version of vsl_encoder_create() that allows selecting a specific
+ * codec backend. Use this when you need to force V4L2 or Hantro backend.
+ *
+ * @param profile VSLEncoderProfile determining encode quality
+ * @param outputFourcc fourcc code defining the codec (H264 or HEVC)
+ * @param fps output stream fps
+ * @param backend Which backend to use (VSL_CODEC_BACKEND_AUTO, _V4L2, _HANTRO)
+ * @return VSLEncoder* new encoder instance, or NULL if backend unavailable
+ *
+ * @since 2.0
+ */
+VSL_AVAILABLE_SINCE_2_0
+VSL_API
+VSLEncoder*
+vsl_encoder_create_ex(VSLEncoderProfile profile,
+                      uint32_t          outputFourcc,
+                      int               fps,
+                      VSLCodecBackend   backend);
+
+/**
  * @brief Destroys VSLEncoder instance
  *
  * Frees all resources associated with the encoder, including hardware

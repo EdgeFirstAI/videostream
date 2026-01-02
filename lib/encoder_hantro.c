@@ -2,14 +2,13 @@
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
 
 #include "encoder_hantro.h"
+#include "common.h"
 #include "frame.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-
-#define Align(ptr, align) \
-    (((unsigned long) ptr + (align) - 1) / (align) * (align))
 
 static int
 vpu_codec_from_fourcc(uint32_t fourcc)
@@ -52,13 +51,15 @@ vpu_color_from_fourcc(uint32_t fourcc, int* chromaInterleave)
     }
 }
 
-VSL_API
 VSLEncoder*
-vsl_encoder_create(VSLEncoderProfile profile, uint32_t outputFourcc, int fps)
+vsl_encoder_create_hantro(VSLEncoderProfile profile,
+                          uint32_t          outputFourcc,
+                          int               fps)
 {
-    VSLEncoder* encoder = (VSLEncoder*) calloc(1, sizeof(VSLEncoder));
+    struct vsl_encoder_hantro* encoder =
+        calloc(1, sizeof(struct vsl_encoder_hantro));
     if (!encoder) {
-#ifndef DEBUG
+#ifndef NDEBUG
         fprintf(stderr,
                 "%s: encoder struct allocation failed: %s\n",
                 __FUNCTION__,
@@ -67,8 +68,9 @@ vsl_encoder_create(VSLEncoderProfile profile, uint32_t outputFourcc, int fps)
         return NULL;
     }
 
+    encoder->backend      = VSL_CODEC_BACKEND_HANTRO;
     encoder->fps          = fps;
-    encoder->outputFourcc = outputFourcc;
+    encoder->output_fourcc = outputFourcc;
     encoder->profile      = profile;
 
     VpuEncRetCode  ret;
@@ -106,15 +108,15 @@ vsl_encoder_create(VSLEncoderProfile profile, uint32_t outputFourcc, int fps)
 
     // do not print vpu_wrapper version, no need since it's internal anyway
 
-    return encoder;
+    return (VSLEncoder*) encoder;
 }
 
 static int
-vsl_encoder_init(VSLEncoder*    encoder,
-                 uint32_t       inputFourcc,
-                 int            inWidth,
-                 int            inHeight,
-                 const VSLRect* cropRegion)
+vsl_encoder_init_hantro(struct vsl_encoder_hantro* encoder,
+                        uint32_t                   inputFourcc,
+                        int                        inWidth,
+                        int                        inHeight,
+                        const VSLRect*             cropRegion)
 {
     VpuEncRetCode       ret;
     VpuMemInfo          sMemInfo;
@@ -124,10 +126,10 @@ vsl_encoder_init(VSLEncoder*    encoder,
     memset(&sMemInfo, 0, sizeof(sMemInfo));
     memset(&sEncOpenParamSimp, 0, sizeof(sEncOpenParamSimp));
 
-    encoder->inputFourcc = inputFourcc;
+    encoder->input_fourcc = inputFourcc;
     if (cropRegion) {
-        encoder->cropRegion = calloc(1, sizeof(VSLRect));
-        memcpy(encoder->cropRegion, cropRegion, sizeof(VSLRect));
+        encoder->crop_region = calloc(1, sizeof(VSLRect));
+        memcpy(encoder->crop_region, cropRegion, sizeof(VSLRect));
     }
 
     ret = VPU_EncQueryMem(&sMemInfo);
@@ -150,27 +152,27 @@ vsl_encoder_init(VSLEncoder*    encoder,
 
     sMemInfo.MemSubBlock[0].pVirtAddr =
         calloc(1, sMemInfo.MemSubBlock[0].nSize);
-    encoder->virtMem = sMemInfo.MemSubBlock[0].pVirtAddr;
+    encoder->virt_mem = sMemInfo.MemSubBlock[0].pVirtAddr;
 
-    encoder->phyMem.nSize = sMemInfo.MemSubBlock[1].nSize;
+    encoder->phy_mem.nSize = sMemInfo.MemSubBlock[1].nSize;
 
-    ret = VPU_EncGetMem(&encoder->phyMem);
+    ret = VPU_EncGetMem(&encoder->phy_mem);
     if (ret != VPU_ENC_RET_SUCCESS) {
         fprintf(stderr, "%s: VPU_EncGetMem failed: %d\n", __FUNCTION__, ret);
         goto err_virtmem;
     }
 
     sMemInfo.MemSubBlock[1].pVirtAddr =
-        (unsigned char*) encoder->phyMem.nVirtAddr;
+        (unsigned char*) encoder->phy_mem.nVirtAddr;
     sMemInfo.MemSubBlock[1].pPhyAddr =
-        (unsigned char*) encoder->phyMem.nPhyAddr;
+        (unsigned char*) encoder->phy_mem.nPhyAddr;
 
-    int vpuCodec = vpu_codec_from_fourcc(encoder->outputFourcc);
+    int vpuCodec = vpu_codec_from_fourcc(encoder->output_fourcc);
     if (vpuCodec == -1) {
         fprintf(stderr,
                 "%s: unsupported output codec: %d\n",
                 __FUNCTION__,
-                encoder->outputFourcc);
+                encoder->output_fourcc);
         goto err_phymem;
     }
 
@@ -192,17 +194,17 @@ vsl_encoder_init(VSLEncoder*    encoder,
     if (cropRegion) {
         sEncOpenParamSimp.nOrigWidth  = inWidth;
         sEncOpenParamSimp.nOrigHeight = inHeight;
-        sEncOpenParamSimp.nPicWidth   = encoder->cropRegion->width;
-        sEncOpenParamSimp.nPicHeight  = encoder->cropRegion->height;
-        sEncOpenParamSimp.nXOffset    = encoder->cropRegion->x;
-        sEncOpenParamSimp.nYOffset    = encoder->cropRegion->y;
-        encoder->outWidth             = encoder->cropRegion->width;
-        encoder->outHeight            = encoder->cropRegion->height;
+        sEncOpenParamSimp.nPicWidth   = encoder->crop_region->width;
+        sEncOpenParamSimp.nPicHeight  = encoder->crop_region->height;
+        sEncOpenParamSimp.nXOffset    = encoder->crop_region->x;
+        sEncOpenParamSimp.nYOffset    = encoder->crop_region->y;
+        encoder->out_width             = encoder->crop_region->width;
+        encoder->out_height            = encoder->crop_region->height;
     } else {
         sEncOpenParamSimp.nPicWidth  = inWidth;
         sEncOpenParamSimp.nPicHeight = inHeight;
-        encoder->outWidth            = inWidth;
-        encoder->outHeight           = inHeight;
+        encoder->out_width            = inWidth;
+        encoder->out_height           = inHeight;
     }
 
     sEncOpenParamSimp.nFrameRate = encoder->fps;
@@ -211,7 +213,7 @@ vsl_encoder_init(VSLEncoder*    encoder,
     sEncOpenParamSimp.nBitRate = 0;
     sEncOpenParamSimp.nIntraQP = 0;
 
-    switch (encoder->outputFourcc) {
+    switch (encoder->output_fourcc) {
     case VSL_FOURCC('H', '2', '6', '4'):
     case VSL_FOURCC('H', 'E', 'V', 'C'):
         switch (encoder->profile) {
@@ -261,30 +263,31 @@ err_handle:
     VPU_EncClose(encoder->handle);
     encoder->handle = NULL;
 err_phymem:
-    VPU_EncFreeMem(&encoder->phyMem);
-    encoder->phyMem.nPhyAddr = 0;
+    VPU_EncFreeMem(&encoder->phy_mem);
+    encoder->phy_mem.nPhyAddr = 0;
 err_virtmem:
-    free(encoder->virtMem);
-    encoder->virtMem = NULL;
+    free(encoder->virt_mem);
+    encoder->virt_mem = NULL;
 err_crop:
-    free(encoder->cropRegion);
-    encoder->cropRegion = NULL;
+    free(encoder->crop_region);
+    encoder->crop_region = NULL;
     return -1;
 }
 
-VSL_API
 void
-vsl_encoder_release(VSLEncoder* enc)
+vsl_encoder_release_hantro(VSLEncoder* encoder)
 {
-    if (!enc) { return; }
+    if (!encoder) { return; }
 
-    if (enc->phyMem.nPhyAddr) { VPU_EncFreeMem(&enc->phyMem); }
+    struct vsl_encoder_hantro* enc = (struct vsl_encoder_hantro*) encoder;
+
+    if (enc->phy_mem.nPhyAddr) { VPU_EncFreeMem(&enc->phy_mem); }
 
     if (enc->handle) { VPU_EncClose(enc->handle); }
 
-    if (enc->virtMem) { free(enc->virtMem); }
+    if (enc->virt_mem) { free(enc->virt_mem); }
 
-    if (enc->cropRegion) { free(enc->cropRegion); }
+    if (enc->crop_region) { free(enc->crop_region); }
 
     free(enc);
 }
@@ -307,34 +310,36 @@ vsl_encoder_frame_cleanup(VSLFrame* frame)
     free(memDesc);
 }
 
-VSL_API
 int
-vsl_encode_frame(VSLEncoder*    encoder,
-                 VSLFrame*      source,
-                 VSLFrame*      destination,
-                 const VSLRect* cropRegion,
-                 int*           keyframe)
+vsl_encode_frame_hantro(VSLEncoder*    encoder,
+                        VSLFrame*      source,
+                        VSLFrame*      destination,
+                        const VSLRect* cropRegion,
+                        int*           keyframe)
 {
     if (!encoder || !source || !destination) {
         errno = EINVAL;
         return -1;
     }
 
+    struct vsl_encoder_hantro* enc = (struct vsl_encoder_hantro*) encoder;
+
     // Delayed initialization
     // Due to nature of vc8000e encoder configuration schema
-    if (!encoder->handle) // encoder not initialized
+    if (!enc->handle) // encoder not initialized
     {
-        if (-1 == vsl_encoder_init(encoder,
-                                   source->info.fourcc,
-                                   source->info.width,
-                                   source->info.height,
-                                   cropRegion)) {
+        if (-1 == vsl_encoder_init_hantro(enc,
+                                          source->info.fourcc,
+                                          source->info.width,
+                                          source->info.height,
+                                          cropRegion)) {
             return -1;
         }
-    } else if (cropRegion && (cropRegion->width != encoder->cropRegion->width ||
-               cropRegion->height != encoder->cropRegion->height ||
-               cropRegion->x != encoder->cropRegion->x ||
-               cropRegion->y != encoder->cropRegion->y)) {
+    } else if (cropRegion && enc->crop_region &&
+               (cropRegion->width != enc->crop_region->width ||
+                cropRegion->height != enc->crop_region->height ||
+                cropRegion->x != enc->crop_region->x ||
+                cropRegion->y != enc->crop_region->y)) {
         fprintf(stderr,
                 "Changing crop region is not supported for Hantro VC8000e "
                 "encoder!\n");
@@ -343,7 +348,7 @@ vsl_encode_frame(VSLEncoder*    encoder,
     }
 
     // check source fourcc matches with encoder configuration
-    if (source->info.fourcc != encoder->inputFourcc) {
+    if (source->info.fourcc != enc->input_fourcc) {
         fprintf(stderr,
                 "Changing input frame color format is not supported for Hantro "
                 "VC8000e encoder!\n");
@@ -352,7 +357,7 @@ vsl_encode_frame(VSLEncoder*    encoder,
     }
 
     // check destination fourcc matches with encoder configuration
-    if (destination->info.fourcc != encoder->outputFourcc) {
+    if (destination->info.fourcc != enc->output_fourcc) {
         fprintf(stderr,
                 "Changing output frame codec is not supported for Hantro "
                 "VC8000e encoder!\n");
@@ -376,9 +381,9 @@ vsl_encode_frame(VSLEncoder*    encoder,
     // Use memset to avoid aarch64 stack issues with designated initializers
     VpuEncEncParam sEncEncParam;
     memset(&sEncEncParam, 0, sizeof(sEncEncParam));
-    sEncEncParam.nPicWidth   = encoder->outWidth;
-    sEncEncParam.nPicHeight  = encoder->outHeight;
-    sEncEncParam.nFrameRate  = encoder->fps;
+    sEncEncParam.nPicWidth   = enc->out_width;
+    sEncEncParam.nPicHeight  = enc->out_height;
+    sEncEncParam.nFrameRate  = enc->fps;
     sEncEncParam.nQuantParam = 35;
     sEncEncParam.nInPhyInput = source->info.paddr + source->info.offset;
     sEncEncParam.nInVirtInput =
@@ -396,7 +401,7 @@ vsl_encode_frame(VSLEncoder*    encoder,
     sEncEncParam.nInVirtOutput   = (long unsigned int) destination->map;
     sEncEncParam.nInOutputBufLen = (unsigned int) destination->mapsize;
 
-    VpuEncRetCode ret = VPU_EncEncodeFrame(encoder->handle, &sEncEncParam);
+    VpuEncRetCode ret = VPU_EncEncodeFrame(enc->handle, &sEncEncParam);
     if (ret != VPU_ENC_RET_SUCCESS) {
         fprintf(stderr,
                 "%s: VPU_EncEncodeFrame failed: %d\n",
@@ -412,9 +417,10 @@ vsl_encode_frame(VSLEncoder*    encoder,
     if ((sEncEncParam.eOutRetCode & VPU_ENC_OUTPUT_DIS) ||
         (sEncEncParam.eOutRetCode & VPU_ENC_OUTPUT_SEQHEADER)) {
         destination->info.size = sEncEncParam.nOutOutputSize;
-        return 0;
+        return (int) sEncEncParam.nOutOutputSize;
     }
 
+    // No output produced (rare, e.g., first frame buffering)
     return 0;
 }
 
@@ -427,15 +433,17 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
                                     int64_t           pts,
                                     int64_t           dts);
 
-VSL_API
 VSLFrame*
-vsl_encoder_new_output_frame(const VSLEncoder* encoder,
-                             int               width,
-                             int               height,
-                             int64_t           duration,
-                             int64_t           pts,
-                             int64_t           dts)
+vsl_encoder_new_output_frame_hantro(const VSLEncoder* encoder,
+                                    int               width,
+                                    int               height,
+                                    int64_t           duration,
+                                    int64_t           pts,
+                                    int64_t           dts)
 {
+    const struct vsl_encoder_hantro* enc =
+        (const struct vsl_encoder_hantro*) encoder;
+
     // Use DMA heap allocation for cross-process frame sharing
     // This provides a valid dmabuf FD that can be sent via SCM_RIGHTS
     VSLFrame* frame = vsl_encoder_new_output_frame_dmabuf(encoder,
@@ -477,7 +485,7 @@ vsl_encoder_new_output_frame(const VSLEncoder* encoder,
                                height,
                                -1, // prevent form calculating stride,
                                    // it's not relevant for encoded frame
-                               encoder->outputFourcc,
+                               enc->output_fourcc,
                                memDesc, // memDesc as userptr, used to
                                         // free the EWL memory
                                vsl_encoder_frame_cleanup);

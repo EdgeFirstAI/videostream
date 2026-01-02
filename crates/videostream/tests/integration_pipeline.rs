@@ -365,9 +365,9 @@ fn run_encode_pipeline_test(
         let decoder = if decode_output {
             if let Some(codec_str) = codec {
                 let decoder_codec = match codec_str {
-                    "h264" => decoder::DecoderInputCodec::H264,
-                    "hevc" => decoder::DecoderInputCodec::HEVC,
-                    _ => decoder::DecoderInputCodec::H264,
+                    "h264" => decoder::DecoderCodec::H264,
+                    "hevc" => decoder::DecoderCodec::HEVC,
+                    _ => decoder::DecoderCodec::H264,
                 };
                 match decoder::Decoder::create(decoder_codec, fps) {
                     Ok(dec) => Some(dec),
@@ -622,8 +622,8 @@ fn run_decode_pipeline_test(
 
     // Now decode frames
     let codec = match config.codec {
-        Some("h264") => decoder::DecoderInputCodec::H264,
-        Some("hevc") => decoder::DecoderInputCodec::HEVC,
+        Some("h264") => decoder::DecoderCodec::H264,
+        Some("hevc") => decoder::DecoderCodec::HEVC,
         _ => return Err("Codec required for decode test".into()),
     };
 

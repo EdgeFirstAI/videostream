@@ -21,6 +21,7 @@
 /**
  * V4L2 device paths for encoder and decoder.
  * These are the vsi_v4l2 driver device nodes on i.MX 8M Plus.
+ * video0 = encoder (vsi_v4l2enc), video1 = decoder (vsi_v4l2dec)
  */
 #define VSL_V4L2_ENCODER_DEV "/dev/video0"
 #define VSL_V4L2_DECODER_DEV "/dev/video1"

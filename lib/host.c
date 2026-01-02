@@ -288,7 +288,7 @@ vsl_host_init(const char* path)
     }
 
     host->n_sockets = 1;
-    host->sockets = calloc(host->n_sockets, sizeof(struct socket_and_frames));
+    host->sockets   = calloc(host->n_sockets, sizeof(struct socket_and_frames));
 
     if (!host->sockets) {
         close(sock);
@@ -436,7 +436,8 @@ vsl_host_post(VSLHost*  host,
                     // client but don't disconnect. This is normal backpressure.
 #ifndef NDEBUG
                     fprintf(stderr,
-                            "[HOST] sendmsg to socket %d: buffer full, dropping "
+                            "[HOST] sendmsg to socket %d: buffer full, "
+                            "dropping "
                             "frame (client busy)\n",
                             i);
 #endif

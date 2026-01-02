@@ -33,33 +33,33 @@
 #include "videostream.h"
 
 // Configuration defaults
-#define DEFAULT_WARMUP_SEC    2
-#define DEFAULT_DURATION_SEC  30
-#define DEFAULT_TARGET_FPS    30
-#define DEFAULT_INPUT_FILE    "/tmp/test.h264"
+#define DEFAULT_WARMUP_SEC 2
+#define DEFAULT_DURATION_SEC 30
+#define DEFAULT_TARGET_FPS 30
+#define DEFAULT_INPUT_FILE "/tmp/test.h264"
 
 // Statistics tracking
 typedef struct {
-    uint64_t frame_count;
-    uint64_t total_decode_us;
-    uint64_t min_decode_us;
-    uint64_t max_decode_us;
-    uint64_t* frame_times_us;  // Ring buffer for frame times
-    size_t frame_times_capacity;
-    size_t frame_times_head;
-    uint64_t dropped_frames;   // Frames that exceeded target time
-    uint64_t start_time_us;
-    uint64_t end_time_us;
-    uint64_t loop_count;       // How many times we looped through the file
+    uint64_t  frame_count;
+    uint64_t  total_decode_us;
+    uint64_t  min_decode_us;
+    uint64_t  max_decode_us;
+    uint64_t* frame_times_us; // Ring buffer for frame times
+    size_t    frame_times_capacity;
+    size_t    frame_times_head;
+    uint64_t  dropped_frames; // Frames that exceeded target time
+    uint64_t  start_time_us;
+    uint64_t  end_time_us;
+    uint64_t  loop_count; // How many times we looped through the file
 } BenchmarkStats;
 
 // Decoder state for streaming decode
 typedef struct {
-    VSLDecoder* decoder;
+    VSLDecoder*    decoder;
     const uint8_t* data;
-    size_t data_len;
-    size_t offset;
-    bool verbose;
+    size_t         data_len;
+    size_t         offset;
+    bool           verbose;
 } DecoderState;
 
 // Global for signal handler
@@ -84,10 +84,10 @@ static void
 stats_init(BenchmarkStats* stats, size_t capacity)
 {
     memset(stats, 0, sizeof(*stats));
-    stats->min_decode_us      = UINT64_MAX;
-    stats->frame_times_us     = malloc(capacity * sizeof(uint64_t));
+    stats->min_decode_us        = UINT64_MAX;
+    stats->frame_times_us       = malloc(capacity * sizeof(uint64_t));
     stats->frame_times_capacity = capacity;
-    stats->frame_times_head   = 0;
+    stats->frame_times_head     = 0;
 }
 
 static void
@@ -98,22 +98,18 @@ stats_free(BenchmarkStats* stats)
 }
 
 static void
-stats_record_frame(BenchmarkStats* stats, uint64_t decode_us, uint64_t target_us)
+stats_record_frame(BenchmarkStats* stats,
+                   uint64_t        decode_us,
+                   uint64_t        target_us)
 {
     stats->frame_count++;
     stats->total_decode_us += decode_us;
 
-    if (decode_us < stats->min_decode_us) {
-        stats->min_decode_us = decode_us;
-    }
-    if (decode_us > stats->max_decode_us) {
-        stats->max_decode_us = decode_us;
-    }
+    if (decode_us < stats->min_decode_us) { stats->min_decode_us = decode_us; }
+    if (decode_us > stats->max_decode_us) { stats->max_decode_us = decode_us; }
 
     // Track dropped frames (exceeded target frame time)
-    if (decode_us > target_us) {
-        stats->dropped_frames++;
-    }
+    if (decode_us > target_us) { stats->dropped_frames++; }
 
     // Store in ring buffer for percentile calculations
     if (stats->frame_times_us && stats->frame_times_capacity > 0) {
@@ -128,10 +124,8 @@ compare_uint64(const void* a, const void* b)
 {
     uint64_t va = *(const uint64_t*) a;
     uint64_t vb = *(const uint64_t*) b;
-    if (va < vb)
-        return -1;
-    if (va > vb)
-        return 1;
+    if (va < vb) return -1;
+    if (va > vb) return 1;
     return 0;
 }
 
@@ -143,11 +137,11 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
         return;
     }
 
-    uint64_t duration_us = stats->end_time_us - stats->start_time_us;
-    double duration_sec  = (double) duration_us / 1000000.0;
-    double avg_fps       = (double) stats->frame_count / duration_sec;
-    double avg_decode_ms = (double) stats->total_decode_us /
-                           (double) stats->frame_count / 1000.0;
+    uint64_t duration_us  = stats->end_time_us - stats->start_time_us;
+    double   duration_sec = (double) duration_us / 1000000.0;
+    double   avg_fps      = (double) stats->frame_count / duration_sec;
+    double   avg_decode_ms =
+        (double) stats->total_decode_us / (double) stats->frame_count / 1000.0;
     double target_frame_ms = 1000.0 / (double) target_fps;
 
     printf("\n");
@@ -166,7 +160,8 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
            (double) stats->min_decode_us / 1000.0);
     printf("  Maximum:       %.3f ms\n",
            (double) stats->max_decode_us / 1000.0);
-    printf("  Target:        %.3f ms (for %d FPS)\n", target_frame_ms,
+    printf("  Target:        %.3f ms (for %d FPS)\n",
+           target_frame_ms,
            target_fps);
     printf("\n");
 
@@ -182,10 +177,10 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
             memcpy(sorted, stats->frame_times_us, count * sizeof(uint64_t));
             qsort(sorted, count, sizeof(uint64_t), compare_uint64);
 
-            size_t p50_idx = (size_t)(count * 0.50);
-            size_t p90_idx = (size_t)(count * 0.90);
-            size_t p95_idx = (size_t)(count * 0.95);
-            size_t p99_idx = (size_t)(count * 0.99);
+            size_t p50_idx = (size_t) (count * 0.50);
+            size_t p90_idx = (size_t) (count * 0.90);
+            size_t p95_idx = (size_t) (count * 0.95);
+            size_t p99_idx = (size_t) (count * 0.99);
 
             printf("Percentiles:\n");
             printf("  P50:           %.3f ms\n",
@@ -205,18 +200,19 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
     double drop_pct =
         100.0 * (double) stats->dropped_frames / (double) stats->frame_count;
     printf("Dropped frames:  %lu (%.2f%% exceeded target frame time)\n",
-           (unsigned long) stats->dropped_frames, drop_pct);
+           (unsigned long) stats->dropped_frames,
+           drop_pct);
     printf("\n");
 
     // Pass/fail determination
-    bool passed = (avg_fps >= (double) target_fps * 0.95) &&
-                  (drop_pct < 5.0);
+    bool passed = (avg_fps >= (double) target_fps * 0.95) && (drop_pct < 5.0);
     printf("Result:          %s\n", passed ? "PASS" : "FAIL");
     printf("  - Average FPS >= 95%% of target: %s (%.1f%% achieved)\n",
            avg_fps >= target_fps * 0.95 ? "PASS" : "FAIL",
            100.0 * avg_fps / target_fps);
     printf("  - Dropped frames < 5%%: %s (%.1f%% dropped)\n",
-           drop_pct < 5.0 ? "PASS" : "FAIL", drop_pct);
+           drop_pct < 5.0 ? "PASS" : "FAIL",
+           drop_pct);
     printf("\n");
 
     if (verbose) {
@@ -277,8 +273,11 @@ backend_name(VSLCodecBackend backend)
  * Initialize decoder state for streaming decode
  */
 static void
-decoder_state_init(DecoderState* state, VSLDecoder* decoder,
-                   const uint8_t* data, size_t data_len, bool verbose)
+decoder_state_init(DecoderState*  state,
+                   VSLDecoder*    decoder,
+                   const uint8_t* data,
+                   size_t         data_len,
+                   bool           verbose)
 {
     state->decoder  = decoder;
     state->data     = data;
@@ -310,14 +309,13 @@ decode_next_frame(DecoderState* state)
 
     while (state->offset < state->data_len) {
         size_t bytes_used = 0;
-        size_t remaining = state->data_len - state->offset;
+        size_t remaining  = state->data_len - state->offset;
 
-        VSLDecoderRetCode ret = vsl_decode_frame(
-            state->decoder,
-            state->data + state->offset,
-            (unsigned int) remaining,
-            &bytes_used,
-            &frame);
+        VSLDecoderRetCode ret = vsl_decode_frame(state->decoder,
+                                                 state->data + state->offset,
+                                                 (unsigned int) remaining,
+                                                 &bytes_used,
+                                                 &frame);
 
         state->offset += bytes_used;
 
@@ -328,14 +326,10 @@ decode_next_frame(DecoderState* state)
             return NULL;
         }
 
-        if (frame != NULL) {
-            return frame;
-        }
+        if (frame != NULL) { return frame; }
 
         // No bytes consumed and no frame - avoid infinite loop
-        if (bytes_used == 0) {
-            break;
-        }
+        if (bytes_used == 0) { break; }
     }
 
     return NULL;
@@ -345,12 +339,12 @@ int
 main(int argc, char* argv[])
 {
     // Configuration
-    VSLCodecBackend backend     = VSL_CODEC_BACKEND_AUTO;
-    int warmup_sec              = DEFAULT_WARMUP_SEC;
-    int duration_sec            = DEFAULT_DURATION_SEC;
-    int target_fps              = DEFAULT_TARGET_FPS;
-    const char* input_file      = DEFAULT_INPUT_FILE;
-    bool verbose                = false;
+    VSLCodecBackend backend      = VSL_CODEC_BACKEND_AUTO;
+    int             warmup_sec   = DEFAULT_WARMUP_SEC;
+    int             duration_sec = DEFAULT_DURATION_SEC;
+    int             target_fps   = DEFAULT_TARGET_FPS;
+    const char*     input_file   = DEFAULT_INPUT_FILE;
+    bool            verbose      = false;
 
     // Parse options
     int opt;
@@ -415,7 +409,7 @@ main(int argc, char* argv[])
         return 1;
     }
 
-    size_t file_size = (size_t) st.st_size;
+    size_t   file_size = (size_t) st.st_size;
     uint8_t* h264_data = malloc(file_size);
     if (!h264_data) {
         fprintf(stderr, "Failed to allocate %zu bytes\n", file_size);
@@ -459,15 +453,16 @@ main(int argc, char* argv[])
 
     // Initialize stats
     uint64_t target_frame_us = 1000000ULL / (uint64_t) target_fps;
-    size_t max_frames = (size_t)(duration_sec + warmup_sec + 5) * target_fps * 2;
+    size_t   max_frames =
+        (size_t) (duration_sec + warmup_sec + 5) * target_fps * 2;
     BenchmarkStats warmup_stats, test_stats;
-    stats_init(&warmup_stats, (size_t)(warmup_sec * target_fps * 2));
+    stats_init(&warmup_stats, (size_t) (warmup_sec * target_fps * 2));
     stats_init(&test_stats, max_frames);
 
     // Warmup phase
     if (warmup_sec > 0) {
         printf("\n--- WARMUP PHASE (%d seconds) ---\n", warmup_sec);
-        uint64_t warmup_end_us = get_time_us() + warmup_sec * 1000000ULL;
+        uint64_t warmup_end_us     = get_time_us() + warmup_sec * 1000000ULL;
         warmup_stats.start_time_us = get_time_us();
 
         while (g_running && get_time_us() < warmup_end_us) {
@@ -476,7 +471,8 @@ main(int argc, char* argv[])
             VSLFrame* frame = decode_next_frame(&dec_state);
             if (frame) {
                 uint64_t frame_end = get_time_us();
-                stats_record_frame(&warmup_stats, frame_end - frame_start,
+                stats_record_frame(&warmup_stats,
+                                   frame_end - frame_start,
                                    target_frame_us);
                 vsl_frame_release(frame);
 
@@ -494,20 +490,19 @@ main(int argc, char* argv[])
                 }
             } else {
                 // Decode failed
-                if (verbose) {
-                    fprintf(stderr, "  Warmup decode failed\n");
-                }
+                if (verbose) { fprintf(stderr, "  Warmup decode failed\n"); }
             }
         }
 
         warmup_stats.end_time_us = get_time_us();
         printf("Warmup completed: %lu frames in %.2f seconds (%.1f FPS)\n",
                (unsigned long) warmup_stats.frame_count,
-               (double)(warmup_stats.end_time_us - warmup_stats.start_time_us) /
+               (double) (warmup_stats.end_time_us -
+                         warmup_stats.start_time_us) /
                    1000000.0,
                (double) warmup_stats.frame_count /
-                   ((double)(warmup_stats.end_time_us -
-                             warmup_stats.start_time_us) /
+                   ((double) (warmup_stats.end_time_us -
+                              warmup_stats.start_time_us) /
                     1000000.0));
     }
 
@@ -516,11 +511,13 @@ main(int argc, char* argv[])
 
     // Test phase - rate-limited to target FPS to simulate real camera input
     if (g_running) {
-        printf("\n--- TEST PHASE (%d seconds, target %d FPS, rate-limited) ---\n",
-               duration_sec, target_fps);
+        printf("\n--- TEST PHASE (%d seconds, target %d FPS, rate-limited) "
+               "---\n",
+               duration_sec,
+               target_fps);
 
-        uint64_t test_end_us = get_time_us() + duration_sec * 1000000ULL;
-        test_stats.start_time_us = get_time_us();
+        uint64_t test_end_us      = get_time_us() + duration_sec * 1000000ULL;
+        test_stats.start_time_us  = get_time_us();
         uint64_t last_progress_us = test_stats.start_time_us;
 
         // Track frame pacing - next frame should start at this time
@@ -530,11 +527,10 @@ main(int argc, char* argv[])
             // Wait until next frame time (simulate camera frame rate)
             uint64_t now = get_time_us();
             if (now < next_frame_us) {
-                uint64_t sleep_us = next_frame_us - now;
-                struct timespec ts = {
-                    .tv_sec = (time_t)(sleep_us / 1000000),
-                    .tv_nsec = (long)((sleep_us % 1000000) * 1000)
-                };
+                uint64_t        sleep_us = next_frame_us - now;
+                struct timespec ts = {.tv_sec = (time_t) (sleep_us / 1000000),
+                                      .tv_nsec =
+                                          (long) ((sleep_us % 1000000) * 1000)};
                 nanosleep(&ts, NULL);
             }
 
@@ -543,16 +539,15 @@ main(int argc, char* argv[])
 
             // If we've fallen behind, catch up (don't accumulate debt)
             now = get_time_us();
-            if (now > next_frame_us + target_frame_us) {
-                next_frame_us = now;
-            }
+            if (now > next_frame_us + target_frame_us) { next_frame_us = now; }
 
             uint64_t frame_start = get_time_us();
 
             VSLFrame* frame = decode_next_frame(&dec_state);
             if (frame) {
                 uint64_t frame_end = get_time_us();
-                stats_record_frame(&test_stats, frame_end - frame_start,
+                stats_record_frame(&test_stats,
+                                   frame_end - frame_start,
                                    target_frame_us);
                 vsl_frame_release(frame);
             } else if (dec_state.offset >= dec_state.data_len) {
@@ -565,21 +560,21 @@ main(int argc, char* argv[])
                 }
             } else {
                 // Decode failed
-                if (verbose) {
-                    fprintf(stderr, "  Test decode failed\n");
-                }
+                if (verbose) { fprintf(stderr, "  Test decode failed\n"); }
             }
 
             // Progress update every 5 seconds
             now = get_time_us();
             if (now - last_progress_us >= 5000000ULL) {
                 double elapsed =
-                    (double)(now - test_stats.start_time_us) / 1000000.0;
-                double current_fps =
-                    (double) test_stats.frame_count / elapsed;
-                printf("  Progress: %.0f sec, %lu frames, %.1f FPS, %lu loops\n",
-                       elapsed, (unsigned long) test_stats.frame_count,
-                       current_fps, (unsigned long) test_stats.loop_count);
+                    (double) (now - test_stats.start_time_us) / 1000000.0;
+                double current_fps = (double) test_stats.frame_count / elapsed;
+                printf("  Progress: %.0f sec, %lu frames, %.1f FPS, %lu "
+                       "loops\n",
+                       elapsed,
+                       (unsigned long) test_stats.frame_count,
+                       current_fps,
+                       (unsigned long) test_stats.loop_count);
                 last_progress_us = now;
             }
         }
