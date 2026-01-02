@@ -147,8 +147,8 @@ print_stage_percentiles(const char* name, const StageStats* stats)
 {
     if (stats->count == 0) return;
 
-    size_t count =
-        stats->count < stats->times_capacity ? stats->count : stats->times_capacity;
+    size_t count = stats->count < stats->times_capacity ? stats->count
+                                                        : stats->times_capacity;
 
     uint64_t* sorted = malloc(count * sizeof(uint64_t));
     if (!sorted) return;
@@ -194,21 +194,28 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
     printf("Total encoded:     %.2f MB\n",
            (double) stats->total_bytes_encoded / (1024.0 * 1024.0));
     printf("Avg bitrate:       %.2f Mbps\n",
-           (double) stats->total_bytes_encoded * 8.0 / duration_sec / 1000000.0);
+           (double) stats->total_bytes_encoded * 8.0 / duration_sec /
+               1000000.0);
     printf("\n");
 
     printf("Encode stage:\n");
     printf("  Average:         %.3f ms\n",
-           (double) stats->encode.total_us / (double) stats->encode.count / 1000.0);
-    printf("  Minimum:         %.3f ms\n", (double) stats->encode.min_us / 1000.0);
-    printf("  Maximum:         %.3f ms\n", (double) stats->encode.max_us / 1000.0);
+           (double) stats->encode.total_us / (double) stats->encode.count /
+               1000.0);
+    printf("  Minimum:         %.3f ms\n",
+           (double) stats->encode.min_us / 1000.0);
+    printf("  Maximum:         %.3f ms\n",
+           (double) stats->encode.max_us / 1000.0);
     printf("\n");
 
     printf("Decode stage:\n");
     printf("  Average:         %.3f ms\n",
-           (double) stats->decode.total_us / (double) stats->decode.count / 1000.0);
-    printf("  Minimum:         %.3f ms\n", (double) stats->decode.min_us / 1000.0);
-    printf("  Maximum:         %.3f ms\n", (double) stats->decode.max_us / 1000.0);
+           (double) stats->decode.total_us / (double) stats->decode.count /
+               1000.0);
+    printf("  Minimum:         %.3f ms\n",
+           (double) stats->decode.min_us / 1000.0);
+    printf("  Maximum:         %.3f ms\n",
+           (double) stats->decode.max_us / 1000.0);
     printf("\n");
 
     printf("End-to-End (encode+decode):\n");
@@ -246,13 +253,16 @@ stats_print(const BenchmarkStats* stats, int target_fps, bool verbose)
 
     if (verbose) {
         printf("Raw statistics:\n");
-        printf("  start_time_us:       %lu\n", (unsigned long) stats->start_time_us);
-        printf("  end_time_us:         %lu\n", (unsigned long) stats->end_time_us);
+        printf("  start_time_us:       %lu\n",
+               (unsigned long) stats->start_time_us);
+        printf("  end_time_us:         %lu\n",
+               (unsigned long) stats->end_time_us);
         printf("  encode_total_us:     %lu\n",
                (unsigned long) stats->encode.total_us);
         printf("  decode_total_us:     %lu\n",
                (unsigned long) stats->decode.total_us);
-        printf("  e2e_total_us:        %lu\n", (unsigned long) stats->e2e.total_us);
+        printf("  e2e_total_us:        %lu\n",
+               (unsigned long) stats->e2e.total_us);
     }
 }
 
@@ -309,7 +319,7 @@ create_test_frame(int width, int height, int frame_num)
 {
     uint32_t  fourcc = VSL_FOURCC('B', 'G', 'R', 'A');
     int       stride = width * 4;
-    VSLFrame* frame  = vsl_frame_init(width, height, stride, fourcc, NULL, NULL);
+    VSLFrame* frame = vsl_frame_init(width, height, stride, fourcc, NULL, NULL);
 
     if (!frame) {
         fprintf(stderr, "vsl_frame_init failed\n");
@@ -344,7 +354,7 @@ create_test_frame(int width, int height, int frame_num)
 
     for (int row = 0; row < height; row++) {
         for (int col = 0; col < width; col++) {
-            int colorIdx               = ((col + offset) / barWidth) % 8;
+            int colorIdx           = ((col + offset) / barWidth) % 8;
             ptr[row * width + col] = colorTable[colorIdx];
         }
     }
@@ -356,14 +366,14 @@ int
 main(int argc, char* argv[])
 {
     // Configuration
-    VSLCodecBackend backend      = VSL_CODEC_BACKEND_AUTO;
-    int             warmup_sec   = DEFAULT_WARMUP_SEC;
-    int             duration_sec = DEFAULT_DURATION_SEC;
-    int             target_fps   = DEFAULT_TARGET_FPS;
-    int             width        = DEFAULT_WIDTH;
-    int             height       = DEFAULT_HEIGHT;
-    bool            verbose      = false;
-    uint32_t        codec_fourcc = VSL_FOURCC('H', '2', '6', '4');
+    VSLCodecBackend backend       = VSL_CODEC_BACKEND_AUTO;
+    int             warmup_sec    = DEFAULT_WARMUP_SEC;
+    int             duration_sec  = DEFAULT_DURATION_SEC;
+    int             target_fps    = DEFAULT_TARGET_FPS;
+    int             width         = DEFAULT_WIDTH;
+    int             height        = DEFAULT_HEIGHT;
+    bool            verbose       = false;
+    uint32_t        codec_fourcc  = VSL_FOURCC('H', '2', '6', '4');
     VSLDecoderCodec decoder_codec = VSL_DEC_H264;
 
     // Parse options
@@ -438,8 +448,9 @@ main(int argc, char* argv[])
 
     // Create encoder
     printf("Creating encoder...\n");
-    VSLEncoder* encoder =
-        vsl_encoder_create(VSL_ENCODE_PROFILE_25000_KBPS, codec_fourcc, target_fps);
+    VSLEncoder* encoder = vsl_encoder_create(VSL_ENCODE_PROFILE_25000_KBPS,
+                                             codec_fourcc,
+                                             target_fps);
     if (!encoder) {
         fprintf(stderr, "Failed to create encoder\n");
         return 1;
@@ -458,9 +469,12 @@ main(int argc, char* argv[])
 
     // Initialize stats
     uint64_t target_frame_us = 1000000ULL / (uint64_t) target_fps;
-    size_t   max_frames = (size_t) (duration_sec + warmup_sec + 5) * target_fps * 2;
+    size_t   max_frames =
+        (size_t) (duration_sec + warmup_sec + 5) * target_fps * 2;
     BenchmarkStats warmup_stats, test_stats;
-    stats_init(&warmup_stats, (size_t) (warmup_sec * target_fps * 2), target_frame_us);
+    stats_init(&warmup_stats,
+               (size_t) (warmup_sec * target_fps * 2),
+               target_frame_us);
     stats_init(&test_stats, max_frames, target_frame_us);
 
     int frame_num = 0;
@@ -468,7 +482,7 @@ main(int argc, char* argv[])
     // Warmup phase
     if (warmup_sec > 0 && g_running) {
         printf("\n--- WARMUP PHASE (%d seconds) ---\n", warmup_sec);
-        uint64_t warmup_end_us         = get_time_us() + warmup_sec * 1000000ULL;
+        uint64_t warmup_end_us     = get_time_us() + warmup_sec * 1000000ULL;
         warmup_stats.start_time_us = get_time_us();
 
         while (g_running && get_time_us() < warmup_end_us) {
@@ -479,8 +493,12 @@ main(int argc, char* argv[])
             if (!input) continue;
 
             // Create output frame for encoded data
-            VSLFrame* encoded = vsl_encoder_new_output_frame(
-                encoder, width, height, 0, e2e_start, e2e_start);
+            VSLFrame* encoded = vsl_encoder_new_output_frame(encoder,
+                                                             width,
+                                                             height,
+                                                             0,
+                                                             e2e_start,
+                                                             e2e_start);
             if (!encoded) {
                 vsl_frame_release(input);
                 continue;
@@ -488,7 +506,7 @@ main(int argc, char* argv[])
 
             // Encode
             uint64_t encode_start = get_time_us();
-            int      enc_ret = vsl_encode_frame(encoder, input, encoded, NULL, NULL);
+            int enc_ret = vsl_encode_frame(encoder, input, encoded, NULL, NULL);
             uint64_t encode_end = get_time_us();
 
             vsl_frame_release(input);
@@ -508,14 +526,18 @@ main(int argc, char* argv[])
             int       enc_size   = vsl_frame_size(encoded);
 
             uint64_t decode_start = get_time_us();
-            vsl_decode_frame(
-                decoder, enc_data, enc_size, &bytes_used, &decoded);
+            vsl_decode_frame(decoder,
+                             enc_data,
+                             enc_size,
+                             &bytes_used,
+                             &decoded);
             uint64_t decode_end = get_time_us();
 
             vsl_frame_release(encoded);
 
             if (decoded) {
-                stage_stats_record(&warmup_stats.decode, decode_end - decode_start);
+                stage_stats_record(&warmup_stats.decode,
+                                   decode_end - decode_start);
                 uint64_t e2e_end = get_time_us();
                 stage_stats_record(&warmup_stats.e2e, e2e_end - e2e_start);
 
@@ -535,7 +557,8 @@ main(int argc, char* argv[])
         warmup_stats.end_time_us = get_time_us();
         printf("Warmup completed: %lu frames in %.2f seconds (%.1f FPS)\n",
                (unsigned long) warmup_stats.e2e.count,
-               (double) (warmup_stats.end_time_us - warmup_stats.start_time_us) /
+               (double) (warmup_stats.end_time_us -
+                         warmup_stats.start_time_us) /
                    1000000.0,
                (double) warmup_stats.e2e.count /
                    ((double) (warmup_stats.end_time_us -
@@ -549,19 +572,19 @@ main(int argc, char* argv[])
                duration_sec,
                target_fps);
 
-        uint64_t test_end_us        = get_time_us() + duration_sec * 1000000ULL;
-        test_stats.start_time_us    = get_time_us();
-        uint64_t last_progress_us   = test_stats.start_time_us;
-        uint64_t next_frame_us      = test_stats.start_time_us;
+        uint64_t test_end_us      = get_time_us() + duration_sec * 1000000ULL;
+        test_stats.start_time_us  = get_time_us();
+        uint64_t last_progress_us = test_stats.start_time_us;
+        uint64_t next_frame_us    = test_stats.start_time_us;
 
         while (g_running && get_time_us() < test_end_us) {
             // Rate limiting
             uint64_t now = get_time_us();
             if (now < next_frame_us) {
                 uint64_t        sleep_us = next_frame_us - now;
-                struct timespec ts       = {
-                    .tv_sec  = (time_t) (sleep_us / 1000000),
-                    .tv_nsec = (long) ((sleep_us % 1000000) * 1000)};
+                struct timespec ts = {.tv_sec = (time_t) (sleep_us / 1000000),
+                                      .tv_nsec =
+                                          (long) ((sleep_us % 1000000) * 1000)};
                 nanosleep(&ts, NULL);
             }
             next_frame_us += target_frame_us;
@@ -577,8 +600,12 @@ main(int argc, char* argv[])
             if (!input) continue;
 
             // Create output frame for encoded data
-            VSLFrame* encoded = vsl_encoder_new_output_frame(
-                encoder, width, height, 0, e2e_start, e2e_start);
+            VSLFrame* encoded = vsl_encoder_new_output_frame(encoder,
+                                                             width,
+                                                             height,
+                                                             0,
+                                                             e2e_start,
+                                                             e2e_start);
             if (!encoded) {
                 vsl_frame_release(input);
                 continue;
@@ -586,7 +613,7 @@ main(int argc, char* argv[])
 
             // Encode
             uint64_t encode_start = get_time_us();
-            int      enc_ret = vsl_encode_frame(encoder, input, encoded, NULL, NULL);
+            int enc_ret = vsl_encode_frame(encoder, input, encoded, NULL, NULL);
             uint64_t encode_end = get_time_us();
 
             vsl_frame_release(input);
@@ -606,13 +633,18 @@ main(int argc, char* argv[])
             int       enc_size   = vsl_frame_size(encoded);
 
             uint64_t decode_start = get_time_us();
-            vsl_decode_frame(decoder, enc_data, enc_size, &bytes_used, &decoded);
+            vsl_decode_frame(decoder,
+                             enc_data,
+                             enc_size,
+                             &bytes_used,
+                             &decoded);
             uint64_t decode_end = get_time_us();
 
             vsl_frame_release(encoded);
 
             if (decoded) {
-                stage_stats_record(&test_stats.decode, decode_end - decode_start);
+                stage_stats_record(&test_stats.decode,
+                                   decode_end - decode_start);
                 uint64_t e2e_end = get_time_us();
                 stage_stats_record(&test_stats.e2e, e2e_end - e2e_start);
 

@@ -68,10 +68,10 @@ vsl_encoder_create_hantro(VSLEncoderProfile profile,
         return NULL;
     }
 
-    encoder->backend      = VSL_CODEC_BACKEND_HANTRO;
-    encoder->fps          = fps;
+    encoder->backend       = VSL_CODEC_BACKEND_HANTRO;
+    encoder->fps           = fps;
     encoder->output_fourcc = outputFourcc;
-    encoder->profile      = profile;
+    encoder->profile       = profile;
 
     VpuEncRetCode  ret;
     VpuVersionInfo ver;
@@ -198,13 +198,13 @@ vsl_encoder_init_hantro(struct vsl_encoder_hantro* encoder,
         sEncOpenParamSimp.nPicHeight  = encoder->crop_region->height;
         sEncOpenParamSimp.nXOffset    = encoder->crop_region->x;
         sEncOpenParamSimp.nYOffset    = encoder->crop_region->y;
-        encoder->out_width             = encoder->crop_region->width;
-        encoder->out_height            = encoder->crop_region->height;
+        encoder->out_width            = encoder->crop_region->width;
+        encoder->out_height           = encoder->crop_region->height;
     } else {
         sEncOpenParamSimp.nPicWidth  = inWidth;
         sEncOpenParamSimp.nPicHeight = inHeight;
-        encoder->out_width            = inWidth;
-        encoder->out_height           = inHeight;
+        encoder->out_width           = inWidth;
+        encoder->out_height          = inHeight;
     }
 
     sEncOpenParamSimp.nFrameRate = encoder->fps;
