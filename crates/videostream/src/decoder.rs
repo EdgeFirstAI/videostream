@@ -67,6 +67,26 @@ pub enum DecoderCodec {
     HEVC = ffi::VSLDecoderCodec_VSL_DEC_HEVC,
 }
 
+impl DecoderCodec {
+    /// Convert codec enum to fourcc value for create_ex API.
+    #[inline]
+    fn to_fourcc(self) -> u32 {
+        match self {
+            DecoderCodec::H264 => fourcc(b"H264"),
+            DecoderCodec::HEVC => fourcc(b"HEVC"),
+        }
+    }
+}
+
+/// Create a fourcc value from a 4-byte array.
+#[inline]
+const fn fourcc(bytes: &[u8; 4]) -> u32 {
+    (bytes[0] as u32)
+        | ((bytes[1] as u32) << 8)
+        | ((bytes[2] as u32) << 16)
+        | ((bytes[3] as u32) << 24)
+}
+
 /// Codec backend selection for encoder/decoder.
 ///
 /// Allows selection between V4L2 kernel driver and Hantro user-space
@@ -218,7 +238,7 @@ impl Decoder {
         }
 
         let ptr = unsafe {
-            lib.try_vsl_decoder_create_ex(codec as u32, fps, backend as ffi::VSLCodecBackend)
+            lib.try_vsl_decoder_create_ex(codec.to_fourcc(), fps, backend as ffi::VSLCodecBackend)
         };
 
         match ptr {
