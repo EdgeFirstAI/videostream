@@ -39,7 +39,10 @@ VSL_API
 VSLEncoder*
 vsl_encoder_create(VSLEncoderProfile profile, uint32_t outputFourcc, int fps)
 {
-    return vsl_encoder_create_ex(profile, outputFourcc, fps, VSL_CODEC_BACKEND_AUTO);
+    return vsl_encoder_create_ex(profile,
+                                 outputFourcc,
+                                 fps,
+                                 VSL_CODEC_BACKEND_AUTO);
 }
 
 VSL_API

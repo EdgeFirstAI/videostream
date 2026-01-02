@@ -36,7 +36,6 @@ xioctl(int fd, unsigned long request, void* arg)
     return r;
 }
 
-
 // Convert VSL fourcc to V4L2 fourcc for output codec
 static uint32_t
 vsl_to_v4l2_codec(uint32_t fourcc)
@@ -134,8 +133,9 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
                    uint32_t                 input_fourcc)
 {
     // Convert input fourcc to V4L2 format
-    int      num_planes   = 0;
-    uint32_t v4l2_input_fmt = vsl_to_v4l2_input_format(input_fourcc, &num_planes);
+    int      num_planes = 0;
+    uint32_t v4l2_input_fmt =
+        vsl_to_v4l2_input_format(input_fourcc, &num_planes);
     if (v4l2_input_fmt == 0) {
         fprintf(stderr,
                 "V4L2 encoder: unsupported input format 0x%08x ('%c%c%c%c')\n",
@@ -167,7 +167,8 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
             // I420/YUV420 is 1.5 bytes per pixel (YUV 4:2:0)
             fmt.fmt.pix_mp.plane_fmt[0].sizeimage = width * height * 3 / 2;
         } else {
-            fmt.fmt.pix_mp.plane_fmt[0].sizeimage = width * height * bytes_per_pixel;
+            fmt.fmt.pix_mp.plane_fmt[0].sizeimage =
+                width * height * bytes_per_pixel;
         }
     } else if (num_planes == 2) {
         // Semi-planar format (NV12)
@@ -190,7 +191,8 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
     enc->num_input_planes = fmt.fmt.pix_mp.num_planes;
 
     fprintf(stderr,
-            "V4L2 encoder: configured OUTPUT format '%c%c%c%c' %dx%d, %d plane(s)\n",
+            "V4L2 encoder: configured OUTPUT format '%c%c%c%c' %dx%d, %d "
+            "plane(s)\n",
             (char) (v4l2_input_fmt & 0xFF),
             (char) ((v4l2_input_fmt >> 8) & 0xFF),
             (char) ((v4l2_input_fmt >> 16) & 0xFF),
@@ -240,7 +242,7 @@ setup_capture_queue(struct vsl_encoder_v4l2* enc)
     fmt.fmt.pix_mp.pixelformat = vsl_to_v4l2_codec(enc->output_fourcc);
     fmt.fmt.pix_mp.num_planes  = 1;
     fmt.fmt.pix_mp.plane_fmt[0].sizeimage = VSL_V4L2_ENC_CAPTURE_BUF_SIZE;
-    fmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
+    fmt.fmt.pix_mp.field                  = V4L2_FIELD_NONE;
 
     if (xioctl(enc->fd, VIDIOC_S_FMT, &fmt) < 0) {
         fprintf(stderr,
@@ -316,20 +318,18 @@ static int
 queue_capture_buffers(struct vsl_encoder_v4l2* enc)
 {
     for (int i = 0; i < enc->capture.count; i++) {
-        if (enc->capture.buffers[i].queued) {
-            continue;
-        }
+        if (enc->capture.buffers[i].queued) { continue; }
 
         struct v4l2_buffer buf;
         struct v4l2_plane  planes[1];
 
         memset(&buf, 0, sizeof(buf));
         memset(planes, 0, sizeof(planes));
-        buf.type        = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-        buf.memory      = V4L2_MEMORY_MMAP;
-        buf.index       = i;
-        buf.length      = 1;
-        buf.m.planes    = planes;
+        buf.type         = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+        buf.memory       = V4L2_MEMORY_MMAP;
+        buf.index        = i;
+        buf.length       = 1;
+        buf.m.planes     = planes;
         planes[0].length = enc->capture.buffers[i].mmap_size;
 
         if (xioctl(enc->fd, VIDIOC_QBUF, &buf) < 0) {
@@ -350,14 +350,10 @@ queue_capture_buffers(struct vsl_encoder_v4l2* enc)
 static int
 start_streaming(struct vsl_encoder_v4l2* enc)
 {
-    if (enc->streaming) {
-        return 0;
-    }
+    if (enc->streaming) { return 0; }
 
     // Queue all CAPTURE buffers first
-    if (queue_capture_buffers(enc) < 0) {
-        return -1;
-    }
+    if (queue_capture_buffers(enc) < 0) { return -1; }
 
     // Start OUTPUT streaming
     int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -387,9 +383,7 @@ start_streaming(struct vsl_encoder_v4l2* enc)
 static void
 stop_streaming(struct vsl_encoder_v4l2* enc)
 {
-    if (!enc->streaming) {
-        return;
-    }
+    if (!enc->streaming) { return; }
 
     int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     xioctl(enc->fd, VIDIOC_STREAMOFF, &type);
@@ -416,9 +410,7 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
 
     // Set bitrate
     if (set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_BITRATE, bitrate) < 0) {
-        fprintf(stderr,
-                "V4L2 encoder: failed to set bitrate %u\n",
-                bitrate);
+        fprintf(stderr, "V4L2 encoder: failed to set bitrate %u\n", bitrate);
         // Continue anyway, driver may use default
     }
 
@@ -460,7 +452,9 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
 }
 
 VSLEncoder*
-vsl_encoder_create_v4l2(VSLEncoderProfile profile, uint32_t output_fourcc, int fps)
+vsl_encoder_create_v4l2(VSLEncoderProfile profile,
+                        uint32_t          output_fourcc,
+                        int               fps)
 {
     // Validate codec
     uint32_t v4l2_codec = vsl_to_v4l2_codec(output_fourcc);
@@ -522,9 +516,7 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile, uint32_t output_fourcc, int f
 void
 vsl_encoder_release_v4l2(VSLEncoder* encoder)
 {
-    if (!encoder) {
-        return;
-    }
+    if (!encoder) { return; }
 
     struct vsl_encoder_v4l2* enc = (struct vsl_encoder_v4l2*) encoder;
 
@@ -541,9 +533,7 @@ vsl_encoder_release_v4l2(VSLEncoder* encoder)
     }
 
     // Close device
-    if (enc->fd >= 0) {
-        close(enc->fd);
-    }
+    if (enc->fd >= 0) { close(enc->fd); }
 
     fprintf(stderr,
             "V4L2 encoder: released (%lu frames encoded)\n",
@@ -559,14 +549,13 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
                       const VSLRect* crop_region,
                       int*           keyframe)
 {
-    if (!encoder || !source || !destination) {
-        return -1;
-    }
+    if (!encoder || !source || !destination) { return -1; }
 
-    struct vsl_encoder_v4l2* enc = (struct vsl_encoder_v4l2*) encoder;
+    struct vsl_encoder_v4l2* enc        = (struct vsl_encoder_v4l2*) encoder;
     uint64_t                 start_time = vsl_timestamp_us();
 
-    // Initialize encoder on first frame (need dimensions and format from source)
+    // Initialize encoder on first frame (need dimensions and format from
+    // source)
     if (!enc->initialized) {
         int      width        = vsl_frame_width(source);
         int      height       = vsl_frame_height(source);
@@ -576,15 +565,11 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
             return -1;
         }
 
-        if (setup_capture_queue(enc) < 0) {
-            return -1;
-        }
+        if (setup_capture_queue(enc) < 0) { return -1; }
 
         configure_encoder(enc);
 
-        if (start_streaming(enc) < 0) {
-            return -1;
-        }
+        if (start_streaming(enc) < 0) { return -1; }
 
         enc->initialized = true;
         fprintf(stderr,
@@ -620,7 +605,7 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
 
         if (xioctl(enc->fd, VIDIOC_DQBUF, &buf) == 0) {
             enc->output.buffers[buf.index].queued = false;
-            out_idx = buf.index;
+            out_idx                               = buf.index;
         }
     }
 
@@ -651,7 +636,7 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     // Set up plane data based on format
     if (enc->num_input_planes == 1) {
         // Single-plane packed format (BGRA, YUYV, etc.)
-        size_t frame_size = vsl_frame_size(source);
+        size_t frame_size   = vsl_frame_size(source);
         planes[0].m.fd      = src_fd;
         planes[0].length    = frame_size;
         planes[0].bytesused = frame_size;
@@ -717,7 +702,7 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
         return -1;
     }
 
-    int cap_idx   = cap_buf.index;
+    int cap_idx      = cap_buf.index;
     int encoded_size = cap_planes[0].bytesused;
 
     enc->capture.buffers[cap_idx].queued = false;
@@ -784,9 +769,7 @@ vsl_encoder_new_output_frame_v4l2(const VSLEncoder* encoder,
                                   int64_t           pts,
                                   int64_t           dts)
 {
-    if (!encoder) {
-        return NULL;
-    }
+    if (!encoder) { return NULL; }
 
     const struct vsl_encoder_v4l2* enc =
         (const struct vsl_encoder_v4l2*) encoder;
@@ -796,11 +779,9 @@ vsl_encoder_new_output_frame_v4l2(const VSLEncoder* encoder,
                                      height,
                                      width, // stride not relevant for encoded
                                      enc->output_fourcc,
-                                     NULL, // no userptr
+                                     NULL,  // no userptr
                                      NULL); // no cleanup
-    if (!frame) {
-        return NULL;
-    }
+    if (!frame) { return NULL; }
 
     // Set the frame size for allocation (2MB for compressed data)
     frame->info.size = VSL_V4L2_ENC_CAPTURE_BUF_SIZE;

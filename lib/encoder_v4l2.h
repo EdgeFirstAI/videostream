@@ -71,35 +71,36 @@ struct vsl_encoder_v4l2 {
     int fd; // V4L2 device file descriptor
 
     // Encoder configuration
-    VSLEncoderProfile profile;      // Bitrate profile
+    VSLEncoderProfile profile;       // Bitrate profile
     uint32_t          output_fourcc; // Output codec (H264/HEVC)
-    int               fps;          // Frame rate
+    int               fps;           // Frame rate
 
     // Input frame dimensions
     int      width;
     int      height;
     int      stride;
-    uint32_t input_fourcc;    // Input pixel format (NV12, BGRA, etc.)
-    uint32_t v4l2_input_fmt;  // V4L2 pixel format for OUTPUT queue
+    uint32_t input_fourcc;     // Input pixel format (NV12, BGRA, etc.)
+    uint32_t v4l2_input_fmt;   // V4L2 pixel format for OUTPUT queue
     int      num_input_planes; // Number of planes (1 for packed, 2 for NV12)
 
     // OUTPUT queue (raw input frames)
     struct {
-        int                              count;
+        int                               count;
         struct vsl_v4l2_enc_output_buffer buffers[VSL_V4L2_ENC_OUTPUT_BUFFERS];
-        struct v4l2_plane                planes[VSL_V4L2_ENC_MAX_PLANES];
+        struct v4l2_plane                 planes[VSL_V4L2_ENC_MAX_PLANES];
     } output;
 
     // CAPTURE queue (compressed output)
     struct {
-        int                               count;
-        struct vsl_v4l2_enc_capture_buffer buffers[VSL_V4L2_ENC_CAPTURE_BUFFERS];
-        struct v4l2_plane                 planes[1]; // Single plane for compressed
+        int count;
+        struct vsl_v4l2_enc_capture_buffer
+                          buffers[VSL_V4L2_ENC_CAPTURE_BUFFERS];
+        struct v4l2_plane planes[1]; // Single plane for compressed
     } capture;
 
     // State flags
-    bool initialized;      // Encoder initialized with first frame
-    bool streaming;        // Both queues streaming
+    bool initialized; // Encoder initialized with first frame
+    bool streaming;   // Both queues streaming
 
     // Statistics
     uint64_t frames_encoded;
@@ -115,7 +116,9 @@ struct vsl_encoder_v4l2 {
  * @return Encoder instance or NULL on failure
  */
 VSLEncoder*
-vsl_encoder_create_v4l2(VSLEncoderProfile profile, uint32_t output_fourcc, int fps);
+vsl_encoder_create_v4l2(VSLEncoderProfile profile,
+                        uint32_t          output_fourcc,
+                        int               fps);
 
 /**
  * Release V4L2 encoder and all associated resources.

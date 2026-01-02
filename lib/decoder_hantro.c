@@ -246,9 +246,7 @@ vsl_alloc_framebuf_hantro(struct vsl_decoder_hantro* decoder)
     decoder->frame_buf_maps = calloc(bufNum, sizeof(void*));
 
     // Initialize FDs to -1 (0 would incorrectly indicate stdin)
-    for (int i = 0; i < bufNum; i++) {
-        decoder->frame_buf_fds[i] = -1;
-    }
+    for (int i = 0; i < bufNum; i++) { decoder->frame_buf_fds[i] = -1; }
 
     // Try DMA heap allocation first for cross-process sharing
     int dmabuf_result =
@@ -264,7 +262,7 @@ vsl_alloc_framebuf_hantro(struct vsl_decoder_hantro* decoder)
 
     if (dmabuf_result == 0) {
         // Success - store buffer info for cleanup
-        decoder->frame_buf_count  = bufNum;
+        decoder->frame_buf_count   = bufNum;
         decoder->frame_buf_y_size  = ySize;
         decoder->frame_buf_u_size  = uSize;
         decoder->frame_buf_v_size  = vSize;
@@ -387,7 +385,6 @@ hantro_frame_cleanup(VSLFrame* frame)
                ret);
     }
 }
-
 
 VSLDecoderRetCode
 vsl_decode_frame_hantro(VSLDecoder*  decoder_,

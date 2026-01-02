@@ -265,8 +265,8 @@ fn probe_v4l2_device(path: &Path) -> Option<V4L2Device> {
     // On i.MX8: video0 is typically decoder, video1 is encoder
     let (is_encoder, is_decoder) = if is_vpu_device && name.is_empty() {
         match video_num {
-            "0" => (false, true),  // VPU decoder
-            "1" => (true, false),  // VPU encoder
+            "0" => (false, true), // VPU decoder
+            "1" => (true, false), // VPU encoder
             _ => (is_encoder, is_decoder),
         }
     } else {
