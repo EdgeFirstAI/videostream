@@ -17,6 +17,26 @@ pub struct VSLRect {
     pub(crate) rect: ffi::vsl_rect,
 }
 
+/// Codec backend selection for encoder.
+///
+/// Allows explicit selection between V4L2 kernel driver and Hantro user-space
+/// library (libcodec.so) backends for encoding.
+///
+/// @since 2.0
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u32)]
+pub enum CodecBackend {
+    /// Auto-detect best available backend (default).
+    #[default]
+    Auto = ffi::VSLCodecBackend_VSL_CODEC_BACKEND_AUTO,
+
+    /// Force Hantro/libcodec.so backend.
+    Hantro = ffi::VSLCodecBackend_VSL_CODEC_BACKEND_HANTRO,
+
+    /// Force V4L2 kernel driver backend.
+    V4L2 = ffi::VSLCodecBackend_VSL_CODEC_BACKEND_V4L2,
+}
+
 #[repr(u32)]
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum VSLEncoderProfileEnum {
@@ -99,6 +119,58 @@ impl Encoder {
             Some(p) if !p.is_null() => Ok(Encoder { ptr: p }),
             Some(_) => Err(Error::HardwareNotAvailable("VPU encoder")),
             None => Err(Error::SymbolNotFound("vsl_encoder_create")),
+        }
+    }
+
+    /// Create a new encoder instance with explicit backend selection.
+    ///
+    /// This allows choosing between V4L2 and Hantro backends explicitly.
+    /// Requires VideoStream 2.0 or later.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use videostream::encoder::{Encoder, VSLEncoderProfileEnum, CodecBackend};
+    ///
+    /// // Force V4L2 backend for encoding
+    /// let encoder = Encoder::create_ex(
+    ///     VSLEncoderProfileEnum::Kbps25000 as u32,
+    ///     u32::from_le_bytes(*b"H264"),
+    ///     30,
+    ///     CodecBackend::V4L2,
+    /// )?;
+    /// # Ok::<(), videostream::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::SymbolNotFound` if vsl_encoder_create_ex is not available.
+    /// Returns `Error::HardwareNotAvailable` if the encoder backend is not present.
+    pub fn create_ex(
+        profile: u32,
+        output_fourcc: u32,
+        fps: c_int,
+        backend: CodecBackend,
+    ) -> Result<Self, Error> {
+        let lib = ffi::init()?;
+
+        if !lib.is_encoder_create_ex_available() {
+            return Err(Error::SymbolNotFound("vsl_encoder_create_ex"));
+        }
+
+        let ptr = unsafe {
+            lib.try_vsl_encoder_create_ex(
+                profile,
+                output_fourcc,
+                fps,
+                backend as ffi::VSLCodecBackend,
+            )
+        };
+
+        match ptr {
+            Some(p) if !p.is_null() => Ok(Encoder { ptr: p }),
+            Some(_) => Err(Error::HardwareNotAvailable("VPU encoder")),
+            None => Err(Error::SymbolNotFound("vsl_encoder_create_ex")),
         }
     }
 

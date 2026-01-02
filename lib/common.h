@@ -14,6 +14,25 @@
 #define SOCKET int
 #endif
 
+/**
+ * Align a value to the specified alignment boundary.
+ *
+ * @param val Value to align (integer or pointer cast to unsigned long)
+ * @param align Alignment boundary (must be power of 2)
+ * @return Aligned value
+ */
+#define VSL_ALIGN(val, align) \
+    ((((unsigned long) (val)) + ((align) - 1)) / (align) * (align))
+
+/**
+ * Get current monotonic timestamp in microseconds.
+ * Suitable for timing measurements and performance instrumentation.
+ *
+ * @return Current timestamp in microseconds
+ */
+int64_t
+vsl_timestamp_us(void);
+
 extern int
 socket_blocking(SOCKET sock, int blocking);
 

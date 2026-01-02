@@ -18,26 +18,29 @@ struct vsl_decoder_hantro {
     // Backend type - MUST be first field for dispatch logic
     VSLCodecBackend backend;
 
-    int             outWidth;
-    int             outHeight;
+    int             out_width;
+    int             out_height;
     int             fps;
-    VSLDecoderCodec inputCodec;
-    uint32_t        outputFourcc;
+    VSLDecoderCodec input_codec;
+    uint32_t        output_fourcc;
     VpuDecHandle    handle;
-    VSLRect         cropRegion;
+    VSLRect         crop_region;
 
     // Internal memory
-    VpuMemDesc     phyMem;
-    unsigned char* virtMem;
+    VpuMemDesc     phy_mem;
+    unsigned char* virt_mem;
 
     // DMA heap frame buffers (for cross-process sharing)
-    int    frameBufCount;  // Number of frame buffers allocated
-    int*   frameBufFds;    // Array of dmabuf file descriptors
-    void** frameBufMaps;   // Array of mmap pointers
-    int    frameBufYSize;  // Y plane size (for cleanup)
-    int    frameBufUSize;  // U/Cb plane size (for cleanup)
-    int    frameBufVSize;  // V/Cr plane size (for cleanup)
-    int    frameBufMvSize; // Motion vector size (for cleanup)
+    int    frame_buf_count;   // Number of frame buffers allocated
+    int*   frame_buf_fds;     // Array of dmabuf file descriptors
+    void** frame_buf_maps;    // Array of mmap pointers
+    int    frame_buf_y_size;  // Y plane size (for cleanup)
+    int    frame_buf_u_size;  // U/Cb plane size (for cleanup)
+    int    frame_buf_v_size;  // V/Cr plane size (for cleanup)
+    int    frame_buf_mv_size; // Motion vector size (for cleanup)
+
+    // Decode statistics (per-instance, thread-safe)
+    int frame_num; // Frame counter for debug logging
 };
 
 // DMA heap frame buffer allocation (decoder_hantro_dmabuf.c)

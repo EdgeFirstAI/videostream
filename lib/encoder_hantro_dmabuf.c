@@ -58,6 +58,9 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
         return NULL;
     }
 
+    const struct vsl_encoder_hantro* enc =
+        (const struct vsl_encoder_hantro*) encoder;
+
     // Allocate 1MB for encoder output (same as VPU_EncGetMem)
     // This is sufficient for 1080p H.264/HEVC keyframes at reasonable bitrates
     const size_t output_size = 1024 * 1024;
@@ -67,7 +70,7 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
         vsl_frame_init(width,
                        height,
                        -1, // stride not relevant for encoded frames
-                       encoder->outputFourcc,
+                       enc->output_fourcc,
                        NULL,  // no userptr needed
                        NULL); // no cleanup callback needed
     if (!frame) {
@@ -136,7 +139,8 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
                 "%s: DMA_BUF_IOCTL_PHYS failed: %s\n",
                 __FUNCTION__,
                 strerror(errno));
-        // Close handle and clear it to prevent double-close in vsl_frame_release
+        // Close handle and clear it to prevent double-close in
+        // vsl_frame_release
         close(frame->handle);
         frame->handle = -1;
         free(frame->path);
@@ -166,7 +170,8 @@ vsl_encoder_new_output_frame_dmabuf(const VSLEncoder* encoder,
 
     if (map == MAP_FAILED) {
         fprintf(stderr, "%s: mmap failed: %s\n", __FUNCTION__, strerror(errno));
-        // Close handle and clear it to prevent double-close in vsl_frame_release
+        // Close handle and clear it to prevent double-close in
+        // vsl_frame_release
         close(frame->handle);
         frame->handle = -1;
         free(frame->path);

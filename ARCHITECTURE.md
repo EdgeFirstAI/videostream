@@ -1,7 +1,7 @@
 # VideoStream Library - Architecture Guide
 
-**Version:** 2.0
-**Last Updated:** 2025-11-17
+**Version:** 2.1
+**Last Updated:** 2026-01-01
 **Audience:** Developers contributing to VideoStream or integrating it into EdgeFirst Perception
 
 ---
@@ -419,6 +419,177 @@ Produces GstBuffers from shared frames for downstream GStreamer processing:
 
 ## Hardware Acceleration
 
+### Codec Backend Architecture
+
+VideoStream supports dual codec backends for hardware video encoding/decoding:
+
+```mermaid
+graph TB
+    subgraph "Application Layer"
+        APP[Application Code]
+    end
+
+    subgraph "VideoStream API"
+        API[vsl_encoder_create / vsl_decoder_create]
+        DETECT[vsl_detect_codec_backend]
+    end
+
+    subgraph "Backend Implementations"
+        V4L2E[encoder_v4l2.c]
+        V4L2D[decoder_v4l2.c]
+        HANTROE[encoder_hantro.c]
+        HANTROD[decoder_hantro.c]
+    end
+
+    subgraph "Kernel Space"
+        VSI[vsi_v4l2enc/dec<br/>/dev/video0, /dev/video1]
+    end
+
+    subgraph "User Space Codec"
+        LIBCODEC[libcodec.so<br/>/dev/mxc_hantro*]
+    end
+
+    subgraph "Hardware"
+        VPU[Hantro VPU<br/>VC8000E Encoder<br/>G1/G2 Decoder]
+    end
+
+    APP --> API
+    API --> DETECT
+    DETECT --> V4L2E
+    DETECT --> V4L2D
+    DETECT --> HANTROE
+    DETECT --> HANTROD
+    V4L2E --> VSI
+    V4L2D --> VSI
+    HANTROE --> LIBCODEC
+    HANTROD --> LIBCODEC
+    VSI --> VPU
+    LIBCODEC --> VPU
+```
+
+### Backend Selection
+
+The library automatically selects the best available backend, with manual override options.
+
+**Backend Enum:**
+
+```c
+typedef enum {
+    VSL_CODEC_BACKEND_AUTO = 0,   // Auto-detect best backend (default)
+    VSL_CODEC_BACKEND_HANTRO = 1, // Force Hantro/libcodec.so
+    VSL_CODEC_BACKEND_V4L2 = 2,   // Force V4L2 kernel driver
+} VSLCodecBackend;
+```
+
+**Extended API:**
+
+```c
+// Explicit backend selection
+VSLDecoder* vsl_decoder_create_ex(uint32_t codec, int fps, VSLCodecBackend backend);
+VSLEncoder* vsl_encoder_create_ex(VSLEncoderProfile profile, uint32_t codec,
+                                   int fps, VSLCodecBackend backend);
+
+// Original API uses AUTO (backwards compatible)
+VSLDecoder* vsl_decoder_create(uint32_t codec, int fps);
+VSLEncoder* vsl_encoder_create(VSLEncoderProfile profile, uint32_t codec, int fps);
+```
+
+**Environment Variable Override:**
+
+```bash
+# Force Hantro backend even if V4L2 available
+VSL_CODEC_BACKEND=hantro ./my_app
+
+# Force V4L2 (fail if unavailable)
+VSL_CODEC_BACKEND=v4l2 ./my_app
+
+# Auto-detect (default)
+VSL_CODEC_BACKEND=auto ./my_app
+```
+
+**Detection Priority:**
+
+1. Check `VSL_CODEC_BACKEND` environment variable
+2. Check V4L2 device availability (`/dev/video0` encoder, `/dev/video1` decoder)
+3. Fallback to Hantro devices (`/dev/mxc_hantro_vc8000e`, `/dev/mxc_hantro`)
+
+**Implementation:** `lib/codec_backend.c`, `lib/decoder.c`, `lib/encoder.c`
+
+### V4L2 Codec Backend
+
+**Implementation:** `lib/encoder_v4l2.c`, `lib/decoder_v4l2.c`
+
+The V4L2 backend uses the Linux kernel's mem2mem (M2M) interface for hardware codecs:
+
+**Device Nodes (i.MX 8M Plus):**
+
+| Device | Driver | Function | Max Resolution |
+|--------|--------|----------|----------------|
+| `/dev/video0` | vsi_v4l2enc | H.264/HEVC Encoder | 1920x1080 @ 60fps |
+| `/dev/video1` | vsi_v4l2dec | H.264/HEVC/VP9 Decoder | 4096x2160 @ 60fps |
+
+**V4L2 mem2mem Model:**
+
+```
+            ┌─────────────────────────────────────────┐
+            │           V4L2 mem2mem Device           │
+            │                                         │
+ Raw/Enc    │  ┌─────────┐         ┌─────────────┐   │   Enc/Raw
+  Data  ───►│  │ OUTPUT  │ ──────► │   CAPTURE   │   │──► Data
+            │  │ Queue   │  (HW)   │    Queue    │   │
+            │  └─────────┘         └─────────────┘   │
+            │                                         │
+            └─────────────────────────────────────────┘
+
+Encoder: OUTPUT=raw NV12/BGRA, CAPTURE=H.264/HEVC
+Decoder: OUTPUT=H.264/HEVC, CAPTURE=raw NV12
+```
+
+**Key Features:**
+
+- **DMABUF zero-copy:** Input frames passed via DMA file descriptors
+- **Multi-format input:** NV12, BGRA, and other pixel formats
+- **Crop-based 4K tiling:** V4L2 selection API for encoding 4K as four 1080p tiles
+- **Codec controls:** Bitrate, GOP size, profile, level via V4L2 extended controls
+
+**4K Tiling Support:**
+
+Since the encoder hardware (VC8000E) supports max 1920x1080, 4K encoding uses crop regions:
+
+```
+┌─────────────────────────────────────────┐
+│            4K Source (3840x2160)        │
+│  ┌─────────────────┬─────────────────┐  │
+│  │   Tile 0        │   Tile 1        │  │
+│  │   (0,0)         │   (1920,0)      │  │
+│  │   1920x1080     │   1920x1080     │  │
+│  ├─────────────────┼─────────────────┤  │
+│  │   Tile 2        │   Tile 3        │  │
+│  │   (0,1080)      │   (1920,1080)   │  │
+│  │   1920x1080     │   1920x1080     │  │
+│  └─────────────────┴─────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+### Hantro VPU Backend
+
+**Implementation:** `lib/encoder_hantro.c`, `lib/decoder_hantro.c`
+
+User-space codec via NXP's libcodec.so and vpu_wrapper:
+
+- **VPU wrapper library:** Abstraction over Hantro hardware
+- **Zero-copy input:** Encode directly from DmaBuf physical addresses
+- **Codec support:** H.264 (AVC), H.265 (HEVC), VP8
+
+**Device Nodes:**
+
+| Device | Function |
+|--------|----------|
+| `/dev/mxc_hantro_vc8000e` | Encoder access |
+| `/dev/mxc_hantro` | Decoder access |
+
+**Note:** The Hantro backend has higher latency than V4L2 for 1080p+ content (see Performance Comparison below).
+
 ### V4L2 Camera Capture
 
 **Implementation:** `lib/v4l2.c`
@@ -428,6 +599,7 @@ VideoStream interfaces directly with Video4Linux2 drivers:
 - **DmaBuf export:** `VIDIOC_EXPBUF` to get FD from camera buffer
 - **Format negotiation:** `VIDIOC_S_FMT` for resolution and pixel format
 - **Buffer management:** `VIDIOC_QBUF`/`VIDIOC_DQBUF` for capture
+- **Exclusive locking:** `flock()` prevents concurrent camera access
 
 **Key Functions:**
 
@@ -435,22 +607,6 @@ VideoStream interfaces directly with Video4Linux2 drivers:
 - `v4l2_set_format()` - Configure capture format
 - `v4l2_start_streaming()` - Begin frame capture
 - `v4l2_capture_frame()` - Dequeue captured frame
-
-### Hantro VPU Encoding
-
-**Implementation:** `lib/encoder_hantro.c`
-
-Hardware H.264/H.265 encoding on NXP i.MX8 platforms:
-
-- **VPU wrapper library:** Abstraction over Hantro hardware encoder
-- **Zero-copy input:** Encode directly from DmaBuf physical addresses
-- **Codec support:** H.264 (AVC), H.265 (HEVC)
-
-**Key Functions:**
-
-- `hantro_encoder_create()` - Initialize VPU encoder
-- `hantro_encoder_encode()` - Encode frame to H.264/H.265
-- `hantro_encoder_destroy()` - Release VPU resources
 
 ### G2D Blitting (NXP i.MX8)
 
@@ -461,6 +617,7 @@ Hardware-accelerated format conversion and scaling:
 - **G2D library:** NXP's 2D graphics acceleration
 - **Format conversion:** YUV ↔ RGB, NV12 ↔ YUYV, etc.
 - **Scaling:** Arbitrary resolution changes
+
 
 ---
 
@@ -727,8 +884,13 @@ Platform compatibility:
 | File | Purpose |
 |------|---------|
 | `lib/v4l2.c` | Video4Linux2 camera capture |
-| `lib/encoder_hantro.c` | Hantro VPU H.264/H.265 encoding |
-| `lib/decoder_hantro.c` | Hantro VPU decoding |
+| `lib/codec_backend.c` | Backend detection and selection |
+| `lib/encoder.c` | Encoder API with backend dispatch |
+| `lib/encoder_v4l2.c` | V4L2 mem2mem encoder |
+| `lib/encoder_hantro.c` | Hantro/libcodec.so encoder |
+| `lib/decoder.c` | Decoder API with backend dispatch |
+| `lib/decoder_v4l2.c` | V4L2 mem2mem decoder |
+| `lib/decoder_hantro.c` | Hantro/libcodec.so decoder |
 | `lib/g2d.c` | NXP G2D format conversion |
 
 ### GStreamer Plugins

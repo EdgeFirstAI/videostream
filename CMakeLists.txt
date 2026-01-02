@@ -180,11 +180,12 @@ find_package(Threads REQUIRED)
 add_subdirectory(ext/stb)
 
 # Codec backend support
-# Always include the unified decoder dispatch and backend detection
+# Always include the unified encoder/decoder dispatch and backend detection
 set(CODEC_SRCS
     lib/codec_backend.h
     lib/codec_backend.c
     lib/decoder.c
+    lib/encoder.c
 )
 
 # V4L2 mem2mem codec backend (optional)
@@ -192,6 +193,8 @@ if(ENABLE_V4L2_CODEC)
     list(APPEND CODEC_SRCS
         lib/decoder_v4l2.h
         lib/decoder_v4l2.c
+        lib/encoder_v4l2.h
+        lib/encoder_v4l2.c
     )
 endif()
 

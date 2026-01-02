@@ -482,10 +482,10 @@ pub fn create_decoder_if_requested(
     // Normalize codec alias
     let normalized_codec = normalize_codec_alias(codec)?;
 
-    // Map to decoder input codec enum
+    // Map to decoder codec enum
     let decoder_codec = match normalized_codec {
-        "h264" => decoder::DecoderInputCodec::H264,
-        "h265" => decoder::DecoderInputCodec::HEVC,
+        "h264" => decoder::DecoderCodec::H264,
+        "h265" => decoder::DecoderCodec::HEVC,
         _ => {
             return Err(CliError::InvalidArgs(format!(
                 "Unsupported decoder codec: {}",

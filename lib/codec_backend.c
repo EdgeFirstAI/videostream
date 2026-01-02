@@ -34,26 +34,22 @@ bool
 vsl_v4l2_codec_available(bool is_encoder)
 {
 #ifdef __linux__
-    const char* dev =
-        is_encoder ? VSL_V4L2_ENCODER_DEV : VSL_V4L2_DECODER_DEV;
+    const char* dev = is_encoder ? VSL_V4L2_ENCODER_DEV : VSL_V4L2_DECODER_DEV;
 
     // Check if device exists and is accessible
-    if (access(dev, R_OK | W_OK) != 0) {
-        return false;
-    }
+    if (access(dev, R_OK | W_OK) != 0) { return false; }
 
     // Open device and verify it has M2M capability
     int fd = open(dev, O_RDWR | O_NONBLOCK);
-    if (fd < 0) {
-        return false;
-    }
+    if (fd < 0) { return false; }
 
     struct v4l2_capability cap;
     memset(&cap, 0, sizeof(cap));
 
     bool available = false;
     if (ioctl(fd, VIDIOC_QUERYCAP, &cap) == 0) {
-        // Use device_caps if V4L2_CAP_DEVICE_CAPS is set, otherwise capabilities
+        // Use device_caps if V4L2_CAP_DEVICE_CAPS is set, otherwise
+        // capabilities
         __u32 caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS)
                          ? cap.device_caps
                          : cap.capabilities;
@@ -149,9 +145,7 @@ vsl_detect_codec_backend(bool is_encoder)
 
     // 4. No backend available
 #ifndef NDEBUG
-    fprintf(stderr,
-            "[codec_backend] %s: no backend available\n",
-            type_str);
+    fprintf(stderr, "[codec_backend] %s: no backend available\n", type_str);
 #endif
     return VSL_CODEC_BACKEND_AUTO; // Will cause create to fail
 }
