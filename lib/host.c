@@ -98,23 +98,18 @@ add_frame_to_socket(int socket, VSLHost* host, VSLFrame* frame)
 static int
 remove_frame_from_socket(int socket, VSLHost* host, VSLFrame* frame)
 {
-    bool found = false;
-
     for (int i = 0; i < host->n_sockets; i++) {
-        if (host->sockets[i].one_socket == socket) {
-            for (int j = 0; j < MAX_FRAMES_PER_CLIENT; j++) {
-                if (host->sockets[i].frames[j] == frame) {
-                    found                      = true;
-                    host->sockets[i].frames[j] = NULL;
-                    break;
-                }
+        if (host->sockets[i].one_socket != socket) { continue; }
+
+        for (int j = 0; j < MAX_FRAMES_PER_CLIENT; j++) {
+            if (host->sockets[i].frames[j] == frame) {
+                host->sockets[i].frames[j] = NULL;
+                return 0;
             }
         }
     }
 
-    if (!found) { return -1; }
-
-    return 0;
+    return -1;
 }
 
 static void
@@ -428,34 +423,16 @@ vsl_host_post(VSLHost*  host,
     msg.msg_controllen = sizeof(aux);
 
     for (int i = 1; i < host->n_sockets; i++) {
-        if (host->sockets[i].one_socket != -1) {
-            int64_t before_sendmsg = get_timestamp_us();
-            ssize_t ret = sendmsg(host->sockets[i].one_socket, &msg, 0);
-            int64_t after_sendmsg = get_timestamp_us();
-            int64_t duration_us   = after_sendmsg - before_sendmsg;
+        if (host->sockets[i].one_socket == -1) { continue; }
 
-            if (ret == -1) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // Socket buffer full - client is busy, drop frame for this
-                    // client but don't disconnect. This is normal backpressure.
-#ifndef NDEBUG
-                    fprintf(stderr,
-                            "[HOST] sendmsg to socket %d: buffer full, "
-                            "dropping "
-                            "frame (client busy)\n",
-                            i);
-#endif
-                } else {
-                    // Real error - disconnect client
-                    fprintf(stderr,
-                            "[TIMING][HOST] sendmsg to socket %d FAILED after "
-                            "%lld us: %s\n",
-                            i,
-                            (long long) duration_us,
-                            strerror(errno));
-                    disconnect_client_index(host, i);
-                }
-            } else if (duration_us > 1000) {
+        int64_t before_sendmsg = get_timestamp_us();
+        ssize_t ret            = sendmsg(host->sockets[i].one_socket, &msg, 0);
+        int64_t after_sendmsg  = get_timestamp_us();
+        int64_t duration_us    = after_sendmsg - before_sendmsg;
+
+        if (ret >= 0) {
+            // Success - log if slow
+            if (duration_us > 1000) {
                 fprintf(stderr,
                         "[TIMING][HOST] sendmsg to socket %d took %lld us "
                         "(%.2f ms)\n",
@@ -463,7 +440,30 @@ vsl_host_post(VSLHost*  host,
                         (long long) duration_us,
                         duration_us / 1000.0);
             }
+            continue;
         }
+
+        // ret == -1: error
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Socket buffer full - client is busy, drop frame for this
+            // client but don't disconnect. This is normal backpressure.
+#ifndef NDEBUG
+            fprintf(stderr,
+                    "[HOST] sendmsg to socket %d: buffer full, dropping frame "
+                    "(client busy)\n",
+                    i);
+#endif
+            continue;
+        }
+
+        // Real error - disconnect client
+        fprintf(stderr,
+                "[TIMING][HOST] sendmsg to socket %d FAILED after %lld us: "
+                "%s\n",
+                i,
+                (long long) duration_us,
+                strerror(errno));
+        disconnect_client_index(host, i);
     }
 
     pthread_mutex_unlock(&host->lock);
@@ -932,20 +932,19 @@ vsl_host_process(VSLHost* host)
     if (newsock != -1) { host_newsock(host, newsock); }
 
     for (int i = 1; i < host->n_sockets; i++) {
-        if (host->sockets[i].one_socket != -1) {
-            if (service_client(host, host->sockets[i].one_socket)) {
-                if (errno != ENOMSG) {
+        if (host->sockets[i].one_socket == -1) { continue; }
+
+        int svc_err = service_client(host, host->sockets[i].one_socket);
+        if (!svc_err || errno == ENOMSG) { continue; }
+
 #ifndef NDEBUG
-                    fprintf(stderr,
-                            "%s failed to service client %d: %s\n",
-                            __FUNCTION__,
-                            i,
-                            strerror(errno));
+        fprintf(stderr,
+                "%s failed to service client %d: %s\n",
+                __FUNCTION__,
+                i,
+                strerror(errno));
 #endif
-                    disconnect_client_index(host, i);
-                }
-            }
-        }
+        disconnect_client_index(host, i);
     }
     expire_frames(host);
     pthread_mutex_unlock(&host->lock);
