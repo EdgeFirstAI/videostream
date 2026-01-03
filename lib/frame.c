@@ -164,11 +164,11 @@ vsl_frame_size(const VSLFrame* frame)
 
 VSL_API
 intptr_t
-vsl_frame_paddr(const VSLFrame* frame)
+vsl_frame_paddr(VSLFrame* frame)
 {
     if (!frame) { return -1; }
     if (!frame->info.paddr) {
-        struct vsl_frame_info* info = (struct vsl_frame_info*) &frame->info;
+        struct vsl_frame_info* info = &frame->info;
         struct dma_buf_phys    dma_phys;
 
         if (ioctl(frame->handle, DMA_BUF_IOCTL_PHYS, &dma_phys)) {

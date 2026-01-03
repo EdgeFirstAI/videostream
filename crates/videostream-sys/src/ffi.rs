@@ -300,7 +300,7 @@ pub struct VideoStreamLibrary {
         ::libloading::Error,
     >,
     pub vsl_frame_paddr:
-        Result<unsafe extern "C" fn(frame: *const VSLFrame) -> isize, ::libloading::Error>,
+        Result<unsafe extern "C" fn(frame: *mut VSLFrame) -> isize, ::libloading::Error>,
     pub vsl_frame_mmap: Result<
         unsafe extern "C" fn(frame: *mut VSLFrame, size: *mut usize) -> *mut ::std::os::raw::c_void,
         ::libloading::Error,
@@ -1062,8 +1062,8 @@ impl VideoStreamLibrary {
             .as_ref()
             .expect("Expected function, got error."))(frame)
     }
-    #[doc = " Returns the physical address of the frame.\n\n Physical address is available for DMA-capable buffers on platforms where\n the kernel provides physical address translation (some i.MX platforms).\n\n @param frame The frame instance\n @return Physical address, or MMAP_FAILED ((intptr_t)-1) if DMA not supported\n @since 1.0\n @memberof VSLFrame"]
-    pub unsafe fn vsl_frame_paddr(&self, frame: *const VSLFrame) -> isize {
+    #[doc = " Returns the physical address of the frame.\n\n Physical address is available for DMA-capable buffers on platforms where\n the kernel provides physical address translation (some i.MX platforms).\n Note: This function caches the physical address internally on first call.\n\n @param frame The frame instance\n @return Physical address, or MMAP_FAILED ((intptr_t)-1) if DMA not supported\n @since 1.0\n @memberof VSLFrame"]
+    pub unsafe fn vsl_frame_paddr(&self, frame: *mut VSLFrame) -> isize {
         (self
             .vsl_frame_paddr
             .as_ref()
