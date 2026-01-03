@@ -62,6 +62,142 @@ static int    wait_stages_ms[]     = {0, 1, 5, 25, 100, 1000};
 static size_t size_of_wait_stages_array =
     sizeof(wait_stages_ms) / sizeof(wait_stages_ms[0]);
 
+// Forward declarations
+static int
+get_socket(struct sockaddr_un addr, socklen_t addrlen);
+static void
+restart_timer(VSLClient* client);
+
+// Helper: Close and reset client socket
+static inline void
+close_client_socket(VSLClient* client)
+{
+    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
+    close(client->sock);
+    client->sock = SOCKET_ERROR;
+}
+
+// Helper: Attempt reconnection with exponential backoff
+// Returns true if reconnection is allowed (client->reconnect is true)
+// Returns false if reconnection is disabled (caller should return error)
+static inline bool
+try_reconnect(VSLClient* client, uint8_t* wait_stage)
+{
+    if (!client->reconnect) {
+        fprintf(stderr,
+                "%s connection closed: %s\n",
+                __FUNCTION__,
+                strerror(errno));
+        return false;
+    }
+
+    if (*wait_stage < size_of_wait_stages_array - 1) { (*wait_stage)++; }
+
+    usleep(wait_stages_ms[*wait_stage] * 1000);
+
+    // Try to get a new socket
+    int sock = get_socket(client->sock_addr, client->sock_addrlen);
+    if (sock >= 0) { client->sock = sock; }
+
+    return true;
+}
+
+// Helper: Wait for data on socket using poll()
+// Returns: 1 = data ready, 0 = timeout, -1 = error (sets errno)
+static inline int
+wait_for_socket_data(VSLClient* client)
+{
+    struct pollfd pfd;
+    pfd.fd      = client->sock;
+    pfd.events  = POLLIN;
+    pfd.revents = 0;
+
+    restart_timer(client);
+    int poll_ret = poll(&pfd, 1, client->sock_timeout_secs * 1000);
+
+    if (poll_ret == -1) {
+        if (errno == EINTR) {
+            return 1; // Treat interrupt as "retry"
+        }
+        fprintf(stderr, "%s poll error: %s\n", __FUNCTION__, strerror(errno));
+        return -1;
+    } else if (poll_ret == 0) {
+        errno = ETIMEDOUT;
+        return 0;
+    }
+
+    return 1; // Data ready
+}
+
+// Helper: Handle recvmsg error with reconnection logic
+// Returns: true = should continue loop, false = should return error
+static inline bool
+handle_recv_error(VSLClient* client)
+{
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        int poll_result = wait_for_socket_data(client);
+        if (poll_result == 0) {
+            // Timeout
+            return false;
+        } else if (poll_result == -1) {
+            // Poll error
+            if (!client->reconnect) { return false; }
+            client->is_reconnecting = true;
+            close_client_socket(client);
+        }
+        // Data ready or interrupted - continue loop
+        return true;
+    }
+
+    // Real error (not EAGAIN)
+    if (!client->reconnect) {
+        fprintf(stderr, "%s read error: %s\n", __FUNCTION__, strerror(errno));
+        return false;
+    }
+
+    client->is_reconnecting = true;
+    close_client_socket(client);
+    return true;
+}
+
+// Helper: Handle connection closed (ret == 0 from recvmsg)
+// Returns: true = reconnected and should continue, false = should return error
+static inline bool
+handle_connection_closed(VSLClient* client, uint8_t* wait_stage)
+{
+#ifndef NDEBUG
+    printf("%s client %d no message\n", __FUNCTION__, client->sock);
+#endif
+    int prev_sock           = client->sock;
+    client->is_reconnecting = true;
+    close_client_socket(client);
+
+    if (!client->reconnect) {
+        fprintf(stderr,
+                "%s client %d connection closed: %s\n",
+                __FUNCTION__,
+                prev_sock,
+                strerror(errno));
+        return false;
+    }
+
+    if (*wait_stage < size_of_wait_stages_array - 1) { (*wait_stage)++; }
+
+    usleep(wait_stages_ms[*wait_stage] * 1000);
+
+    int sock = get_socket(client->sock_addr, client->sock_addrlen);
+    if (sock >= 0) { client->sock = sock; }
+
+    return true;
+}
+
+// Helper: Close aux handle if valid
+static inline void
+close_aux_handle_if_valid(int handle)
+{
+    if (handle > 2) { close(handle); }
+}
+
 static const char*
 vsl_frame_strerror(enum vsl_frame_error err)
 {
@@ -103,9 +239,7 @@ timer_handler(union sigval sv)
 
     if (client->is_reconnecting) { return; }
 
-    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-    close(client->sock);
-    client->sock = SOCKET_ERROR;
+    close_client_socket(client);
 }
 
 static void
@@ -213,9 +347,7 @@ vsl_client_disconnect(VSLClient* client)
 #endif
 
     client->reconnect = false;
-    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-    close(client->sock);
-    client->sock = SOCKET_ERROR;
+    close_client_socket(client);
 }
 
 VSL_API VSLClient*
@@ -412,92 +544,17 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 #endif
 
             if (ret == -1) {
-                // For non-blocking sockets, EAGAIN/EWOULDBLOCK means no data
-                // available
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // No data available, use poll() to wait for next frame
-                    struct pollfd pfd;
-                    pfd.fd      = client->sock;
-                    pfd.events  = POLLIN;
-                    pfd.revents = 0;
-
-                    restart_timer(client);
-                    int poll_ret =
-                        poll(&pfd, 1, client->sock_timeout_secs * 1000);
-
-                    if (poll_ret == -1) {
-                        if (errno == EINTR) {
-                            continue; // Interrupted, try again
-                        }
-                        fprintf(stderr,
-                                "%s poll error: %s\n",
-                                __FUNCTION__,
-                                strerror(errno));
-                        if (!client->reconnect) {
-                            pthread_mutex_unlock(&client->lock);
-                            return NULL;
-                        }
-                        client->is_reconnecting = true;
-                        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-                        close(client->sock);
-                        client->sock = SOCKET_ERROR;
-                    } else if (poll_ret == 0) {
-                        // Timeout
-                        errno = ETIMEDOUT;
-                        pthread_mutex_unlock(&client->lock);
-                        return NULL;
-                    }
-                    // poll() succeeded, data is ready, continue loop to call
-                    // recvmsg() again
-                    continue;
-                }
-
-                // Real error (not EAGAIN)
-                if (!client->reconnect) {
-                    fprintf(stderr,
-                            "%s read error: %s\n",
-                            __FUNCTION__,
-                            strerror(errno));
+                if (!handle_recv_error(client)) {
                     pthread_mutex_unlock(&client->lock);
                     return NULL;
                 }
-
-                client->is_reconnecting = true;
-                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-                close(client->sock);
-                client->sock = SOCKET_ERROR;
+                // Continue loop to retry
             } else if (ret == 0) {
-#ifndef NDEBUG
-                printf("%s client %d no message\n", __FUNCTION__, client->sock);
-#endif
-                client->is_reconnecting = true;
-                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-                close(client->sock);
-                int prev_sock = client->sock;
-                client->sock  = SOCKET_ERROR;
-
-                if (!client->reconnect) {
-                    fprintf(stderr,
-                            "%s client %d connection closed: %s\n",
-                            __FUNCTION__,
-                            prev_sock,
-                            strerror(errno));
+                if (!handle_connection_closed(client, &current_wait_stage)) {
                     pthread_mutex_unlock(&client->lock);
                     return NULL;
                 }
-
                 tried_to_reconnect = true;
-
-                if (current_wait_stage < size_of_wait_stages_array - 1) {
-                    current_wait_stage++;
-                }
-
-                usleep(wait_stages_ms[current_wait_stage] * 1000);
-
-                // connection was closed, try to get a new socket
-                sock = get_socket(client->sock_addr, client->sock_addrlen);
-
-                if (sock >= 0) { client->sock = sock; }
             } else {
 #ifndef NDEBUG
                 printf("%s client %d got message\n",
@@ -545,13 +602,13 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 
         // non-frame event.
         if (!event.info.serial) {
-            if (aux.handle > 2) { close(aux.handle); }
+            close_aux_handle_if_valid(aux.handle);
             continue;
         }
 
         // Ignore expired frame events.
         if (event.info.expires && event.info.expires < vsl_timestamp()) {
-            if (aux.handle > 2) { close(aux.handle); }
+            close_aux_handle_if_valid(aux.handle);
             continue;
         }
 
@@ -563,7 +620,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                    event.info.timestamp,
                    until);
 #endif
-            if (aux.handle > 2) { close(aux.handle); }
+            close_aux_handle_if_valid(aux.handle);
             continue;
         }
 
@@ -609,7 +666,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
     VSLFrame* frame = calloc(1, sizeof(VSLFrame));
     if (!frame) {
         pthread_mutex_unlock(&client->lock);
-        if (aux.handle > 2) { close(aux.handle); }
+        close_aux_handle_if_valid(aux.handle);
         return NULL;
     }
 
@@ -687,35 +744,15 @@ vsl_frame_trylock(VSLFrame* frame)
                 return -1;
             }
 
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
+            close_client_socket(client);
             break;
         } else if (ret == 0) {
             client->is_reconnecting = true;
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
-
-            if (!client->reconnect) {
-                fprintf(stderr,
-                        "%s connection closed: %s\n",
-                        __FUNCTION__,
-                        strerror(errno));
+            close_client_socket(client);
+            if (!try_reconnect(client, &current_wait_stage)) {
                 pthread_mutex_unlock(&client->lock);
                 return -1;
             }
-
-            if (current_wait_stage < size_of_wait_stages_array - 1) {
-                current_wait_stage++;
-            }
-
-            usleep(wait_stages_ms[current_wait_stage] * 1000);
-
-            // connection was closed, try to get a new socket
-            int sock = get_socket(client->sock_addr, client->sock_addrlen);
-
-            if (sock >= 0) { client->sock = sock; }
         } else {
             client->is_reconnecting = false;
             break;
@@ -751,35 +788,16 @@ vsl_frame_trylock(VSLFrame* frame)
                 return -1;
             }
 
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
-
+            close_client_socket(client);
             break;
 
         } else if (ret == 0) {
             client->is_reconnecting = true;
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
-
-            if (!client->reconnect) {
-                fprintf(stderr,
-                        "%s connection closed: %s\n",
-                        __FUNCTION__,
-                        strerror(errno));
+            close_client_socket(client);
+            if (!try_reconnect(client, &current_wait_stage)) {
                 pthread_mutex_unlock(&client->lock);
                 return -1;
             }
-
-            if (current_wait_stage < size_of_wait_stages_array - 1) {
-                current_wait_stage++;
-            }
-
-            usleep(wait_stages_ms[current_wait_stage] * 1000);
-            // connection was closed, try to get a new socket
-            int sock = get_socket(client->sock_addr, client->sock_addrlen);
-            if (sock >= 0) { client->sock = sock; }
         }
     } while (event.info.serial); // non-zero serial indicates a frame event.
 
@@ -874,10 +892,7 @@ vsl_frame_unlock(VSLFrame* frame)
                 __FUNCTION__,
                 strerror(errno));
 
-        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-        close(client->sock);
-        client->sock = SOCKET_ERROR;
-
+        close_client_socket(client);
         pthread_mutex_unlock(&client->lock);
         return -1;
     } else if (ret == 0) {
@@ -885,11 +900,7 @@ vsl_frame_unlock(VSLFrame* frame)
                 "%s connection closed: %s\n",
                 __FUNCTION__,
                 strerror(errno));
-
-        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-        close(client->sock);
-        client->sock = SOCKET_ERROR;
-
+        close_client_socket(client);
         pthread_mutex_unlock(&client->lock);
         return -1;
     }
@@ -907,9 +918,7 @@ vsl_frame_unlock(VSLFrame* frame)
                         "%s poll error: %s\n",
                         __FUNCTION__,
                         strerror(errno));
-                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-                close(client->sock);
-                client->sock = SOCKET_ERROR;
+                close_client_socket(client);
                 pthread_mutex_unlock(&client->lock);
                 return -1;
             } else if (poll_ret == 0) {
@@ -917,9 +926,7 @@ vsl_frame_unlock(VSLFrame* frame)
                 fprintf(stderr,
                         "%s timeout waiting for unlock response\n",
                         __FUNCTION__);
-                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-                close(client->sock);
-                client->sock = SOCKET_ERROR;
+                close_client_socket(client);
                 pthread_mutex_unlock(&client->lock);
                 errno = ETIMEDOUT;
                 return -1;
@@ -946,11 +953,7 @@ vsl_frame_unlock(VSLFrame* frame)
                     "%s read error: %s\n",
                     __FUNCTION__,
                     strerror(errno));
-
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
-
+            close_client_socket(client);
             pthread_mutex_unlock(&client->lock);
             return -1;
         } else if (ret == 0) {
@@ -958,11 +961,7 @@ vsl_frame_unlock(VSLFrame* frame)
                     "%s connection closed: %s\n",
                     __FUNCTION__,
                     strerror(errno));
-
-            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
-            close(client->sock);
-            client->sock = SOCKET_ERROR;
-
+            close_client_socket(client);
             pthread_mutex_unlock(&client->lock);
             return -1;
         }
