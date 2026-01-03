@@ -457,6 +457,119 @@ v4l2_frame_cleanup(VSLFrame* frame)
     free(data);
 }
 
+// Helper: Create output frame from dequeued capture buffer
+// Returns frame on success, NULL on failure (buffer is re-queued on failure)
+static VSLFrame*
+create_output_frame(struct vsl_decoder_v4l2* dec, int cap_idx)
+{
+    VSLFrame* existing = dec->capture.buffers[cap_idx].frame;
+
+    struct v4l2_frame_cleanup_data* cleanup_data =
+        calloc(1, sizeof(*cleanup_data));
+    if (!cleanup_data) {
+        queue_capture_buffer(dec, cap_idx);
+        return NULL;
+    }
+
+    cleanup_data->decoder      = dec;
+    cleanup_data->buffer_index = cap_idx;
+
+    VSLFrame* out = vsl_frame_init(dec->width,
+                                   dec->height,
+                                   dec->capture.stride,
+                                   dec->out_fourcc,
+                                   cleanup_data,
+                                   v4l2_frame_cleanup);
+    if (!out) {
+        free(cleanup_data);
+        queue_capture_buffer(dec, cap_idx);
+        return NULL;
+    }
+
+    out->handle      = dec->capture.buffers[cap_idx].dmabuf_fd;
+    out->info.width  = dec->width;
+    out->info.height = dec->height;
+    out->info.stride = dec->capture.stride;
+    out->info.size   = dec->capture.plane_sizes[0];
+    out->info.paddr  = vsl_frame_paddr(existing);
+
+    return out;
+}
+
+// Helper: Start OUTPUT streaming if not already started
+// Returns 0 on success, -1 on error
+static int
+start_output_streaming(struct vsl_decoder_v4l2* dec)
+{
+    if (dec->output_streaming) { return 0; }
+
+    int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    if (xioctl(dec->fd, VIDIOC_STREAMON, &type) < 0) {
+        fprintf(stderr,
+                "[decoder_v4l2] VIDIOC_STREAMON OUTPUT failed: %s\n",
+                strerror(errno));
+        return -1;
+    }
+    dec->output_streaming = true;
+#ifndef NDEBUG
+    fprintf(stderr, "[decoder_v4l2] OUTPUT streaming started\n");
+#endif
+    return 0;
+}
+
+// Helper: Try to dequeue a capture buffer and create output frame
+// Returns frame on success, NULL if no frame available
+static VSLFrame*
+try_dequeue_capture_frame(struct vsl_decoder_v4l2* dec)
+{
+    if (!dec->streaming) { return NULL; }
+
+    struct v4l2_buffer cap_buf;
+    memset(&cap_buf, 0, sizeof(cap_buf));
+    cap_buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    cap_buf.memory = V4L2_MEMORY_DMABUF;
+
+    if (xioctl(dec->fd, VIDIOC_DQBUF, &cap_buf) != 0) { return NULL; }
+
+    int cap_idx                          = (int) cap_buf.index;
+    dec->capture.buffers[cap_idx].queued = false;
+
+    if (cap_buf.flags & V4L2_BUF_FLAG_ERROR) {
+        queue_capture_buffer(dec, cap_idx);
+        return NULL;
+    }
+
+    return create_output_frame(dec, cap_idx);
+}
+
+// Helper: Drain events from V4L2 device
+static void
+drain_v4l2_events(struct vsl_decoder_v4l2* dec)
+{
+    struct v4l2_event event;
+    memset(&event, 0, sizeof(event));
+    while (xioctl(dec->fd, VIDIOC_DQEVENT, &event) == 0) {
+        if (event.type == V4L2_EVENT_SOURCE_CHANGE) {
+            dec->source_change_pending = true;
+        }
+    }
+}
+
+// Helper: Ensure CAPTURE streaming is started
+static void
+ensure_capture_streaming(struct vsl_decoder_v4l2* dec)
+{
+    if (dec->streaming || dec->capture.count == 0) { return; }
+
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
+        dec->streaming = true;
+#ifndef NDEBUG
+        fprintf(stderr, "[decoder_v4l2] CAPTURE streaming started\n");
+#endif
+    }
+}
+
 VSLDecoder*
 vsl_decoder_create_v4l2(uint32_t codec, int fps)
 {
@@ -718,60 +831,17 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
         // All buffers queued - if streaming, try to dequeue
         if (dec->output_streaming) {
             // First, try to drain any decoded frames to free up CAPTURE buffers
-            // This helps keep the pipeline moving
             struct pollfd pfd = {.fd = dec->fd, .events = POLLIN | POLLOUT};
             poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
 
-            // If CAPTURE buffer available (decoded frame), return it
-            // immediately This gives caller a chance to release it, freeing
-            // CAPTURE for reuse
-            if (dec->streaming && (pfd.revents & POLLIN)) {
-                struct v4l2_buffer cap_buf;
-                memset(&cap_buf, 0, sizeof(cap_buf));
-                cap_buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                cap_buf.memory = V4L2_MEMORY_DMABUF;
-
-                if (xioctl(dec->fd, VIDIOC_DQBUF, &cap_buf) == 0) {
-                    int cap_idx                          = (int) cap_buf.index;
-                    dec->capture.buffers[cap_idx].queued = false;
-
-                    if (!(cap_buf.flags & V4L2_BUF_FLAG_ERROR)) {
-                        VSLFrame* existing =
-                            dec->capture.buffers[cap_idx].frame;
-                        struct v4l2_frame_cleanup_data* cleanup_data =
-                            calloc(1, sizeof(*cleanup_data));
-                        if (cleanup_data) {
-                            cleanup_data->decoder      = dec;
-                            cleanup_data->buffer_index = cap_idx;
-                        }
-
-                        VSLFrame* out = vsl_frame_init(dec->width,
-                                                       dec->height,
-                                                       dec->capture.stride,
-                                                       dec->out_fourcc,
-                                                       cleanup_data,
-                                                       v4l2_frame_cleanup);
-                        if (out) {
-                            out->handle =
-                                dec->capture.buffers[cap_idx].dmabuf_fd;
-                            out->info.width  = dec->width;
-                            out->info.height = dec->height;
-                            out->info.stride = dec->capture.stride;
-                            out->info.size   = dec->capture.plane_sizes[0];
-                            out->info.paddr  = vsl_frame_paddr(existing);
-
-                            *output_frame = out;
-                            ret_code |= VSL_DEC_FRAME_DEC;
-                            dec->frames_decoded++;
-                            // No bytes consumed, but we returned a frame
-                            return ret_code;
-                        } else {
-                            free(cleanup_data);
-                            queue_capture_buffer(dec, cap_idx);
-                        }
-                    } else {
-                        queue_capture_buffer(dec, cap_idx);
-                    }
+            // If CAPTURE buffer available, return frame immediately
+            if ((pfd.revents & POLLIN)) {
+                VSLFrame* out = try_dequeue_capture_frame(dec);
+                if (out) {
+                    *output_frame = out;
+                    ret_code |= VSL_DEC_FRAME_DEC;
+                    dec->frames_decoded++;
+                    return ret_code;
                 }
             }
 
@@ -788,24 +858,9 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
         }
 
         if (out_idx < 0) {
-            // If not streaming yet, we need to start streaming
-            // to allow the driver to consume buffers
+            // If not streaming yet, start streaming to let driver consume
             if (!dec->output_streaming && !dec->initialized) {
-                // Start OUTPUT streaming to let driver parse headers
-                int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-                if (xioctl(dec->fd, VIDIOC_STREAMON, &type) < 0) {
-                    fprintf(stderr,
-                            "[decoder_v4l2] VIDIOC_STREAMON OUTPUT failed: "
-                            "%s\n",
-                            strerror(errno));
-                    return VSL_DEC_ERR;
-                }
-                dec->output_streaming = true;
-#ifndef NDEBUG
-                fprintf(stderr, "[decoder_v4l2] OUTPUT streaming started\n");
-#endif
-                // Return and let caller try again - driver needs to process
-                // data
+                if (start_output_streaming(dec) < 0) { return VSL_DEC_ERR; }
                 return VSL_DEC_SUCCESS;
             }
 
@@ -841,31 +896,10 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
     *bytes_used                         = copy_len;
 
     // Start OUTPUT streaming if not already started (fallback if create failed)
-    if (!dec->output_streaming) {
-        int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-        if (xioctl(dec->fd, VIDIOC_STREAMON, &type) < 0) {
-            fprintf(stderr,
-                    "[decoder_v4l2] VIDIOC_STREAMON OUTPUT failed: %s\n",
-                    strerror(errno));
-            return VSL_DEC_ERR;
-        }
-        dec->output_streaming = true;
-#ifndef NDEBUG
-        fprintf(stderr, "[decoder_v4l2] OUTPUT streaming started\n");
-#endif
-    }
+    if (start_output_streaming(dec) < 0) { return VSL_DEC_ERR; }
 
     // Check for events (resolution change)
-    struct v4l2_event event;
-    memset(&event, 0, sizeof(event));
-    while (xioctl(dec->fd, VIDIOC_DQEVENT, &event) == 0) {
-        if (event.type == V4L2_EVENT_SOURCE_CHANGE) {
-#ifndef NDEBUG
-            fprintf(stderr, "[decoder_v4l2] SOURCE_CHANGE event\n");
-#endif
-            dec->source_change_pending = true;
-        }
-    }
+    drain_v4l2_events(dec);
 
     // Handle resolution change - reallocate CAPTURE buffers with correct size
     if (dec->source_change_pending) {
@@ -915,15 +949,7 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
     }
 
     // Make sure CAPTURE streaming is on
-    if (!dec->streaming && dec->capture.count > 0) {
-        int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
-            dec->streaming = true;
-#ifndef NDEBUG
-            fprintf(stderr, "[decoder_v4l2] CAPTURE streaming started\n");
-#endif
-        }
-    }
+    ensure_capture_streaming(dec);
 
     // Poll for decoded frame
     if (dec->streaming) {
@@ -931,82 +957,29 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
         int           poll_ret = poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
 
         if (poll_ret > 0 && (pfd.revents & POLLIN)) {
-            // Try to dequeue CAPTURE buffer (decoded frame)
-            struct v4l2_buffer cap_buf;
-            memset(&cap_buf, 0, sizeof(cap_buf));
+            VSLFrame* out = try_dequeue_capture_frame(dec);
+            if (out) {
+                *output_frame = out;
+                ret_code |= VSL_DEC_FRAME_DEC;
+                dec->frames_decoded++;
 
-            cap_buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            cap_buf.memory = V4L2_MEMORY_DMABUF;
-
-            if (xioctl(dec->fd, VIDIOC_DQBUF, &cap_buf) == 0) {
-                int cap_idx                          = (int) cap_buf.index;
-                dec->capture.buffers[cap_idx].queued = false;
-
-                // Check for errors
-                if (cap_buf.flags & V4L2_BUF_FLAG_ERROR) {
-                    fprintf(stderr, "[decoder_v4l2] CAPTURE buffer error\n");
-                    // Re-queue buffer and continue
-                    queue_capture_buffer(dec, cap_idx);
-                } else {
-                    // Create output frame wrapper
-                    VSLFrame* existing_frame =
-                        dec->capture.buffers[cap_idx].frame;
-
-                    // Create cleanup data
-                    struct v4l2_frame_cleanup_data* cleanup_data =
-                        calloc(1, sizeof(struct v4l2_frame_cleanup_data));
-                    if (cleanup_data) {
-                        cleanup_data->decoder      = dec;
-                        cleanup_data->buffer_index = cap_idx;
-                    }
-
-                    // Create new frame that references the CAPTURE buffer
-                    VSLFrame* out = vsl_frame_init(dec->width,
-                                                   dec->height,
-                                                   dec->capture.stride,
-                                                   dec->out_fourcc,
-                                                   cleanup_data,
-                                                   v4l2_frame_cleanup);
-                    if (out) {
-                        // Attach to existing dmabuf
-                        out->handle = dec->capture.buffers[cap_idx].dmabuf_fd;
-                        out->info.width  = dec->width;
-                        out->info.height = dec->height;
-                        out->info.stride = dec->capture.stride;
-                        out->info.size   = dec->capture.plane_sizes[0];
-                        out->info.paddr  = vsl_frame_paddr(existing_frame);
-
-                        *output_frame = out;
-                        ret_code |= VSL_DEC_FRAME_DEC;
-                        dec->frames_decoded++;
-
-                        int64_t decode_time = vsl_timestamp_us() - t_start;
-                        dec->total_decode_time_us += decode_time;
+                int64_t decode_time = vsl_timestamp_us() - t_start;
+                dec->total_decode_time_us += decode_time;
 
 #ifndef NDEBUG
-                        if (dec->frames_decoded <= 10 ||
-                            dec->frames_decoded % 30 == 0) {
-                            fprintf(stderr,
-                                    "[decoder_v4l2] frame %lu decoded in "
-                                    "%lld us\n",
-                                    (unsigned long) dec->frames_decoded,
-                                    (long long) decode_time);
-                        }
-#endif
-                    } else {
-                        free(cleanup_data);
-                        queue_capture_buffer(dec, cap_idx);
-                    }
+                if (dec->frames_decoded <= 10 ||
+                    dec->frames_decoded % 30 == 0) {
+                    fprintf(stderr,
+                            "[decoder_v4l2] frame %lu decoded in %lld us\n",
+                            (unsigned long) dec->frames_decoded,
+                            (long long) decode_time);
                 }
+#endif
             }
         }
 
         // Also check for and handle any events
-        while (xioctl(dec->fd, VIDIOC_DQEVENT, &event) == 0) {
-            if (event.type == V4L2_EVENT_SOURCE_CHANGE) {
-                dec->source_change_pending = true;
-            }
-        }
+        drain_v4l2_events(dec);
     }
 
     return ret_code;
