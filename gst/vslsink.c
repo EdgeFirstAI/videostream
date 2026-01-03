@@ -79,14 +79,12 @@ vsl_task(void* data)
         }
 
         for (int i = 1; i < max_sockets; i++) {
-            if (vsl_host_service(vslsink->host, vslsink->sockets[i])) {
-                if (errno != EPIPE) {
-                    GST_WARNING_OBJECT(vslsink,
-                                       "client %d error - %s",
-                                       vslsink->sockets[i],
-                                       strerror(errno));
-                }
-            }
+            int err = vsl_host_service(vslsink->host, vslsink->sockets[i]);
+            if (!err || errno == EPIPE) { continue; }
+            GST_WARNING_OBJECT(vslsink,
+                               "client %d error - %s",
+                               vslsink->sockets[i],
+                               strerror(errno));
         }
     }
 }
