@@ -555,6 +555,139 @@ drain_v4l2_events(struct vsl_decoder_v4l2* dec)
     }
 }
 
+// Helper: Try to get a free OUTPUT buffer, dequeuing if necessary
+// Returns: buffer index (>= 0) on success, -1 if none available
+static int
+get_output_buffer_or_dequeue(struct vsl_decoder_v4l2* dec,
+                             VSLFrame**               out_frame,
+                             int*                     ret_code)
+{
+    int out_idx = find_free_output_buffer(dec);
+    if (out_idx >= 0) { return out_idx; }
+
+    // All buffers queued - if not streaming, nothing we can do
+    if (!dec->output_streaming) { return -1; }
+
+    // Try to drain any decoded frames to free up CAPTURE buffers
+    struct pollfd pfd = {.fd = dec->fd, .events = POLLIN | POLLOUT};
+    poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
+
+    // If CAPTURE buffer available, return frame immediately
+    if ((pfd.revents & POLLIN)) {
+        VSLFrame* out = try_dequeue_capture_frame(dec);
+        if (out) {
+            *out_frame = out;
+            *ret_code |= VSL_DEC_FRAME_DEC;
+            dec->frames_decoded++;
+        }
+    }
+
+    // Try to dequeue an OUTPUT buffer
+    struct v4l2_buffer buf;
+    memset(&buf, 0, sizeof(buf));
+    buf.type   = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    buf.memory = V4L2_MEMORY_MMAP;
+
+    if (xioctl(dec->fd, VIDIOC_DQBUF, &buf) == 0) {
+        dec->output.buffers[buf.index].queued = false;
+        return (int) buf.index;
+    }
+
+    return -1;
+}
+
+// Helper: Check and handle resolution change from source_change_pending
+// Returns: 0 on success, -1 on error
+static int
+check_and_apply_resolution_change(struct vsl_decoder_v4l2* dec, int* ret_code)
+{
+    if (!dec->source_change_pending) { return 0; }
+
+    struct v4l2_format fmt;
+    memset(&fmt, 0, sizeof(fmt));
+    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+    if (xioctl(dec->fd, VIDIOC_G_FMT, &fmt) < 0) {
+        return 0; // Non-fatal, just skip
+    }
+
+    int new_width  = fmt.fmt.pix.width;
+    int new_height = fmt.fmt.pix.height;
+
+    // Only reallocate if resolution actually changed
+    if (new_width != dec->width || new_height != dec->height ||
+        !dec->initialized) {
+#ifndef NDEBUG
+        fprintf(stderr,
+                "[decoder_v4l2] resolution change: %dx%d -> %dx%d\n",
+                dec->width,
+                dec->height,
+                new_width,
+                new_height);
+#endif
+        if (handle_resolution_change(dec) < 0) { return -1; }
+        *ret_code |= VSL_DEC_INIT_INFO;
+    } else {
+        // Resolution same, just clear the flag
+        dec->source_change_pending = false;
+    }
+
+    return 0;
+}
+
+// Helper: Poll for resolution change when not initialized
+static void
+check_resolution_if_not_initialized(struct vsl_decoder_v4l2* dec)
+{
+    if (dec->initialized || dec->source_change_pending) { return; }
+
+    struct v4l2_format fmt;
+    memset(&fmt, 0, sizeof(fmt));
+    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+    if (xioctl(dec->fd, VIDIOC_G_FMT, &fmt) < 0) { return; }
+
+    // Check if resolution changed from initial default
+    if ((int) fmt.fmt.pix.width != dec->width ||
+        (int) fmt.fmt.pix.height != dec->height) {
+        dec->source_change_pending = true;
+    }
+}
+
+// Helper: Poll and dequeue decoded frame
+static void
+poll_for_decoded_frame(struct vsl_decoder_v4l2* dec,
+                       int64_t                  t_start,
+                       VSLFrame**               output_frame,
+                       int*                     ret_code)
+{
+    if (!dec->streaming) { return; }
+
+    struct pollfd pfd      = {.fd = dec->fd, .events = POLLIN};
+    int           poll_ret = poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
+
+    if (poll_ret <= 0 || !(pfd.revents & POLLIN)) { return; }
+
+    VSLFrame* out = try_dequeue_capture_frame(dec);
+    if (!out) { return; }
+
+    *output_frame = out;
+    *ret_code |= VSL_DEC_FRAME_DEC;
+    dec->frames_decoded++;
+
+    int64_t decode_time = vsl_timestamp_us() - t_start;
+    dec->total_decode_time_us += decode_time;
+
+#ifndef NDEBUG
+    if (dec->frames_decoded <= 10 || dec->frames_decoded % 30 == 0) {
+        fprintf(stderr,
+                "[decoder_v4l2] frame %lu decoded in %lld us\n",
+                (unsigned long) dec->frames_decoded,
+                (long long) decode_time);
+    }
+#endif
+}
+
 // Helper: Ensure CAPTURE streaming is started
 static void
 ensure_capture_streaming(struct vsl_decoder_v4l2* dec)
@@ -841,53 +974,26 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
 
     int64_t t_start = vsl_timestamp_us();
 
-    // Handle pending resolution change (S1066: merged nested if)
+    // Handle pending resolution change
     if (dec->source_change_pending && handle_resolution_change(dec) < 0) {
         return VSL_DEC_ERR;
     }
 
-    // Find free OUTPUT buffer
-    int out_idx = find_free_output_buffer(dec);
+    // Find free OUTPUT buffer, dequeuing if necessary
+    int out_idx = get_output_buffer_or_dequeue(dec, output_frame, &ret_code);
+
+    // If we got a frame while trying to free buffers, return it
+    if (*output_frame) { return ret_code; }
+
     if (out_idx < 0) {
-        // All buffers queued - if streaming, try to dequeue
-        if (dec->output_streaming) {
-            // First, try to drain any decoded frames to free up CAPTURE buffers
-            struct pollfd pfd = {.fd = dec->fd, .events = POLLIN | POLLOUT};
-            poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
-
-            // If CAPTURE buffer available, return frame immediately
-            if ((pfd.revents & POLLIN)) {
-                VSLFrame* out = try_dequeue_capture_frame(dec);
-                if (out) {
-                    *output_frame = out;
-                    ret_code |= VSL_DEC_FRAME_DEC;
-                    dec->frames_decoded++;
-                    return ret_code;
-                }
-            }
-
-            // Try to dequeue an OUTPUT buffer
-            struct v4l2_buffer buf;
-            memset(&buf, 0, sizeof(buf));
-            buf.type   = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-            buf.memory = V4L2_MEMORY_MMAP;
-
-            if (xioctl(dec->fd, VIDIOC_DQBUF, &buf) == 0) {
-                dec->output.buffers[buf.index].queued = false;
-                out_idx                               = (int) buf.index;
-            }
+        // If not streaming yet, start streaming to let driver consume
+        if (!dec->output_streaming && !dec->initialized) {
+            if (start_output_streaming(dec) < 0) { return VSL_DEC_ERR; }
+            return VSL_DEC_SUCCESS;
         }
 
-        if (out_idx < 0) {
-            // If not streaming yet, start streaming to let driver consume
-            if (!dec->output_streaming && !dec->initialized) {
-                if (start_output_streaming(dec) < 0) { return VSL_DEC_ERR; }
-                return VSL_DEC_SUCCESS;
-            }
-
-            fprintf(stderr, "[decoder_v4l2] no OUTPUT buffer available\n");
-            return VSL_DEC_ERR;
-        }
+        fprintf(stderr, "[decoder_v4l2] no OUTPUT buffer available\n");
+        return VSL_DEC_ERR;
     }
 
     // Copy compressed data to OUTPUT buffer
@@ -922,86 +1028,22 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
     // Check for events (resolution change)
     drain_v4l2_events(dec);
 
-    // Handle resolution change - reallocate CAPTURE buffers with correct size
-    if (dec->source_change_pending) {
-        // Get actual resolution from driver
-        struct v4l2_format fmt;
-        memset(&fmt, 0, sizeof(fmt));
-        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-        if (xioctl(dec->fd, VIDIOC_G_FMT, &fmt) == 0) {
-            int new_width  = fmt.fmt.pix.width;
-            int new_height = fmt.fmt.pix.height;
-
-            // Only reallocate if resolution actually changed
-            if (new_width != dec->width || new_height != dec->height ||
-                !dec->initialized) {
-#ifndef NDEBUG
-                fprintf(stderr,
-                        "[decoder_v4l2] resolution change: %dx%d -> %dx%d\n",
-                        dec->width,
-                        dec->height,
-                        new_width,
-                        new_height);
-#endif
-                if (handle_resolution_change(dec) < 0) { return VSL_DEC_ERR; }
-                ret_code |= VSL_DEC_INIT_INFO;
-            } else {
-                // Resolution same, just clear the flag
-                dec->source_change_pending = false;
-            }
-        }
+    // Handle resolution change using helper
+    if (check_and_apply_resolution_change(dec, &ret_code) < 0) {
+        return VSL_DEC_ERR;
     }
 
-    // If not initialized and no source change yet, check format periodically
-    if (!dec->initialized && !dec->source_change_pending) {
-        struct v4l2_format fmt;
-        memset(&fmt, 0, sizeof(fmt));
-        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-        if (xioctl(dec->fd, VIDIOC_G_FMT, &fmt) == 0) {
-            // Check if resolution changed from initial default
-            if ((int) fmt.fmt.pix.width != dec->width ||
-                (int) fmt.fmt.pix.height != dec->height) {
-                // Trigger resolution change handling
-                dec->source_change_pending = true;
-            }
-        }
-    }
+    // Check for resolution change when not yet initialized
+    check_resolution_if_not_initialized(dec);
 
     // Make sure CAPTURE streaming is on
     ensure_capture_streaming(dec);
 
-    // Poll for decoded frame
-    if (dec->streaming) {
-        struct pollfd pfd      = {.fd = dec->fd, .events = POLLIN};
-        int           poll_ret = poll(&pfd, 1, VSL_V4L2_POLL_TIMEOUT_MS);
+    // Poll for decoded frame using helper
+    poll_for_decoded_frame(dec, t_start, output_frame, &ret_code);
 
-        if (poll_ret > 0 && (pfd.revents & POLLIN)) {
-            VSLFrame* out = try_dequeue_capture_frame(dec);
-            if (out) {
-                *output_frame = out;
-                ret_code |= VSL_DEC_FRAME_DEC;
-                dec->frames_decoded++;
-
-                int64_t decode_time = vsl_timestamp_us() - t_start;
-                dec->total_decode_time_us += decode_time;
-
-#ifndef NDEBUG
-                if (dec->frames_decoded <= 10 ||
-                    dec->frames_decoded % 30 == 0) {
-                    fprintf(stderr,
-                            "[decoder_v4l2] frame %lu decoded in %lld us\n",
-                            (unsigned long) dec->frames_decoded,
-                            (long long) decode_time);
-                }
-#endif
-            }
-        }
-
-        // Also check for and handle any events
-        drain_v4l2_events(dec);
-    }
+    // Also check for and handle any events
+    if (dec->streaming) { drain_v4l2_events(dec); }
 
     return ret_code;
 }
