@@ -570,6 +570,151 @@ ensure_capture_streaming(struct vsl_decoder_v4l2* dec)
     }
 }
 
+// Helper: Verify device has M2M capability
+// Returns: 0 on success, -1 on failure
+static int
+verify_m2m_capability(int fd)
+{
+    struct v4l2_capability cap;
+    memset(&cap, 0, sizeof(cap));
+
+    if (xioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
+        fprintf(stderr,
+                "[decoder_v4l2] VIDIOC_QUERYCAP failed: %s\n",
+                strerror(errno));
+        return -1;
+    }
+
+    __u32 caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
+                                                           : cap.capabilities;
+
+    if (!(caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE))) {
+        fprintf(stderr, "[decoder_v4l2] device lacks M2M capability\n");
+        errno = ENODEV;
+        return -1;
+    }
+
+#ifndef NDEBUG
+    fprintf(stderr,
+            "[decoder_v4l2] opened %s: %s\n",
+            VSL_V4L2_DECODER_DEV,
+            cap.card);
+#endif
+
+    return 0;
+}
+
+// Helper: Cleanup capture buffers on failure
+static void
+cleanup_capture_buffers(struct vsl_decoder_v4l2* dec, int count)
+{
+    for (int i = 0; i < count; i++) {
+        if (dec->capture.buffers[i].frame) {
+            vsl_frame_release(dec->capture.buffers[i].frame);
+            dec->capture.buffers[i].frame     = NULL;
+            dec->capture.buffers[i].dmabuf_fd = -1;
+            dec->capture.buffers[i].queued    = false;
+        }
+    }
+}
+
+// Helper: Allocate and queue all capture buffers
+// Returns: true if all buffers allocated and queued, false on failure
+static bool
+alloc_and_queue_all_capture_buffers(struct vsl_decoder_v4l2* dec)
+{
+    for (int i = 0; i < dec->capture.count; i++) {
+        if (alloc_capture_frame(dec, i) < 0) {
+            cleanup_capture_buffers(dec, i);
+            return false;
+        }
+        if (queue_capture_buffer(dec, i) < 0) {
+            cleanup_capture_buffers(dec, i + 1);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper: Start both OUTPUT and CAPTURE streaming
+static void
+start_initial_streaming(struct vsl_decoder_v4l2* dec)
+{
+    int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
+        dec->output_streaming = true;
+#ifndef NDEBUG
+        fprintf(stderr, "[decoder_v4l2] OUTPUT streaming started in create\n");
+#endif
+    }
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
+        dec->streaming = true;
+#ifndef NDEBUG
+        fprintf(stderr, "[decoder_v4l2] CAPTURE streaming started in create\n");
+#endif
+    }
+}
+
+// Helper: Setup initial capture format from driver defaults
+// Returns: 0 on success, -1 on failure
+static int
+setup_initial_capture_format(struct vsl_decoder_v4l2* dec)
+{
+    struct v4l2_format cap_fmt;
+    memset(&cap_fmt, 0, sizeof(cap_fmt));
+    cap_fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+    if (xioctl(dec->fd, VIDIOC_G_FMT, &cap_fmt) < 0) { return -1; }
+
+    dec->width          = cap_fmt.fmt.pix.width;
+    dec->height         = cap_fmt.fmt.pix.height;
+    dec->capture.stride = cap_fmt.fmt.pix.bytesperline;
+    if (dec->capture.stride == 0) { dec->capture.stride = dec->width; }
+    dec->capture.plane_sizes[0] = cap_fmt.fmt.pix.sizeimage;
+    if (dec->capture.plane_sizes[0] == 0) {
+        dec->capture.plane_sizes[0] = dec->capture.stride * dec->height * 3 / 2;
+    }
+
+#ifndef NDEBUG
+    fprintf(stderr,
+            "[decoder_v4l2] default CAPTURE format: %dx%d stride=%d size=%zu\n",
+            dec->width,
+            dec->height,
+            dec->capture.stride,
+            dec->capture.plane_sizes[0]);
+#endif
+
+    return 0;
+}
+
+// Helper: Request and setup capture buffers
+// Returns: 0 on success, -1 on failure
+static int
+request_capture_buffers(struct vsl_decoder_v4l2* dec)
+{
+    struct v4l2_requestbuffers req;
+    memset(&req, 0, sizeof(req));
+    req.count  = VSL_V4L2_DEC_CAPTURE_BUFFERS;
+    req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_DMABUF;
+
+    if (xioctl(dec->fd, VIDIOC_REQBUFS, &req) < 0) { return -1; }
+
+    dec->capture.count = (int) req.count;
+#ifndef NDEBUG
+    fprintf(stderr,
+            "[decoder_v4l2] preliminary CAPTURE queue: %d buffers\n",
+            dec->capture.count);
+#endif
+
+    if (!alloc_and_queue_all_capture_buffers(dec)) { return -1; }
+
+    start_initial_streaming(dec);
+    return 0;
+}
+
 VSLDecoder*
 vsl_decoder_create_v4l2(uint32_t codec, int fps)
 {
@@ -582,8 +727,6 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
     }
 
     // Allocate decoder structure
-    // Note: We allocate space for the larger of the two decoder types
-    // The actual structure used depends on which create function was called
     struct vsl_decoder_v4l2* dec = calloc(1, sizeof(struct vsl_decoder_v4l2));
     if (!dec) {
         fprintf(stderr,
@@ -596,13 +739,8 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
     dec->fd         = -1;
     dec->fps        = fps;
     dec->out_fourcc = VSL_FOURCC('N', 'V', '1', '2');
-
-    // Store codec type
-    if (codec == VSL_FOURCC('H', '2', '6', '4')) {
-        dec->codec = VSL_DEC_H264;
-    } else {
-        dec->codec = VSL_DEC_HEVC;
-    }
+    dec->codec =
+        (codec == VSL_FOURCC('H', '2', '6', '4')) ? VSL_DEC_H264 : VSL_DEC_HEVC;
 
     // Initialize capture buffer fds
     for (int i = 0; i < VSL_V4L2_DEC_CAPTURE_BUFFERS; i++) {
@@ -621,36 +759,11 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
     }
 
     // Verify device capabilities
-    struct v4l2_capability cap;
-    memset(&cap, 0, sizeof(cap));
-
-    if (xioctl(dec->fd, VIDIOC_QUERYCAP, &cap) < 0) {
-        fprintf(stderr,
-                "[decoder_v4l2] VIDIOC_QUERYCAP failed: %s\n",
-                strerror(errno));
+    if (verify_m2m_capability(dec->fd) < 0) {
         close(dec->fd);
         free(dec);
         return NULL;
     }
-
-    // Use device_caps if V4L2_CAP_DEVICE_CAPS is set, otherwise capabilities
-    __u32 caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
-                                                           : cap.capabilities;
-
-    if (!(caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE))) {
-        fprintf(stderr, "[decoder_v4l2] device lacks M2M capability\n");
-        close(dec->fd);
-        free(dec);
-        errno = ENODEV;
-        return NULL;
-    }
-
-#ifndef NDEBUG
-    fprintf(stderr,
-            "[decoder_v4l2] opened %s: %s\n",
-            VSL_V4L2_DECODER_DEV,
-            cap.card);
-#endif
 
     // Setup OUTPUT queue
     if (setup_output_queue(dec, v4l2_codec) < 0) {
@@ -659,8 +772,7 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
         return NULL;
     }
 
-    // Subscribe to source change events BEFORE feeding any data
-    // This is critical for proper resolution detection
+    // Subscribe to source change events (non-fatal if unsupported)
     struct v4l2_event_subscription sub;
     memset(&sub, 0, sizeof(sub));
     sub.type = V4L2_EVENT_SOURCE_CHANGE;
@@ -670,103 +782,12 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
                 "[decoder_v4l2] VIDIOC_SUBSCRIBE_EVENT failed: %s\n",
                 strerror(errno));
 #endif
-        // Non-fatal - some drivers may not support events
     }
 
-    // The vsi_v4l2 driver requires CAPTURE queue to be set up before
-    // it will process OUTPUT buffers. Set up a preliminary CAPTURE queue
-    // with whatever default resolution the driver reports. We'll reallocate
-    // when we detect the actual resolution via SOURCE_CHANGE event.
-    struct v4l2_format cap_fmt;
-    memset(&cap_fmt, 0, sizeof(cap_fmt));
-    cap_fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-    if (xioctl(dec->fd, VIDIOC_G_FMT, &cap_fmt) == 0) {
-        // Store default dimensions (may be placeholder like 48x48)
-        dec->width          = cap_fmt.fmt.pix.width;
-        dec->height         = cap_fmt.fmt.pix.height;
-        dec->capture.stride = cap_fmt.fmt.pix.bytesperline;
-        if (dec->capture.stride == 0) { dec->capture.stride = dec->width; }
-        dec->capture.plane_sizes[0] = cap_fmt.fmt.pix.sizeimage;
-        if (dec->capture.plane_sizes[0] == 0) {
-            // Compute NV12 size: Y plane + UV plane (half height)
-            dec->capture.plane_sizes[0] =
-                dec->capture.stride * dec->height * 3 / 2;
-        }
-
-#ifndef NDEBUG
-        fprintf(stderr,
-                "[decoder_v4l2] default CAPTURE format: %dx%d stride=%d "
-                "size=%zu\n",
-                dec->width,
-                dec->height,
-                dec->capture.stride,
-                dec->capture.plane_sizes[0]);
-#endif
-
-        // Request CAPTURE buffers (DMABUF import mode)
-        struct v4l2_requestbuffers req;
-        memset(&req, 0, sizeof(req));
-        req.count  = VSL_V4L2_DEC_CAPTURE_BUFFERS;
-        req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        req.memory = V4L2_MEMORY_DMABUF;
-
-        if (xioctl(dec->fd, VIDIOC_REQBUFS, &req) == 0) {
-            dec->capture.count = (int) req.count;
-#ifndef NDEBUG
-            fprintf(stderr,
-                    "[decoder_v4l2] preliminary CAPTURE queue: %d buffers\n",
-                    dec->capture.count);
-#endif
-
-            // Allocate and queue CAPTURE buffers
-            int all_ok     = 1;
-            int alloc_fail = -1; // Index where allocation failed
-            for (int i = 0; i < dec->capture.count && all_ok; i++) {
-                if (alloc_capture_frame(dec, i) < 0) {
-                    all_ok     = 0;
-                    alloc_fail = i;
-                } else if (queue_capture_buffer(dec, i) < 0) {
-                    all_ok     = 0;
-                    alloc_fail = i + 1; // Frame allocated but queue failed
-                }
-            }
-
-            // Cleanup on failure: release already-allocated frames
-            if (!all_ok && alloc_fail > 0) {
-                for (int i = 0; i < alloc_fail; i++) {
-                    if (dec->capture.buffers[i].frame) {
-                        vsl_frame_release(dec->capture.buffers[i].frame);
-                        dec->capture.buffers[i].frame     = NULL;
-                        dec->capture.buffers[i].dmabuf_fd = -1;
-                        dec->capture.buffers[i].queued    = false;
-                    }
-                }
-            }
-
-            if (all_ok) {
-                // Start both OUTPUT and CAPTURE streaming
-                int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-                if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
-                    dec->output_streaming = true;
-#ifndef NDEBUG
-                    fprintf(stderr,
-                            "[decoder_v4l2] OUTPUT streaming started in "
-                            "create\n");
-#endif
-                }
-
-                type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                if (xioctl(dec->fd, VIDIOC_STREAMON, &type) == 0) {
-                    dec->streaming = true;
-#ifndef NDEBUG
-                    fprintf(stderr,
-                            "[decoder_v4l2] CAPTURE streaming started in "
-                            "create\n");
-#endif
-                }
-            }
-        }
+    // Setup preliminary CAPTURE queue with driver defaults
+    if (setup_initial_capture_format(dec) == 0) {
+        // Request and queue capture buffers, start streaming
+        request_capture_buffers(dec);
     }
 
     return (VSLDecoder*) dec;
