@@ -297,8 +297,11 @@ static int
 queue_all_capture_buffers(struct vsl_decoder_v4l2* dec)
 {
     for (int i = 0; i < dec->capture.count; i++) {
-        if (!dec->capture.buffers[i].queued) {
-            if (queue_capture_buffer(dec, i) < 0) { return -1; }
+        // Merge nested if (S1066): short-circuit ensures queue only if not
+        // queued
+        if (!dec->capture.buffers[i].queued &&
+            queue_capture_buffer(dec, i) < 0) {
+            return -1;
         }
     }
     return 0;
@@ -704,9 +707,9 @@ vsl_decode_frame_v4l2(VSLDecoder*  decoder,
 
     int64_t t_start = vsl_timestamp_us();
 
-    // Handle pending resolution change
-    if (dec->source_change_pending) {
-        if (handle_resolution_change(dec) < 0) { return VSL_DEC_ERR; }
+    // Handle pending resolution change (S1066: merged nested if)
+    if (dec->source_change_pending && handle_resolution_change(dec) < 0) {
+        return VSL_DEC_ERR;
     }
 
     // Find free OUTPUT buffer

@@ -28,6 +28,12 @@
 #define INITIAL_BUFF_SIZE 1000
 #define SOCKET_ERROR -1
 
+// Safe shutdown that guards against invalid file descriptors (fixes S5488)
+#define SAFE_SHUTDOWN(fd, how)                \
+    do {                                      \
+        if ((fd) >= 0) { shutdown(fd, how); } \
+    } while (0)
+
 // Timing instrumentation
 static inline int64_t
 get_timestamp_us()
@@ -97,7 +103,7 @@ timer_handler(union sigval sv)
 
     if (client->is_reconnecting) { return; }
 
-    shutdown(client->sock, SHUT_RDWR);
+    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
     close(client->sock);
     client->sock = SOCKET_ERROR;
 }
@@ -207,7 +213,7 @@ vsl_client_disconnect(VSLClient* client)
 #endif
 
     client->reconnect = false;
-    shutdown(client->sock, SHUT_RDWR);
+    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
     close(client->sock);
     client->sock = SOCKET_ERROR;
 }
@@ -281,7 +287,7 @@ vsl_client_release(VSLClient* client)
 
     free(client->path);
     delete_timer(client);
-    shutdown(client->sock, SHUT_RDWR);
+    SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
     close(client->sock);
     pthread_mutex_destroy(&client->lock);
     free(client);
@@ -432,7 +438,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                             return NULL;
                         }
                         client->is_reconnecting = true;
-                        shutdown(client->sock, SHUT_RDWR);
+                        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
                         close(client->sock);
                         client->sock = SOCKET_ERROR;
                     } else if (poll_ret == 0) {
@@ -457,7 +463,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                 }
 
                 client->is_reconnecting = true;
-                shutdown(client->sock, SHUT_RDWR);
+                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
                 close(client->sock);
                 client->sock = SOCKET_ERROR;
             } else if (ret == 0) {
@@ -465,7 +471,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                 printf("%s client %d no message\n", __FUNCTION__, client->sock);
 #endif
                 client->is_reconnecting = true;
-                shutdown(client->sock, SHUT_RDWR);
+                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
                 close(client->sock);
                 int prev_sock = client->sock;
                 client->sock  = SOCKET_ERROR;
@@ -681,13 +687,13 @@ vsl_frame_trylock(VSLFrame* frame)
                 return -1;
             }
 
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
             break;
         } else if (ret == 0) {
             client->is_reconnecting = true;
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
 
@@ -722,12 +728,20 @@ vsl_frame_trylock(VSLFrame* frame)
         memset(&event, 0, sizeof(event));
 
         if (client->sock >= 0) {
-            ret = recv(client->sock, &event, sizeof(event), 0);
+            // Use MSG_DONTWAIT to avoid blocking while holding mutex (fixes
+            // S5314)
+            ret = recv(client->sock, &event, sizeof(event), MSG_DONTWAIT);
         } else {
             ret = 0;
         }
 
         if (ret == -1) {
+            // Handle EAGAIN/EWOULDBLOCK from non-blocking recv
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                usleep(1000); // Brief sleep before retry
+                continue;
+            }
+
             if (!client->reconnect) {
                 fprintf(stderr,
                         "%s read error: %s\n",
@@ -737,7 +751,7 @@ vsl_frame_trylock(VSLFrame* frame)
                 return -1;
             }
 
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
 
@@ -745,7 +759,7 @@ vsl_frame_trylock(VSLFrame* frame)
 
         } else if (ret == 0) {
             client->is_reconnecting = true;
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
 
@@ -860,7 +874,7 @@ vsl_frame_unlock(VSLFrame* frame)
                 __FUNCTION__,
                 strerror(errno));
 
-        shutdown(client->sock, SHUT_RDWR);
+        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
         close(client->sock);
         client->sock = SOCKET_ERROR;
 
@@ -872,7 +886,7 @@ vsl_frame_unlock(VSLFrame* frame)
                 __FUNCTION__,
                 strerror(errno));
 
-        shutdown(client->sock, SHUT_RDWR);
+        SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
         close(client->sock);
         client->sock = SOCKET_ERROR;
 
@@ -882,7 +896,7 @@ vsl_frame_unlock(VSLFrame* frame)
 
     do {
         if (client->sock >= 0) {
-            // Use poll() to wait for data since socket is non-blocking
+            // Use poll() to wait for data with timeout
             struct pollfd pfd;
             pfd.fd       = client->sock;
             pfd.events   = POLLIN;
@@ -893,7 +907,7 @@ vsl_frame_unlock(VSLFrame* frame)
                         "%s poll error: %s\n",
                         __FUNCTION__,
                         strerror(errno));
-                shutdown(client->sock, SHUT_RDWR);
+                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
                 close(client->sock);
                 client->sock = SOCKET_ERROR;
                 pthread_mutex_unlock(&client->lock);
@@ -903,14 +917,16 @@ vsl_frame_unlock(VSLFrame* frame)
                 fprintf(stderr,
                         "%s timeout waiting for unlock response\n",
                         __FUNCTION__);
-                shutdown(client->sock, SHUT_RDWR);
+                SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
                 close(client->sock);
                 client->sock = SOCKET_ERROR;
                 pthread_mutex_unlock(&client->lock);
                 errno = ETIMEDOUT;
                 return -1;
             }
-            ret = recv(client->sock, &event, sizeof(event), 0);
+            // Use MSG_DONTWAIT to avoid blocking while holding mutex (fixes
+            // S5314)
+            ret = recv(client->sock, &event, sizeof(event), MSG_DONTWAIT);
         } else {
             // If client was disconnected, no frame is locked, so there is no
             // need to receive any message
@@ -931,7 +947,7 @@ vsl_frame_unlock(VSLFrame* frame)
                     __FUNCTION__,
                     strerror(errno));
 
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
 
@@ -943,7 +959,7 @@ vsl_frame_unlock(VSLFrame* frame)
                     __FUNCTION__,
                     strerror(errno));
 
-            shutdown(client->sock, SHUT_RDWR);
+            SAFE_SHUTDOWN(client->sock, SHUT_RDWR);
             close(client->sock);
             client->sock = SOCKET_ERROR;
 

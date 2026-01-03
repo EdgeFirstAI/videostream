@@ -1188,6 +1188,7 @@ vsl_frame_handle(const VSLFrame* frame);
  *
  * Physical address is available for DMA-capable buffers on platforms where
  * the kernel provides physical address translation (some i.MX platforms).
+ * Note: This function caches the physical address internally on first call.
  *
  * @param frame The frame instance
  * @return Physical address, or MMAP_FAILED ((intptr_t)-1) if DMA not supported
@@ -1197,7 +1198,7 @@ vsl_frame_handle(const VSLFrame* frame);
 VSL_AVAILABLE_SINCE_1_0
 VSL_API
 intptr_t
-vsl_frame_paddr(const VSLFrame* frame);
+vsl_frame_paddr(VSLFrame* frame);
 
 /**
  * Maps the frame into the process memory space.
