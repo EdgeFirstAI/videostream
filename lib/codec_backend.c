@@ -36,10 +36,8 @@ vsl_v4l2_codec_available(bool is_encoder)
 #ifdef __linux__
     const char* dev = is_encoder ? VSL_V4L2_ENCODER_DEV : VSL_V4L2_DECODER_DEV;
 
-    // Check if device exists and is accessible
-    if (access(dev, R_OK | W_OK) != 0) { return false; }
-
     // Open device and verify it has M2M capability
+    // Note: We don't use access() before open() to avoid TOCTOU race condition
     int fd = open(dev, O_RDWR | O_NONBLOCK);
     if (fd < 0) { return false; }
 

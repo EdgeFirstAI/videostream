@@ -172,8 +172,14 @@ insert_frame(VSLHost* host, VSLFrame* frame)
     }
 
     if (frame_idx == -1) {
+        // Guard against n_frames being 0 (would cause realloc(0) and invalid
+        // access)
+        int old_n_frames = host->n_frames;
+        if (old_n_frames <= 0) { old_n_frames = MAX_FRAMES_PER_CLIENT; }
+        int new_n_frames = 2 * old_n_frames;
+
         VSLFrame** new_frames =
-            realloc(host->frames, 2 * host->n_frames * sizeof(VSLFrame*));
+            realloc(host->frames, new_n_frames * sizeof(VSLFrame*));
         if (!new_frames) {
             errno = ENOMEM;
             return -1;
@@ -181,12 +187,10 @@ insert_frame(VSLHost* host, VSLFrame* frame)
 
         // We always double the buffer array so we must memset to 0 from the end
         // of the new buffer for the length of the old buffer.
-        memset(&new_frames[host->n_frames],
-               0,
-               host->n_frames * sizeof(VSLFrame*));
-        frame_idx    = host->n_frames;
-        host->frames = new_frames;
-        host->n_frames *= 2;
+        memset(&new_frames[old_n_frames], 0, old_n_frames * sizeof(VSLFrame*));
+        frame_idx      = old_n_frames;
+        host->frames   = new_frames;
+        host->n_frames = new_n_frames;
     }
 
     if (frame_idx < 0 || frame_idx >= host->n_frames) {
