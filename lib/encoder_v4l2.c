@@ -125,6 +125,65 @@ set_ctrl(int fd, uint32_t id, int32_t value)
     return 0;
 }
 
+// Helper: Find free OUTPUT buffer, returns index or -1 if none available
+static int
+find_free_enc_output_buffer(struct vsl_encoder_v4l2* enc)
+{
+    for (int i = 0; i < enc->output.count; i++) {
+        if (!enc->output.buffers[i].queued) { return i; }
+    }
+    return -1;
+}
+
+// Helper: Try to dequeue an OUTPUT buffer, returns index or -1
+static int
+try_dequeue_enc_output_buffer(struct vsl_encoder_v4l2* enc)
+{
+    struct v4l2_buffer buf;
+    struct v4l2_plane  planes[VSL_V4L2_ENC_MAX_PLANES];
+
+    memset(&buf, 0, sizeof(buf));
+    memset(planes, 0, sizeof(planes));
+    buf.type     = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+    buf.memory   = V4L2_MEMORY_DMABUF;
+    buf.length   = enc->num_input_planes;
+    buf.m.planes = planes;
+
+    if (xioctl(enc->fd, VIDIOC_DQBUF, &buf) == 0) {
+        enc->output.buffers[buf.index].queued = false;
+        return (int) buf.index;
+    }
+    return -1;
+}
+
+// Helper: Set up plane data for OUTPUT buffer
+static void
+setup_output_planes(struct vsl_encoder_v4l2* enc,
+                    struct v4l2_plane*       planes,
+                    int                      src_fd,
+                    size_t                   frame_size)
+{
+    if (enc->num_input_planes == 1) {
+        // Single-plane packed format (BGRA, YUYV, etc.)
+        planes[0].m.fd      = src_fd;
+        planes[0].length    = frame_size;
+        planes[0].bytesused = frame_size;
+    } else {
+        // Multi-plane format (NV12: plane 0 = Y, plane 1 = UV)
+        size_t y_size  = enc->width * enc->height;
+        size_t uv_size = enc->width * enc->height / 2;
+
+        planes[0].m.fd      = src_fd;
+        planes[0].length    = y_size;
+        planes[0].bytesused = y_size;
+
+        planes[1].m.fd        = src_fd;
+        planes[1].length      = uv_size;
+        planes[1].bytesused   = uv_size;
+        planes[1].data_offset = y_size; // UV plane starts after Y
+    }
+}
+
 // Set up OUTPUT queue (raw input frames) with DMABUF import
 static int
 setup_output_queue(struct vsl_encoder_v4l2* enc,
@@ -583,32 +642,8 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     }
 
     // Find available OUTPUT buffer
-    int out_idx = -1;
-    for (int i = 0; i < enc->output.count; i++) {
-        if (!enc->output.buffers[i].queued) {
-            out_idx = i;
-            break;
-        }
-    }
-
-    // If no OUTPUT buffer available, try to dequeue one
-    if (out_idx < 0) {
-        struct v4l2_buffer buf;
-        struct v4l2_plane  planes[VSL_V4L2_ENC_MAX_PLANES];
-
-        memset(&buf, 0, sizeof(buf));
-        memset(planes, 0, sizeof(planes));
-        buf.type     = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-        buf.memory   = V4L2_MEMORY_DMABUF;
-        buf.length   = enc->num_input_planes;
-        buf.m.planes = planes;
-
-        if (xioctl(enc->fd, VIDIOC_DQBUF, &buf) == 0) {
-            enc->output.buffers[buf.index].queued = false;
-            out_idx                               = buf.index;
-        }
-    }
-
+    int out_idx = find_free_enc_output_buffer(enc);
+    if (out_idx < 0) { out_idx = try_dequeue_enc_output_buffer(enc); }
     if (out_idx < 0) {
         fprintf(stderr, "V4L2 encoder: no OUTPUT buffer available\n");
         return -1;
@@ -634,26 +669,7 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     buf.m.planes = planes;
 
     // Set up plane data based on format
-    if (enc->num_input_planes == 1) {
-        // Single-plane packed format (BGRA, YUYV, etc.)
-        size_t frame_size   = vsl_frame_size(source);
-        planes[0].m.fd      = src_fd;
-        planes[0].length    = frame_size;
-        planes[0].bytesused = frame_size;
-    } else {
-        // Multi-plane format (NV12: plane 0 = Y, plane 1 = UV)
-        size_t y_size  = enc->width * enc->height;
-        size_t uv_size = enc->width * enc->height / 2;
-
-        planes[0].m.fd      = src_fd;
-        planes[0].length    = y_size;
-        planes[0].bytesused = y_size;
-
-        planes[1].m.fd        = src_fd;
-        planes[1].length      = uv_size;
-        planes[1].bytesused   = uv_size;
-        planes[1].data_offset = y_size; // UV plane starts after Y
-    }
+    setup_output_planes(enc, planes, src_fd, vsl_frame_size(source));
 
     if (xioctl(enc->fd, VIDIOC_QBUF, &buf) < 0) {
         fprintf(stderr,
