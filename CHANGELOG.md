@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.1] - 2026-01-04
+
+### Fixed
+
+- **NOTICE Version** (EDGEAI-993): Fixed NOTICE file version tracking and added verify-version check
+- **CI Doctests**: Added Rust doctests to test.yml (nextest doesn't run doctests) and fixed
+  non-exhaustive match pattern in decoder.rs doctest
+
+---
+
 ## [2.1.0] - 2026-01-04
 
 ### Added
