@@ -144,6 +144,7 @@ verify-version:
 	echo -n "doc/conf.py: "; grep "^version = '$$VERSION'" doc/conf.py && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "debian/changelog: "; grep "^videostream ($$VERSION-1)" debian/changelog && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "CHANGELOG.md: "; grep "^\#\# \[$$VERSION\]" CHANGELOG.md && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
+	echo -n "NOTICE (videostream-sys): "; grep "videostream-sys $$VERSION" NOTICE && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo "All version files verified ✓"
 
 .PHONY: pre-release
