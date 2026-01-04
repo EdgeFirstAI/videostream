@@ -307,6 +307,9 @@ impl Decoder {
     ///     Ok((DecodeReturnCode::FrameDecoded, _, Some(frame))) => {
     ///         println!("Got frame: {}x{}", frame.width()?, frame.height()?);
     ///     }
+    ///     Ok((DecodeReturnCode::FrameDecoded, _, None)) => {
+    ///         println!("Frame decoded but not ready for output yet");
+    ///     }
     ///     Ok((DecodeReturnCode::Initialized, bytes, _)) => {
     ///         println!("Decoder initialized, consumed {} bytes", bytes);
     ///     }
