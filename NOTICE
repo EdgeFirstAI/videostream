@@ -21,7 +21,7 @@ Rust Dependencies:
     - Copyright (c) Luke Sneeringer
     - https://github.com/lukesneeringer/unix-ts
 
-  * videostream-sys 2.0.0 (Apache-2.0)
+  * videostream-sys 2.1.0 (Apache-2.0)
     - Low-level FFI bindings for VideoStream Library
     - Internal component - part of this project
 
