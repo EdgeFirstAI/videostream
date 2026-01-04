@@ -1,3 +1,16 @@
+videostream (2.1.0-1) stable; urgency=medium
+
+  * VideoStream CLI: Modern Rust CLI with stream, record, receive, info, convert commands
+  * V4L2 Codec Backend: Hardware encoder/decoder via V4L2 mem2mem API
+  * VPU Decoder DMA Heap Support for zero-copy decode pipelines
+  * Rust API Improvements: Rect type, Debug traits, #[non_exhaustive] enums
+  * Fixed VPU decode latency (200ms → near-zero with KICK mode)
+  * Fixed IPC deadlock and memory corruption bugs
+  * Fixed stack smashing on aarch64 platforms
+  * Resolved memory leaks and SonarCloud code quality issues
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Sat, 04 Jan 2026 00:00:00 +0000
+
 videostream (2.0.0-1) stable; urgency=medium
 
   * BREAKING: Python package namespace changed from deepview.videostream to videostream

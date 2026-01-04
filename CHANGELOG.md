@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.1.0] - 2026-01-04
+
 ### Added
 
 - **VideoStream CLI**: Modern Rust CLI application with 5 commands (DE-993)
@@ -20,12 +24,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CLI distributed in `videostream-tools` package alongside legacy `vsl-camhost`
   - Comprehensive integration tests (11 unit + 6 hardware tests)
   - JSON output support for programmatic metrics collection
+- **V4L2 Codec Backend** (EDGEAI-982): Hardware encoder/decoder via V4L2 mem2mem API
+  - Alternative to Hantro libcodec.so for H.264/HEVC encoding and decoding
+  - Supports standard V4L2 stateful codec devices
+- **VPU Decoder DMA Heap Support**: DMA buffer allocation for zero-copy decode pipelines
+- **Rust API Improvements** (EDGEAI-1001):
+  - Added `Rect` type for crop rectangles with `x`, `y`, `width`, `height` fields
+  - Added `Debug` trait implementations for `Host`, `Client`, `Frame`, `Encoder`, `Decoder`
+  - Added common traits (`Clone`, `Copy`, `PartialEq`, `Eq`, `Hash`) to enums
+  - Added `#[non_exhaustive]` attribute to public enums for future compatibility
+- **Rust Unit Tests** (EDGEAI-995): Comprehensive test coverage for all Rust modules
+  - Tests for `SymbolNotFound` and `HardwareNotAvailable` error handling
+  - Tests for library error handling edge cases
+
+### Changed
+
+- **Rust API** (EDGEAI-1001): Removed `get_` prefix from getters per Rust API Guidelines
+  - `frame.get_width()` → `frame.width()`
+  - `frame.get_height()` → `frame.height()`
+  - Similar changes for all accessor methods
+- **Rust API**: Replaced `bool` parameter with `Reconnect` enum for type safety
+  - `Client::connect(path, true)` → `Client::connect(path, Reconnect::Yes)`
 
 ### Fixed
 
-- V4L2: Fixed VIDIOC_DQBUF bug by removing incorrect `buf.index = 0` initialization
-- Camera: Enhanced buffer release logging with trace/warn diagnostics
-- CLI: Resolved argument short-option conflicts (-d, -f flags)
+- **VPU Decode Latency**: Eliminated 200ms decode delay by using KICK mode polling
+- **IPC Deadlock**: Fixed critical deadlock and memory corruption bugs in host/client IPC
+- **Stack Smashing (aarch64)**: Multiple fixes for stack corruption on ARM64 platforms
+  - Fixed uninitialized `pollfd.revents` in `vsl_frame_wait`
+  - Initialized all VPU structures in decoder
+  - Used heap allocation for KICK mode buffer
+  - Replaced designated initializers with memset
+- **Socket EAGAIN**: Handle EAGAIN in socket operations to prevent client disconnection
+- **Memory Leaks**: Resolved memory leaks, hot path allocation, and logic bugs in VPU code
+- **V4L2**: Fixed VIDIOC_DQBUF bug by removing incorrect `buf.index = 0` initialization
+- **IPC Memory Allocation**: Corrected sizeof in memory allocation for sockets and frames
+- **Camera**: Enhanced buffer release logging with trace/warn diagnostics
+- **CLI**: Resolved argument short-option conflicts (-d, -f flags)
+- **Rust Decoder**: Fixed `create_ex` to use fourcc codec value correctly
+- **SonarCloud**: Addressed blocker bugs, security vulnerabilities, and critical code issues
+- **Code Quality**: Reduced cognitive complexity across encoder, decoder, client, and host modules
 
 ---
 
@@ -303,4 +341,4 @@ Rust bindings were introduced in version 1.4.0.
 
 ---
 
-*Last Updated: 2025-11-19*
+*Last Updated: 2026-01-04*
