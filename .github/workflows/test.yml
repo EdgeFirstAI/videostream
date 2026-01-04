@@ -219,6 +219,14 @@ jobs:
             echo "⚠ WARNING: CLI binary not found in coverage target directory"
           fi
 
+      - name: Run Rust doctests
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build:$LD_LIBRARY_PATH
+        run: |
+          # nextest doesn't support doctests, so run them separately with cargo test
+          # This ensures documentation examples compile and work correctly
+          cargo test --doc --workspace --all-features
+
       - name: Add skipped Rust tests to JUnit XML
         run: |
           # nextest doesn't include ignored tests in JUnit output

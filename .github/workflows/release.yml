@@ -221,10 +221,6 @@ jobs:
           cmake --build build -j$(nproc)
           sudo cmake --install build
 
-      - name: Run Rust tests
-        run: |
-          cargo test --workspace --all-features
-
       - name: Authenticate to crates.io (Trusted Publishing)
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
