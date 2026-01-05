@@ -21,7 +21,7 @@ serial_test = "3.0"
 
 [dependencies]
 # VideoStream library
-videostream = { path = "../videostream" }
+videostream.workspace = true
 
 # CLI dependencies (from workspace)
 clap.workspace = true
