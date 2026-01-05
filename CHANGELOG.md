@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.2] - 2026-01-04
+
+### Fixed
+
+- **Cargo Workspace Publishing**: Added `videostream` crate to workspace dependencies with version
+  for crates.io publishing (fixes `cargo publish --workspace` failure)
+
+Note: 2.1.1 was partially released (PyPI only) due to crates.io publishing failure.
+
+---
+
 ## [2.1.1] - 2026-01-04
 
 ### Fixed
