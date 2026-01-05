@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.3] - 2026-01-04
+
+### Fixed
+
+- **Release Workflow**: First complete release with all artifacts after fixing crates.io
+  workspace publishing and manually registering `videostream-cli` crate
+
+Note: 2.1.1 and 2.1.2 had partial release failures. This is the first complete 2.1.x release.
+
+---
+
 ## [2.1.2] - 2026-01-04
 
 ### Fixed
