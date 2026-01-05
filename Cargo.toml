@@ -35,6 +35,7 @@ log = "0.4"
 
 # Workspace crates
 videostream-sys = { version = "2.1.1", path = "crates/videostream-sys" }
+videostream = { version = "2.1.1", path = "crates/videostream" }
 
 [profile.release]
 opt-level = 3
