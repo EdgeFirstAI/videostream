@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.4] - 2026-01-05
+
+### Fixed
+
+- **Release Workflow**: Complete release with trusted publisher configured for `videostream-cli`
+  crate on crates.io (2.1.3 failed CLI publishing due to missing trusted publisher)
+
+---
+
 ## [2.1.3] - 2026-01-04
 
 ### Fixed
