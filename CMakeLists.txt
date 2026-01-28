@@ -26,7 +26,7 @@ set(VideoStream_SPDX_LICENSE "Apache-2.0")
 set(COMPANY "Au-Zone Technologies")
 set(EMAIL "support@au-zone.com")
 set(COPYRIGHT "Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.")
-set(SOVERSION "1")
+set(SOVERSION "2")
 
 if (WIN32 OR APPLE)
     set(PACKAGE_NAME "VideoStream")
@@ -66,6 +66,10 @@ include(GenerateExportHeader)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CMakeToolsHelpers OPTIONAL)
+
+# Force simple lib directory for portable archives (not Debian multi-arch)
+# Debian packaging uses its own install paths via debian/rules
+set(CMAKE_INSTALL_LIBDIR "lib" CACHE PATH "Library install directory" FORCE)
 
 # Configure install directories
 set(PYTHON_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/python3/dist-packages)
