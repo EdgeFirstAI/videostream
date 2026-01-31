@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **vslsink DMA Buffer Pool**: Fixed DMA heap memory exhaustion when vslsink copies system memory
+  to dmabuf. Previously, a new DMA buffer was allocated for every frame, exhausting the DMA heap
+  after ~275 frames (~850MB). Now uses a pre-allocated pool of buffers (default: 8) that are
+  reused via round-robin allocation. Added `pool-size` property to configure pool size.
+
+- **Host Socket Error Messages**: Suppressed spurious "Socket operation on non-socket" error
+  messages when clients disconnect. Added `ENOTSOCK`, `EBADF`, and `EPIPE` to the list of
+  silently handled disconnect errors.
+
+- **vslsink File Descriptor Leak**: Fixed FD leak in cleanup callbacks. When `vsl_frame_attach()`
+  duplicates the buffer FD, the dup'd FD was not being closed when a cleanup callback existed
+  (since `vsl_frame_unalloc()` skips closing in that case). Both `frame_cleanup()` and
+  `dmabuf_pool_cleanup()` now close the dup'd handle.
+
 ---
 
 ## [2.1.4] - 2026-01-05

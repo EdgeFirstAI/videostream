@@ -4,6 +4,8 @@
 #ifndef VSLSINK_H
 #define VSLSINK_H
 
+#include <stdbool.h>
+
 #include <gst/video/gstvideosink.h>
 #include <gst/video/video.h>
 
@@ -23,6 +25,23 @@ extern "C" {
 
 typedef struct vsl_host VSLHost;
 
+// DMA buffer pool entry - pre-allocated and reused
+typedef struct {
+    int    dmabuf_fd; // DMA buffer file descriptor
+    void*  map_ptr;   // mmap'd memory for CPU copy
+    size_t map_size;  // Size of buffer
+    bool   in_use;    // Currently referenced by a frame
+} DmaBufPoolEntry;
+
+// DMA buffer pool - avoids per-frame allocation
+typedef struct {
+    DmaBufPoolEntry* entries;
+    size_t           count;    // Number of entries in pool
+    size_t           next_idx; // Round-robin index for allocation
+    GMutex           lock;
+    bool             initialized;
+} DmaBufPool;
+
 typedef struct {
     GstVideoSink parent;
     GRecMutex    mutex;
@@ -34,6 +53,8 @@ typedef struct {
     int64_t      lifespan;
     size_t       n_sockets;
     int*         sockets;
+    DmaBufPool   dmabuf_pool; // Pre-allocated DMA buffer pool
+    size_t       pool_size;   // Configured pool size
 } VslSink;
 
 typedef struct {
