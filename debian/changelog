@@ -1,3 +1,18 @@
+videostream (2.2.0-1) stable; urgency=medium
+
+  * V4L2 Device Discovery API: Automatic detection of cameras, encoders, and decoders
+  * Auto-detect devices by capability - no more hardcoded /dev/videoX paths
+  * New CLI command: videostream devices - list and filter V4L2 devices
+  * Smart device grouping by bus_info to deduplicate multi-channel hardware
+  * Filter flags: --cameras, --encoders, --decoders, --converters
+  * DMA heap-backed USERPTR allocation for zero-copy pipelines
+  * Real format enumeration via VIDIOC_ENUM_FMT (no more hardcoded lists)
+  * Resolution enumeration via VIDIOC_ENUM_FRAMESIZES
+  * Comprehensive Doxygen documentation with @since 2.2 annotations
+  * Full Rust rustdoc with examples for docs.rs
+
+ -- Sébastien Taylor <sebastien@au-zone.com>  Sat, 01 Feb 2025 00:00:00 +0000
+
 videostream (2.1.0-1) stable; urgency=medium
 
   * VideoStream CLI: Modern Rust CLI with stream, record, receive, info, convert commands

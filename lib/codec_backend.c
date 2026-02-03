@@ -2,6 +2,7 @@
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
 
 #include "codec_backend.h"
+#include "v4l2_device.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -34,10 +35,31 @@ bool
 vsl_v4l2_codec_available(bool is_encoder)
 {
 #ifdef __linux__
-    const char* dev = is_encoder ? VSL_V4L2_ENCODER_DEV : VSL_V4L2_DECODER_DEV;
+    // First check for device path override via environment variable
+    const char* env_dev = is_encoder ? getenv(VSL_V4L2_ENCODER_DEV_ENV)
+                                     : getenv(VSL_V4L2_DECODER_DEV_ENV);
+    const char* dev     = NULL;
+
+    if (env_dev && *env_dev) {
+        // Use specified device
+        dev = env_dev;
+    } else {
+        // Auto-detect device by H.264 capability (most common codec)
+        uint32_t h264_fourcc = VSL_FOURCC('H', '2', '6', '4');
+        if (is_encoder) {
+            dev = vsl_v4l2_find_encoder(h264_fourcc);
+        } else {
+            dev = vsl_v4l2_find_decoder(h264_fourcc);
+        }
+    }
+
+    if (!dev) {
+        // Fall back to legacy default
+        dev = is_encoder ? VSL_V4L2_ENCODER_DEV_DEFAULT
+                         : VSL_V4L2_DECODER_DEV_DEFAULT;
+    }
 
     // Open device and verify it has M2M capability
-    // Note: We don't use access() before open() to avoid TOCTOU race condition
     int fd = open(dev, O_RDWR | O_NONBLOCK);
     if (fd < 0) { return false; }
 
@@ -52,7 +74,7 @@ vsl_v4l2_codec_available(bool is_encoder)
                          ? cap.device_caps
                          : cap.capabilities;
 
-        // Check for M2M capability (vsi_v4l2 uses single-planar M2M)
+        // Check for M2M capability
         if (caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE)) {
             available = true;
 #ifndef NDEBUG

@@ -39,7 +39,13 @@ PREDEFINED              = VSL_API= \
                           VSL_AVAILABLE_SINCE_1_4= \
                           VSL_DEPRECATED_SINCE_1_4= \
                           VSL_AVAILABLE_SINCE_1_5= \
-                          VSL_DEPRECATED_SINCE_1_5=
+                          VSL_DEPRECATED_SINCE_1_5= \
+                          VSL_AVAILABLE_SINCE_2_0= \
+                          VSL_DEPRECATED_SINCE_2_0= \
+                          VSL_AVAILABLE_SINCE_2_1= \
+                          VSL_DEPRECATED_SINCE_2_1= \
+                          VSL_AVAILABLE_SINCE_2_2= \
+                          VSL_DEPRECATED_SINCE_2_2=
 
 EXTRACT_ALL             = YES
 EXTRACT_PRIVATE         = NO

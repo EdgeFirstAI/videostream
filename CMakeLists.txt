@@ -238,6 +238,8 @@ add_library(videostream
     lib/g2d.c
     lib/v4l2.c
     lib/v4l2.h
+    lib/v4l2_device.h
+    lib/v4l2_device.c
     ${CODEC_SRCS}
 )
 

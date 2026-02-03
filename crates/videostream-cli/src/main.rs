@@ -2,6 +2,7 @@
 // Copyright 2025 Au-Zone Technologies
 
 mod convert;
+mod devices;
 mod error;
 mod info;
 mod metrics;
@@ -54,6 +55,9 @@ enum Commands {
 
     /// Display camera and system hardware capabilities
     Info(info::Args),
+
+    /// List V4L2 devices with filtering and grouping
+    Devices(devices::Args),
 }
 
 fn main() -> ExitCode {
@@ -69,6 +73,7 @@ fn main() -> ExitCode {
         Commands::Convert(args) => convert::execute(args, cli.json),
         Commands::Receive(args) => receive::execute(args, cli.json),
         Commands::Info(args) => info::execute(args, cli.json),
+        Commands::Devices(args) => devices::execute(args, cli.json),
     };
 
     result_to_exit_code(result)

@@ -27,6 +27,16 @@ impl FourCC {
                 | ((self.0[3] as u32) & 0x000000ff)
         }
     }
+
+    /// Convert to u32 representation
+    pub const fn as_u32(self) -> u32 {
+        self.to_u32()
+    }
+
+    /// Create from u32 representation
+    pub fn from_u32(val: u32) -> Self {
+        FourCC::from(val)
+    }
 }
 
 impl From<&[u8; 4]> for FourCC {

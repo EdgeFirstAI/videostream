@@ -2,8 +2,10 @@
 // Copyright Ⓒ 2025 Au-Zone Technologies. All Rights Reserved.
 
 #include "decoder_v4l2.h"
+#include "codec_backend.h"
 #include "common.h"
 #include "frame.h"
+#include "v4l2_device.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -859,6 +861,30 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
         return NULL;
     }
 
+    // Determine device path:
+    // 1. Check environment variable override
+    // 2. Auto-detect decoder by codec capability
+    // 3. Fall back to legacy default
+    const char* dev_path = getenv(VSL_V4L2_DECODER_DEV_ENV);
+    if (!dev_path) {
+        dev_path = vsl_v4l2_find_decoder(codec);
+        if (dev_path) {
+            fprintf(stderr,
+                    "[decoder_v4l2] auto-detected %s for codec '%c%c%c%c'\n",
+                    dev_path,
+                    (char) (codec & 0xFF),
+                    (char) ((codec >> 8) & 0xFF),
+                    (char) ((codec >> 16) & 0xFF),
+                    (char) ((codec >> 24) & 0xFF));
+        }
+    }
+    if (!dev_path) {
+        dev_path = VSL_V4L2_DECODER_DEV_DEFAULT;
+        fprintf(stderr,
+                "[decoder_v4l2] no device found, trying default %s\n",
+                dev_path);
+    }
+
     // Allocate decoder structure
     struct vsl_decoder_v4l2* dec = calloc(1, sizeof(struct vsl_decoder_v4l2));
     if (!dec) {
@@ -881,11 +907,11 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
     }
 
     // Open V4L2 device
-    dec->fd = open(VSL_V4L2_DECODER_DEV, O_RDWR | O_NONBLOCK);
+    dec->fd = open(dev_path, O_RDWR | O_NONBLOCK);
     if (dec->fd < 0) {
         fprintf(stderr,
                 "[decoder_v4l2] failed to open %s: %s\n",
-                VSL_V4L2_DECODER_DEV,
+                dev_path,
                 strerror(errno));
         free(dec);
         return NULL;

@@ -308,6 +308,12 @@ pub mod camera;
 /// four-character-code pixel formats (e.g., "YUYV", "NV12").
 pub mod fourcc;
 
+/// V4L2 device discovery and enumeration.
+///
+/// Provides [`DeviceEnumerator`](v4l2::DeviceEnumerator) for discovering
+/// cameras, encoders, and decoders without hardcoded device paths.
+pub mod v4l2;
+
 /// Returns the VideoStream Library version string.
 ///
 /// The version follows semantic versioning (MAJOR.MINOR.PATCH).

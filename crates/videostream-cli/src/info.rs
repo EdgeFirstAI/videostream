@@ -6,7 +6,7 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use videostream::{camera, decoder, encoder};
+use videostream::{camera, decoder, encoder, v4l2::DeviceEnumerator};
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
@@ -209,15 +209,81 @@ fn query_v4l2_codecs() -> V4L2CodecInfo {
 
     let mut devices = Vec::new();
 
-    // Scan /dev/video* for codec devices
-    if let Ok(entries) = fs::read_dir("/dev") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(name) = path.file_name() {
-                let name_str = name.to_string_lossy();
-                if name_str.starts_with("video") {
-                    if let Some(device) = probe_v4l2_device(&path) {
-                        devices.push(device);
+    // Use the new V4L2 device enumeration API
+    match DeviceEnumerator::enumerate() {
+        Ok(enumerated_devices) => {
+            for device in enumerated_devices {
+                let is_encoder = device.is_encoder();
+                let is_decoder = device.is_decoder();
+                let is_camera = device.is_camera();
+
+                // Collect format names
+                let formats = if is_encoder {
+                    // For encoders, show capture formats (compressed output)
+                    let fmts: Vec<String> = device
+                        .capture_formats()
+                        .iter()
+                        .filter(|f| f.compressed)
+                        .map(|f| format!("{}", f.fourcc))
+                        .collect();
+                    if fmts.is_empty() {
+                        None
+                    } else {
+                        Some(fmts)
+                    }
+                } else if is_decoder {
+                    // For decoders, show output formats (compressed input)
+                    let fmts: Vec<String> = device
+                        .output_formats()
+                        .iter()
+                        .filter(|f| f.compressed)
+                        .map(|f| format!("{}", f.fourcc))
+                        .collect();
+                    if fmts.is_empty() {
+                        None
+                    } else {
+                        Some(fmts)
+                    }
+                } else if is_camera {
+                    // For cameras, show capture formats
+                    let fmts: Vec<String> = device
+                        .capture_formats()
+                        .iter()
+                        .take(5) // Limit to first 5 formats
+                        .map(|f| format!("{}", f.fourcc))
+                        .collect();
+                    if fmts.is_empty() {
+                        None
+                    } else {
+                        Some(fmts)
+                    }
+                } else {
+                    None
+                };
+
+                devices.push(V4L2Device {
+                    path: device.path_str().to_string(),
+                    name: device.card().to_string(),
+                    driver: device.driver().to_string(),
+                    is_encoder,
+                    is_decoder,
+                    formats,
+                });
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to enumerate V4L2 devices: {}", e);
+            // Fall back to sysfs-based enumeration
+            if let Ok(entries) = fs::read_dir("/dev") {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy();
+                        if name_str.starts_with("video") {
+                            if let Some(device) = probe_v4l2_device(&path) {
+                                devices.push(device);
+                            }
+                        }
                     }
                 }
             }
