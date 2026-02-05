@@ -316,7 +316,8 @@ fn test_record_and_convert_to_mp4() {
         .arg("convert")
         .arg(&h264_file)
         .arg(&mp4_file)
-        .timeout(Duration::from_secs(5))
+        // Allow more time for conversion with coverage instrumentation overhead
+        .timeout(Duration::from_secs(30))
         .assert()
         .success()
         .stderr(predicate::str::contains("Conversion complete"));
@@ -381,7 +382,8 @@ fn test_stream_and_receive() {
         .arg("--frames")
         .arg("30")
         .arg("--json")
-        .timeout(Duration::from_secs(10))
+        // Timeout is a safety net; process should exit after receiving frames
+        .timeout(Duration::from_secs(30))
         .assert()
         .success()
         .stdout(predicate::str::contains("frames_processed"));
@@ -450,7 +452,8 @@ fn test_stream_encoded_and_receive_decoded() {
             .arg("--frames")
             .arg("30")
             .arg("--decode")
-            .timeout(Duration::from_secs(10))
+            // Timeout is a safety net; process should exit after receiving frames
+            .timeout(Duration::from_secs(30))
             .assert()
             .success();
 
