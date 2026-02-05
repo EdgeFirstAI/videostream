@@ -17,6 +17,12 @@ use std::{
     time::Duration,
 };
 
+/// Small delay to allow hardware resources (camera, V4L2 encoder) to be released
+/// between tests. This prevents "device busy" issues when tests run back-to-back.
+fn hardware_cleanup_delay() {
+    thread::sleep(Duration::from_millis(500));
+}
+
 /// Helper to create a Command for the videostream binary
 /// Uses VIDEOSTREAM_BIN environment variable if set, otherwise uses cargo run
 fn videostream_cmd() -> Command {
@@ -217,6 +223,8 @@ fn test_convert_invalid_extension() {
 #[ignore = "requires camera hardware (run with --include-ignored on hardware)"]
 #[serial]
 fn test_record_basic() {
+    hardware_cleanup_delay(); // Allow previous test's hardware to be released
+
     let test_dir = get_test_data_dir();
     let output_file = test_dir.join("test_record.h264");
 
@@ -230,7 +238,8 @@ fn test_record_basic() {
         .arg("30") // Record just 30 frames
         .arg("--device")
         .arg("/dev/video3")
-        .timeout(Duration::from_secs(10))
+        // Timeout is a safety net; process should exit after recording frames
+        .timeout(Duration::from_secs(30))
         .assert()
         .success()
         .stderr(predicate::str::contains("Recording complete"));
@@ -250,6 +259,8 @@ fn test_record_basic() {
 #[ignore = "requires camera hardware (run with --include-ignored on hardware)"]
 #[serial]
 fn test_record_with_duration() {
+    hardware_cleanup_delay(); // Allow previous test's hardware to be released
+
     let test_dir = get_test_data_dir();
     let output_file = test_dir.join("test_record_duration.h264");
 
@@ -262,7 +273,8 @@ fn test_record_with_duration() {
         .arg("2") // Record for 2 seconds
         .arg("--device")
         .arg("/dev/video3")
-        .timeout(Duration::from_secs(5))
+        // Timeout is a safety net; process should exit after duration
+        .timeout(Duration::from_secs(30))
         .assert()
         .success();
 
@@ -275,6 +287,8 @@ fn test_record_with_duration() {
 #[ignore = "requires camera hardware (run with --include-ignored on hardware)"]
 #[serial]
 fn test_record_and_convert_to_mp4() {
+    hardware_cleanup_delay(); // Allow previous test's hardware to be released
+
     let test_dir = get_test_data_dir();
     let h264_file = test_dir.join("test_convert.h264");
     let mp4_file = test_dir.join("test_convert.mp4");
@@ -290,7 +304,8 @@ fn test_record_and_convert_to_mp4() {
         .arg("60")
         .arg("--device")
         .arg("/dev/video3")
-        .timeout(Duration::from_secs(10))
+        // Timeout is a safety net; process should exit after recording frames
+        .timeout(Duration::from_secs(30))
         .assert()
         .success();
 
@@ -301,7 +316,8 @@ fn test_record_and_convert_to_mp4() {
         .arg("convert")
         .arg(&h264_file)
         .arg(&mp4_file)
-        .timeout(Duration::from_secs(5))
+        // Allow more time for conversion with coverage instrumentation overhead
+        .timeout(Duration::from_secs(30))
         .assert()
         .success()
         .stderr(predicate::str::contains("Conversion complete"));
@@ -325,6 +341,8 @@ fn test_record_and_convert_to_mp4() {
 #[ignore = "requires camera hardware (run with --include-ignored on hardware)"]
 #[serial]
 fn test_stream_and_receive() {
+    hardware_cleanup_delay(); // Allow previous test's hardware to be released
+
     let socket_path = "/tmp/videostream_test_stream_receive";
 
     // Clean up previous test run
@@ -364,7 +382,8 @@ fn test_stream_and_receive() {
         .arg("--frames")
         .arg("30")
         .arg("--json")
-        .timeout(Duration::from_secs(10))
+        // Timeout is a safety net; process should exit after receiving frames
+        .timeout(Duration::from_secs(30))
         .assert()
         .success()
         .stdout(predicate::str::contains("frames_processed"));
@@ -388,6 +407,8 @@ fn test_stream_and_receive() {
 #[ignore = "requires camera and VPU hardware (run with --include-ignored on hardware)"]
 #[serial]
 fn test_stream_encoded_and_receive_decoded() {
+    hardware_cleanup_delay(); // Allow previous test's hardware to be released
+
     // FIXME: This test currently fails - receive times out waiting for encoded frames.
     // The stream process starts successfully and the receive connects/creates decoder,
     // but no frames are received within the 10-second timeout. Needs investigation.
@@ -431,7 +452,8 @@ fn test_stream_encoded_and_receive_decoded() {
             .arg("--frames")
             .arg("30")
             .arg("--decode")
-            .timeout(Duration::from_secs(10))
+            // Timeout is a safety net; process should exit after receiving frames
+            .timeout(Duration::from_secs(30))
             .assert()
             .success();
 

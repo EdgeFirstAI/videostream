@@ -22,7 +22,13 @@ pre-release-replacements = [
 
   # Update Python package version
   {file="pyproject.toml", search="version = \"[^\"]+\"", replace="version = \"{{version}}\"", exactly=1},
-  
-  # Update Debian changelog
-  {file="debian/changelog", search="videostream \\([^)]+\\)", replace="videostream ({{version}}-1)", min=1},
+
+  # Update Sphinx documentation version
+  {file="doc/conf.py", search="version = '[^']+'", replace="version = '{{version}}'", exactly=1},
+
+  # Update NOTICE file (videostream-sys version in third-party notices)
+  {file="NOTICE", search="videostream-sys [0-9]+\\.[0-9]+\\.[0-9]+", replace="videostream-sys {{version}}", exactly=1},
+
+  # Note: debian/changelog is generated at build time from CHANGELOG.md
+  # See debian/gen-changelog.py - no need to update it here
 ]

@@ -117,7 +117,8 @@ jobs:
                 -DCMAKE_C_FLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
                 -DENABLE_VPU=OFF \
                 -DENABLE_G2D=OFF \
-                -DENABLE_COVER=OFF
+                -DENABLE_COVER=OFF \
+                -DPORTABLE_ARCHIVE=ON
 
       - name: Build
         run: |
@@ -198,6 +199,9 @@ jobs:
           # These flags are used by dpkg-buildpackage via debian/rules
           echo "DEB_CFLAGS_APPEND=-D_GLIBCXX_USE_CXX11_ABI=0" >> $GITHUB_ENV
           echo "DEB_BUILD_OPTIONS=nocheck" >> $GITHUB_ENV
+
+      - name: Generate debian/changelog
+        run: python3 debian/gen-changelog.py
 
       - name: Build Debian packages (manylinux2014 compatible)
         run: |
