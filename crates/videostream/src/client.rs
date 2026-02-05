@@ -121,30 +121,6 @@ impl Client {
         Ok(Client { ptr })
     }
 
-    /// Releases client resources without disconnecting.
-    ///
-    /// Cleans up client-side resources while keeping the connection alive.
-    /// Typically called before dropping the client.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use videostream::client::{Client, Reconnect};
-    ///
-    /// let client = Client::new("/tmp/video.sock", Reconnect::No)?;
-    /// // ... use client ...
-    /// client.release()?;
-    /// # Ok::<(), videostream::Error>(())
-    /// ```
-    pub fn release(&self) -> Result<(), Error> {
-        vsl!(vsl_client_release(self.ptr));
-        Ok(())
-    }
-
     /// Disconnects from the host.
     ///
     /// Closes the connection to the host server. If `Reconnect::Yes` was specified,
@@ -302,8 +278,12 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        let _ = self.release();
-        let _ = self.disconnect();
+        // vsl_client_release handles full cleanup including socket close
+        if let Ok(lib) = ffi::init() {
+            unsafe {
+                lib.vsl_client_release(self.ptr);
+            }
+        }
     }
 }
 
