@@ -1,10 +1,14 @@
 #!/usr/bin/make -f
 
 # Debian packaging rules for VideoStream library
-# See debian/changelog for version management
+# Changelog is generated from CHANGELOG.md - see debian/gen-changelog.py
 
 %:
 	dh $@ --buildsystem=cmake
+
+# Generate debian/changelog from CHANGELOG.md before configure
+execute_before_dh_auto_configure:
+	python3 debian/gen-changelog.py
 
 override_dh_auto_configure:
 	  dh_auto_configure -- \
@@ -30,7 +34,7 @@ override_dh_auto_install:
 override_dh_shlibdeps:
 
 override_dh_installdocs:
-	# Install LICENSE and NOTICE to all packages
-	dh_installdocs LICENSE NOTICE
+	# Install LICENSE, NOTICE, and CHANGELOG to all packages
+	dh_installdocs LICENSE NOTICE CHANGELOG.md
 	# Install README to -dev package
 	dh_installdocs -plibvideostream-dev README.md
