@@ -4,6 +4,7 @@
 help:
 	@echo "Available targets:"
 	@echo "  make build          - Build with coverage enabled for testing (C + Rust + Python)"
+	@echo "  make deb            - Build Debian packages"
 	@echo "  make format         - Format source code (C, Rust, Python)"
 	@echo "  make lint           - Run linters (clippy for Rust)"
 	@echo "  make test           - Run test suite with coverage"
@@ -142,10 +143,19 @@ verify-version:
 	echo -n "Cargo.toml (videostream-sys dep): "; grep "videostream-sys = { version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "pyproject.toml: "; grep "^version = \"$$VERSION\"" pyproject.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "doc/conf.py: "; grep "^version = '$$VERSION'" doc/conf.py && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
-	echo -n "debian/changelog: "; grep "^videostream ($$VERSION-1)" debian/changelog && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "CHANGELOG.md: "; grep "^\#\# \[$$VERSION\]" CHANGELOG.md && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "NOTICE (videostream-sys): "; grep "videostream-sys $$VERSION" NOTICE && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo "All version files verified ✓"
+
+# Build Debian packages
+# Generates debian/changelog from CHANGELOG.md before building
+.PHONY: deb
+deb:
+	@echo "Generating debian/changelog from CHANGELOG.md..."
+	@python3 debian/gen-changelog.py
+	@echo "Building Debian packages..."
+	@dpkg-buildpackage -us -uc -b
+	@echo "✓ Debian packages built successfully"
 
 .PHONY: pre-release
 pre-release: clean build format lint verify-version test sbom

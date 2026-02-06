@@ -43,6 +43,7 @@ option(INSTALL_MANUAL "Install User Manual" OFF)
 option(ENABLE_COVER "Enable code coverage for the library" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 option(SONAR_ANALYSIS "Disable compiler flags incompatible with SonarCloud" OFF)
+option(PORTABLE_ARCHIVE "Use simple 'lib' directory for portable ZIP archives" OFF)
 
 if (UNIX AND NOT APPLE)
     option(ENABLE_G2D "Enable G2D for frame conversion acceleration" ON)
@@ -67,9 +68,11 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CMakeToolsHelpers OPTIONAL)
 
-# Force simple lib directory for portable archives (not Debian multi-arch)
-# Debian packaging uses its own install paths via debian/rules
-set(CMAKE_INSTALL_LIBDIR "lib" CACHE PATH "Library install directory" FORCE)
+# For portable ZIP archives, use simple 'lib' directory (not multi-arch)
+# System installs (including Debian) use GNUInstallDirs defaults (e.g., lib/x86_64-linux-gnu)
+if(PORTABLE_ARCHIVE)
+    set(CMAKE_INSTALL_LIBDIR "lib" CACHE PATH "Library install directory" FORCE)
+endif()
 
 # Configure install directories
 set(PYTHON_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/python3/dist-packages)
