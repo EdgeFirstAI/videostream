@@ -5,6 +5,7 @@
 #include "codec_backend.h"
 #include "common.h"
 #include "frame.h"
+#include "v4l2_device.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -524,12 +525,36 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile,
         return NULL;
     }
 
+    // Determine device path:
+    // 1. Check environment variable override
+    // 2. Auto-detect encoder by codec capability
+    // 3. Fall back to legacy default
+    const char* dev_path = getenv(VSL_V4L2_ENCODER_DEV_ENV);
+    if (!dev_path) {
+        dev_path = vsl_v4l2_find_encoder(output_fourcc);
+        if (dev_path) {
+            fprintf(stderr,
+                    "V4L2 encoder: auto-detected %s for codec '%c%c%c%c'\n",
+                    dev_path,
+                    (char) (output_fourcc & 0xFF),
+                    (char) ((output_fourcc >> 8) & 0xFF),
+                    (char) ((output_fourcc >> 16) & 0xFF),
+                    (char) ((output_fourcc >> 24) & 0xFF));
+        }
+    }
+    if (!dev_path) {
+        dev_path = VSL_V4L2_ENCODER_DEV_DEFAULT;
+        fprintf(stderr,
+                "V4L2 encoder: no device found, trying default %s\n",
+                dev_path);
+    }
+
     // Open V4L2 device
-    int fd = open(VSL_V4L2_ENCODER_DEV, O_RDWR | O_NONBLOCK);
+    int fd = open(dev_path, O_RDWR | O_NONBLOCK);
     if (fd < 0) {
         fprintf(stderr,
                 "V4L2 encoder: failed to open %s: %s\n",
-                VSL_V4L2_ENCODER_DEV,
+                dev_path,
                 strerror(errno));
         return NULL;
     }
@@ -551,10 +576,7 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile,
         return NULL;
     }
 
-    fprintf(stderr,
-            "V4L2 encoder: opened %s (%s)\n",
-            VSL_V4L2_ENCODER_DEV,
-            cap.card);
+    fprintf(stderr, "V4L2 encoder: opened %s (%s)\n", dev_path, cap.card);
 
     // Allocate encoder structure
     struct vsl_encoder_v4l2* enc = calloc(1, sizeof(struct vsl_encoder_v4l2));

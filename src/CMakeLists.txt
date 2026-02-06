@@ -50,5 +50,9 @@ if(ENABLE_V4L2_CODEC OR ENABLE_HANTRO_CODEC)
     target_link_libraries(vsl-benchmark-e2e videostream m)
 endif()
 
+# V4L2 device enumeration utility
+add_executable(vsl-v4l2-info vsl-v4l2-info.c)
+target_link_libraries(vsl-v4l2-info PRIVATE videostream)
+
 install(TARGETS vsl-camhost COMPONENT runtime RUNTIME DESTINATION bin)
 install(FILES camhost.c COMPONENT samples DESTINATION ${SAMPLES_INSTALL_DIR})

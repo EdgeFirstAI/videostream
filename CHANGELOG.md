@@ -7,7 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.2.0] - 2026-02-02
+
+### Added
+
+- **V4L2 Device Discovery API**: New API for automatic detection of cameras, encoders, and decoders
+  by capability. Replaces hardcoded device paths with runtime detection.
+  - `vsl_v4l2_enumerate()` - List all V4L2 devices with capabilities and formats
+  - `vsl_v4l2_enumerate_type(mask)` - Filter devices by type bitmask
+  - `vsl_v4l2_find_encoder(codec)` - Find encoder by output codec (H.264/HEVC)
+  - `vsl_v4l2_find_decoder(codec)` - Find decoder by input codec
+  - `vsl_v4l2_find_camera(format)` - Find camera by pixel format (NV12/YUYV/etc.)
+  - `vsl_v4l2_find_camera_with_resolution()` - Find camera by format and resolution
+  - `vsl_v4l2_device_enum_formats()` - Enumerate formats for a device
+  - `vsl_v4l2_enum_resolutions()` - Get supported resolutions for a format
+  - `vsl_v4l2_device_supports_format()` - Check format support
+  - `vsl_v4l2_device_type_name()` - Get human-readable device type name
+  - `vsl_v4l2_is_compressed_format()` - Check if fourcc is compressed
+  - `vsl_v4l2_fourcc_to_string()` - Convert fourcc to printable string
+  - Real format enumeration via VIDIOC_ENUM_FMT instead of hardcoded lists
+  - Resolution enumeration via VIDIOC_ENUM_FRAMESIZES
+  - Memory capability detection (MMAP/USERPTR/DMABUF)
+
+- **DMA Heap USERPTR Allocation**: `vsl_v4l2_alloc_userptr()` allocates USERPTR buffers from
+  DMA heap for zero-copy with devices that don't support DMABUF export.
+  - `vsl_v4l2_free_userptr()` - Free USERPTR buffer and close FD
+
+- **CLI `devices` Command**: New command to enumerate and filter V4L2 devices:
+  - `videostream devices` - List all devices grouped by hardware unit
+  - `--cameras` / `--encoders` / `--decoders` / `--converters` - Filter by type
+  - `--all` - Show all device nodes (disable grouping)
+  - `--verbose` - Show detailed format information
+  - `--json` - Machine-readable JSON output
+  - Smart grouping by `bus_info` to deduplicate multi-channel hardware
+
+- **Rust V4L2 Module**: Safe Rust wrappers in `videostream::v4l2`:
+  - `DeviceEnumerator` - Static methods for device discovery
+  - `Device` - Device descriptor with capabilities and formats
+  - `Format` / `Resolution` - Format and resolution types
+  - `DeviceType` / `MemoryType` / `MemoryCapabilities` - Capability types
+  - Comprehensive rustdoc with examples
+
+- **vsl-v4l2-info Utility**: New test utility to demonstrate the discovery API.
+
+### Changed
+
+- **Encoder/Decoder Auto-Detection**: `vsl_encoder_create()` and `vsl_decoder_create()` now
+  auto-detect the correct device path by codec capability. Environment variable overrides
+  (`VSL_V4L2_ENCODER_DEV`, `VSL_V4L2_DECODER_DEV`) still work for explicit device selection.
+
+- **CLI info Command**: `videostream info --v4l2` now uses the native V4L2 discovery API
+  to show real device capabilities and formats instead of sysfs-based heuristics.
+
+### Fixed
+
+- **vslsink DMA Buffer Pool**: Fixed DMA heap memory exhaustion when vslsink copies system memory
+  to dmabuf. Previously, a new DMA buffer was allocated for every frame, exhausting the DMA heap
+  after ~275 frames (~850MB). Now uses a pre-allocated pool of buffers (default: 8) that are
+  reused via round-robin allocation. Added `pool-size` property to configure pool size.
+
+- **vslsink Zero-Copy for All Sources**: Implemented `VslDmaBufBufferPool`, a custom
+  `GstVideoBufferPool` subclass that enables zero-copy IPC for ALL upstream sources including
+  those that cannot allocate DmaBuf memory themselves (e.g., videotestsrc). The pool:
+  - Allocates buffers from `/dev/dma_heap/linux,cma` or `/dev/dma_heap/system`
+  - Proposes the pool in `propose_allocation()` so upstream writes directly to shareable memory
+  - Uses `gst_dmabuf_allocator_alloc()` to wrap FDs for GStreamer integration
+  - Tracks buffer lifecycle with round-robin allocation and automatic recycling
+
+- **Host Socket Error Messages**: Suppressed spurious "Socket operation on non-socket" error
+  messages when clients disconnect. Added `ENOTSOCK`, `EBADF`, and `EPIPE` to the list of
+  silently handled disconnect errors.
+
+- **vslsink File Descriptor Leak**: Fixed FD leak in cleanup callbacks. When `vsl_frame_attach()`
+  duplicates the buffer FD, the dup'd FD was not being closed when a cleanup callback existed
+  (since `vsl_frame_unalloc()` skips closing in that case). Both `frame_cleanup()` and
+  `dmabuf_pool_cleanup()` now close the dup'd handle.
+
+### Documentation
+
+- Comprehensive Doxygen documentation for all V4L2 API with `@since 2.2` annotations
+- `VSL_AVAILABLE_SINCE_2_2` macro decorators on all new functions
+- Full Rust rustdoc with examples for docs.rs publication
+- V4L2 types moved from internal `lib/v4l2_device.h` to public `include/videostream.h`
 
 ---
 

@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "2.1.4"
+#define VSL_VERSION "2.2.0"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -159,9 +159,11 @@
 #define VSL_VERSION_1_3 VSL_VERSION_ENCODE(1, 3, 0)
 #define VSL_VERSION_1_4 VSL_VERSION_ENCODE(1, 4, 0)
 #define VSL_VERSION_2_0 VSL_VERSION_ENCODE(2, 0, 0)
+#define VSL_VERSION_2_1 VSL_VERSION_ENCODE(2, 1, 0)
+#define VSL_VERSION_2_2 VSL_VERSION_ENCODE(2, 2, 0)
 
 #ifndef VSL_TARGET_VERSION
-#define VSL_TARGET_VERSION VSL_VERSION_2_0
+#define VSL_TARGET_VERSION VSL_VERSION_2_2
 #endif
 
 #if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(1, 0, 0)
@@ -228,6 +230,28 @@
 #define VSL_DEPRECATED_SINCE_2_0 VSL_DEPRECATED(2.0)
 #define VSL_DEPRECATED_SINCE_2_0_FOR(replacement) \
     VSL_DEPRECATED_FOR(2.0, replacement)
+#endif
+
+#if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(2, 1, 0)
+#define VSL_AVAILABLE_SINCE_2_1 VSL_UNAVAILABLE(2.1)
+#define VSL_DEPRECATED_SINCE_2_1
+#define VSL_DEPRECATED_SINCE_2_1_FOR(replacement)
+#else
+#define VSL_AVAILABLE_SINCE_2_1
+#define VSL_DEPRECATED_SINCE_2_1 VSL_DEPRECATED(2.1)
+#define VSL_DEPRECATED_SINCE_2_1_FOR(replacement) \
+    VSL_DEPRECATED_FOR(2.1, replacement)
+#endif
+
+#if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(2, 2, 0)
+#define VSL_AVAILABLE_SINCE_2_2 VSL_UNAVAILABLE(2.2)
+#define VSL_DEPRECATED_SINCE_2_2
+#define VSL_DEPRECATED_SINCE_2_2_FOR(replacement)
+#else
+#define VSL_AVAILABLE_SINCE_2_2
+#define VSL_DEPRECATED_SINCE_2_2 VSL_DEPRECATED(2.2)
+#define VSL_DEPRECATED_SINCE_2_2_FOR(replacement) \
+    VSL_DEPRECATED_FOR(2.2, replacement)
 #endif
 
 #define VSL_FOURCC(a, b, c, d)                                         \
@@ -1865,6 +1889,660 @@ VSL_AVAILABLE_SINCE_1_4
 VSL_API
 int
 vsl_decoder_release(VSLDecoder* decoder);
+
+/* ============================================================================
+ * V4L2 Device Discovery API
+ * ============================================================================
+ */
+
+/**
+ * @defgroup v4l2_device V4L2 Device Discovery
+ * @brief Portable V4L2 device enumeration and capability detection
+ *
+ * The V4L2 Device Discovery API provides automatic detection of video devices
+ * including cameras, hardware encoders, and decoders. This eliminates the need
+ * for hardcoded device paths (like `/dev/video0`) and enables portable video
+ * pipelines across different hardware platforms.
+ *
+ * ## Features
+ *
+ * - **Device Enumeration**: Scan all `/dev/video*` devices and query
+ * capabilities
+ * - **Type Classification**: Automatically classify devices as cameras,
+ * encoders, decoders, or ISPs based on V4L2 capabilities
+ * - **Format Discovery**: Query supported pixel formats via `VIDIOC_ENUM_FMT`
+ * - **Resolution Discovery**: Query supported resolutions via
+ * `VIDIOC_ENUM_FRAMESIZES`
+ * - **Memory Detection**: Detect MMAP, USERPTR, and DMABUF support
+ * - **Auto-Detection**: Find devices by codec or format (e.g., "find H.264
+ * encoder")
+ *
+ * ## Example Usage
+ *
+ * @code{.c}
+ * // List all V4L2 devices
+ * VSLDeviceList* devices = vsl_v4l2_enumerate();
+ * for (size_t i = 0; i < devices->count; i++) {
+ *     printf("%s: %s (%s)\n",
+ *            devices->devices[i].path,
+ *            devices->devices[i].card,
+ *            vsl_v4l2_device_type_name(devices->devices[i].device_type));
+ * }
+ * vsl_v4l2_device_list_free(devices);
+ *
+ * // Find H.264 encoder automatically
+ * const char* encoder = vsl_v4l2_find_encoder(VSL_FOURCC('H','2','6','4'));
+ * if (encoder) {
+ *     printf("Found H.264 encoder: %s\n", encoder);
+ * }
+ * @endcode
+ *
+ * ## Platform Support
+ *
+ * Tested on:
+ * - NXP i.MX8M Plus (Hantro VPU)
+ * - NXP i.MX95 (Wave6 VPU)
+ * - Generic x86_64 (development/testing)
+ *
+ * @since 2.2
+ * @{
+ */
+
+/* ============================================================================
+ * V4L2 Constants
+ * ============================================================================
+ */
+
+/** Maximum number of formats per device queue */
+#define VSL_V4L2_MAX_FORMATS 64
+
+/** Maximum number of resolutions per format */
+#define VSL_V4L2_MAX_RESOLUTIONS 32
+
+/** Maximum number of frame rates per resolution */
+#define VSL_V4L2_MAX_FRAMERATES 16
+
+/* ============================================================================
+ * V4L2 Type Definitions
+ * ============================================================================
+ */
+
+/**
+ * @enum VSLDeviceType
+ * @brief V4L2 device type classification
+ *
+ * Devices are classified based on their V4L2 capabilities and the types of
+ * pixel formats they support. For M2M (memory-to-memory) devices, the
+ * classification depends on whether the input/output formats are compressed.
+ *
+ * @since 2.2
+ */
+typedef enum {
+    /** Video capture device (camera, frame grabber) - has VIDEO_CAPTURE
+       capability */
+    VSL_V4L2_TYPE_CAMERA = (1 << 0),
+
+    /** Video output device (display, transmitter) - has VIDEO_OUTPUT capability
+     */
+    VSL_V4L2_TYPE_OUTPUT = (1 << 1),
+
+    /** Video encoder (M2M: raw input → compressed output like H.264/HEVC) */
+    VSL_V4L2_TYPE_ENCODER = (1 << 2),
+
+    /** Video decoder (M2M: compressed input → raw output) */
+    VSL_V4L2_TYPE_DECODER = (1 << 3),
+
+    /** Image/video processor (M2M: raw input → raw output, e.g., scaler, ISP)
+     */
+    VSL_V4L2_TYPE_ISP = (1 << 4),
+
+    /** Memory-to-memory device (generic, type not determined) */
+    VSL_V4L2_TYPE_M2M = (1 << 5),
+
+    /** Match any device type (for filtering) */
+    VSL_V4L2_TYPE_ANY = 0xFF,
+} VSLDeviceType;
+
+/**
+ * @enum VSLMemoryType
+ * @brief V4L2 buffer memory type capabilities
+ *
+ * Indicates which buffer memory types a device supports for streaming I/O.
+ * These values can be OR'd together as a bitmask.
+ *
+ * @since 2.2
+ */
+typedef enum {
+    /** Memory-mapped buffers - kernel allocates, user mmaps */
+    VSL_V4L2_MEM_MMAP = (1 << 0),
+
+    /** User pointer buffers - user allocates, passes pointer to kernel */
+    VSL_V4L2_MEM_USERPTR = (1 << 1),
+
+    /** DMA buffer sharing - user passes dmabuf file descriptor */
+    VSL_V4L2_MEM_DMABUF = (1 << 2),
+} VSLMemoryType;
+
+/**
+ * @struct VSLFrameRate
+ * @brief Frame rate descriptor as a rational number
+ *
+ * Frame rates are expressed as fractions to support non-integer rates
+ * like 29.97 fps (30000/1001) or 59.94 fps (60000/1001).
+ *
+ * @since 2.2
+ */
+typedef struct {
+    /** Frame interval numerator (e.g., 1 for 30fps) */
+    uint32_t numerator;
+    /** Frame interval denominator (e.g., 30 for 30fps) */
+    uint32_t denominator;
+} VSLFrameRate;
+
+/**
+ * @struct VSLResolution
+ * @brief Video resolution with supported frame rates
+ *
+ * Describes a supported resolution and its available frame rates,
+ * as enumerated via `VIDIOC_ENUM_FRAMESIZES` and `VIDIOC_ENUM_FRAMEINTERVALS`.
+ *
+ * @since 2.2
+ */
+typedef struct {
+    /** Width in pixels */
+    uint32_t width;
+    /** Height in pixels */
+    uint32_t height;
+    /** Array of supported frame rates */
+    VSLFrameRate frame_rates[VSL_V4L2_MAX_FRAMERATES];
+    /** Number of valid entries in frame_rates */
+    size_t num_frame_rates;
+} VSLResolution;
+
+/**
+ * @struct VSLFormat
+ * @brief Pixel format descriptor
+ *
+ * Describes a pixel format supported by a V4L2 device, including its
+ * fourcc code, human-readable description, and optionally the supported
+ * resolutions.
+ *
+ * @since 2.2
+ */
+typedef struct {
+    /** V4L2 pixel format fourcc code (e.g., V4L2_PIX_FMT_NV12) */
+    uint32_t fourcc;
+    /** Human-readable description from driver */
+    char description[32];
+    /** V4L2_FMT_FLAG_* flags */
+    uint32_t flags;
+    /** True if this is a compressed format (H.264, HEVC, MJPEG, etc.) */
+    bool compressed;
+
+    /** Supported resolutions (populated by vsl_v4l2_enum_resolutions) */
+    VSLResolution* resolutions;
+    /** Number of valid entries in resolutions */
+    size_t num_resolutions;
+} VSLFormat;
+
+/**
+ * @struct VSLDevice
+ * @brief V4L2 device descriptor
+ *
+ * Contains all information about a discovered V4L2 device including its
+ * path, driver information, capabilities, supported formats, and memory types.
+ *
+ * @note This structure is allocated by vsl_v4l2_enumerate() and must be freed
+ *       with vsl_v4l2_device_list_free().
+ *
+ * @since 2.2
+ */
+typedef struct {
+    /** Device path (e.g., "/dev/video0") */
+    char path[64];
+    /** Driver name (e.g., "wave6-enc", "mxc-isi") */
+    char driver[32];
+    /** Card/device name (e.g., "wave6-enc", "mxc-isi-cap") */
+    char card[32];
+    /** Bus info for grouping related devices (e.g., "platform:wave6-enc") */
+    char bus_info[64];
+
+    /** Raw V4L2 device capabilities from VIDIOC_QUERYCAP */
+    uint32_t caps;
+    /** Classified device type */
+    VSLDeviceType device_type;
+    /** Supported memory types for capture queue (bitmask of VSLMemoryType) */
+    VSLMemoryType capture_mem;
+    /** Supported memory types for output queue (bitmask of VSLMemoryType) */
+    VSLMemoryType output_mem;
+    /** True if device uses multiplanar API (V4L2_CAP_VIDEO_*_MPLANE) */
+    bool multiplanar;
+
+    /** Capture queue formats (camera output, decoder output, encoder output) */
+    VSLFormat* capture_formats;
+    /** Number of capture formats */
+    size_t num_capture_formats;
+
+    /** Output queue formats (encoder input, decoder input) */
+    VSLFormat* output_formats;
+    /** Number of output formats */
+    size_t num_output_formats;
+} VSLDevice;
+
+/**
+ * @struct VSLDeviceList
+ * @brief List of discovered V4L2 devices
+ *
+ * Returned by vsl_v4l2_enumerate() and vsl_v4l2_enumerate_type().
+ * Must be freed with vsl_v4l2_device_list_free().
+ *
+ * @since 2.2
+ */
+typedef struct {
+    /** Array of device descriptors */
+    VSLDevice* devices;
+    /** Number of devices in the array */
+    size_t count;
+} VSLDeviceList;
+
+/* ============================================================================
+ * V4L2 Device Enumeration Functions
+ * ============================================================================
+ */
+
+/**
+ * @brief Enumerates all V4L2 video devices in the system
+ *
+ * Scans `/dev/video*` and queries each device's capabilities using
+ * `VIDIOC_QUERYCAP`. Devices are classified by type (camera, encoder,
+ * decoder, etc.) based on their capabilities and supported formats.
+ *
+ * Format enumeration is performed automatically for each device.
+ *
+ * @return Device list on success (caller must free with
+ * vsl_v4l2_device_list_free()), or NULL on error
+ * @retval NULL Failed to enumerate (check errno)
+ * @retval errno=ENOMEM Out of memory
+ * @retval errno=EACCES Permission denied accessing /dev/video*
+ *
+ * @note Devices that are busy (EBUSY) or inaccessible are silently skipped.
+ * @note The returned list may be empty if no V4L2 devices are found.
+ *
+ * @par Example
+ * @code{.c}
+ * VSLDeviceList* list = vsl_v4l2_enumerate();
+ * if (list) {
+ *     printf("Found %zu devices\n", list->count);
+ *     for (size_t i = 0; i < list->count; i++) {
+ *         printf("  %s: %s\n", list->devices[i].path, list->devices[i].card);
+ *     }
+ *     vsl_v4l2_device_list_free(list);
+ * }
+ * @endcode
+ *
+ * @see vsl_v4l2_enumerate_type
+ * @see vsl_v4l2_device_list_free
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+VSLDeviceList*
+vsl_v4l2_enumerate(void);
+
+/**
+ * @brief Enumerates V4L2 devices filtered by type
+ *
+ * Same as vsl_v4l2_enumerate() but only returns devices matching the
+ * specified type mask.
+ *
+ * @param[in] type_mask Bitmask of VSLDeviceType values to include
+ * @return Filtered device list, or NULL on error
+ *
+ * @par Example
+ * @code{.c}
+ * // Find all encoders and decoders
+ * VSLDeviceList* codecs = vsl_v4l2_enumerate_type(
+ *     VSL_V4L2_TYPE_ENCODER | VSL_V4L2_TYPE_DECODER);
+ *
+ * // Find only cameras
+ * VSLDeviceList* cameras = vsl_v4l2_enumerate_type(VSL_V4L2_TYPE_CAMERA);
+ * @endcode
+ *
+ * @see vsl_v4l2_enumerate
+ * @see VSLDeviceType
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+VSLDeviceList*
+vsl_v4l2_enumerate_type(VSLDeviceType type_mask);
+
+/**
+ * @brief Frees a device list returned by enumeration functions
+ *
+ * Releases all memory associated with the device list, including format
+ * and resolution arrays within each device.
+ *
+ * @param[in] list Device list to free (NULL is safe and does nothing)
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+void
+vsl_v4l2_device_list_free(VSLDeviceList* list);
+
+/* ============================================================================
+ * V4L2 Device Lookup Functions
+ * ============================================================================
+ */
+
+/**
+ * @brief Finds the first encoder supporting a specific output codec
+ *
+ * Searches for an encoder device that can produce the specified compressed
+ * format (H.264, HEVC, MJPEG, etc.) on its capture queue.
+ *
+ * @param[in] codec_fourcc Output codec fourcc (e.g.,
+ * `VSL_FOURCC('H','2','6','4')`)
+ * @return Device path string on success, or NULL if not found
+ *
+ * @note The returned string points to static storage. Copy it if you need
+ *       to keep it beyond the next call to any vsl_v4l2_find_* function.
+ *
+ * @par Example
+ * @code{.c}
+ * const char* h264_enc = vsl_v4l2_find_encoder(VSL_FOURCC('H','2','6','4'));
+ * const char* hevc_enc = vsl_v4l2_find_encoder(VSL_FOURCC('H','E','V','C'));
+ * const char* jpeg_enc = vsl_v4l2_find_encoder(VSL_FOURCC('M','J','P','G'));
+ *
+ * if (h264_enc) {
+ *     printf("H.264 encoder: %s\n", h264_enc);
+ * }
+ * @endcode
+ *
+ * @see vsl_v4l2_find_decoder
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+const char*
+vsl_v4l2_find_encoder(uint32_t codec_fourcc);
+
+/**
+ * @brief Finds the first decoder supporting a specific input codec
+ *
+ * Searches for a decoder device that can accept the specified compressed
+ * format (H.264, HEVC, MJPEG, etc.) on its output queue.
+ *
+ * @param[in] codec_fourcc Input codec fourcc (e.g.,
+ * `VSL_FOURCC('H','E','V','C')`)
+ * @return Device path string on success, or NULL if not found
+ *
+ * @note The returned string points to static storage. Copy it if you need
+ *       to keep it beyond the next call to any vsl_v4l2_find_* function.
+ *
+ * @see vsl_v4l2_find_encoder
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+const char*
+vsl_v4l2_find_decoder(uint32_t codec_fourcc);
+
+/**
+ * @brief Finds the first camera supporting a specific pixel format
+ *
+ * Searches for a capture device that supports the specified pixel format.
+ *
+ * @param[in] format_fourcc Pixel format fourcc (e.g.,
+ * `VSL_FOURCC('N','V','1','2')`)
+ * @return Device path string on success, or NULL if not found
+ *
+ * @par Example
+ * @code{.c}
+ * const char* nv12_cam = vsl_v4l2_find_camera(VSL_FOURCC('N','V','1','2'));
+ * const char* yuyv_cam = vsl_v4l2_find_camera(VSL_FOURCC('Y','U','Y','V'));
+ * @endcode
+ *
+ * @see vsl_v4l2_find_camera_with_resolution
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+const char*
+vsl_v4l2_find_camera(uint32_t format_fourcc);
+
+/**
+ * @brief Finds a camera supporting specific format and minimum resolution
+ *
+ * Searches for a capture device that supports the specified pixel format
+ * at the given minimum resolution or higher.
+ *
+ * @param[in] format_fourcc Pixel format fourcc
+ * @param[in] width         Minimum width in pixels (0 for any)
+ * @param[in] height        Minimum height in pixels (0 for any)
+ * @return Device path string on success, or NULL if not found
+ *
+ * @par Example
+ * @code{.c}
+ * // Find 1080p NV12 camera
+ * const char* cam = vsl_v4l2_find_camera_with_resolution(
+ *     VSL_FOURCC('N','V','1','2'), 1920, 1080);
+ * @endcode
+ *
+ * @see vsl_v4l2_find_camera
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+const char*
+vsl_v4l2_find_camera_with_resolution(uint32_t format_fourcc,
+                                     uint32_t width,
+                                     uint32_t height);
+
+/* ============================================================================
+ * V4L2 Format Enumeration Functions
+ * ============================================================================
+ */
+
+/**
+ * @brief Enumerates supported formats for a device
+ *
+ * Populates the device's capture_formats and/or output_formats arrays
+ * by querying the device with `VIDIOC_ENUM_FMT`.
+ *
+ * @param[in,out] device Device to enumerate formats for (modified in place)
+ * @return 0 on success, -1 on error
+ * @retval 0 Success
+ * @retval -1 Error (check errno)
+ * @retval errno=EBADF Device is not open
+ * @retval errno=ENOMEM Out of memory
+ *
+ * @note This is called automatically by vsl_v4l2_enumerate(). You only need
+ *       to call this if you want to refresh format information.
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+int
+vsl_v4l2_device_enum_formats(VSLDevice* device);
+
+/**
+ * @brief Enumerates supported resolutions for a format
+ *
+ * Queries the device for supported resolutions of the specified pixel format
+ * using `VIDIOC_ENUM_FRAMESIZES`.
+ *
+ * @param[in]  device Device to query
+ * @param[in]  fourcc Pixel format to enumerate resolutions for
+ * @param[out] count  Number of resolutions found (output parameter)
+ * @return Array of resolutions on success (caller must free), or NULL if none
+ *
+ * @par Example
+ * @code{.c}
+ * size_t count;
+ * VSLResolution* res = vsl_v4l2_enum_resolutions(device,
+ *     VSL_FOURCC('N','V','1','2'), &count);
+ * if (res) {
+ *     for (size_t i = 0; i < count; i++) {
+ *         printf("  %ux%u\n", res[i].width, res[i].height);
+ *     }
+ *     free(res);
+ * }
+ * @endcode
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+VSLResolution*
+vsl_v4l2_enum_resolutions(const VSLDevice* device,
+                          uint32_t         fourcc,
+                          size_t*          count);
+
+/**
+ * @brief Checks if a device supports a specific pixel format
+ *
+ * @param[in] device  Device to check
+ * @param[in] fourcc  Pixel format fourcc to look for
+ * @param[in] capture True to check capture formats, false for output formats
+ * @return true if format is supported, false otherwise
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+bool
+vsl_v4l2_device_supports_format(const VSLDevice* device,
+                                uint32_t         fourcc,
+                                bool             capture);
+
+/* ============================================================================
+ * V4L2 Memory Allocation Functions
+ * ============================================================================
+ */
+
+/**
+ * @brief Allocates a buffer backed by DMA heap for use with V4L2 USERPTR
+ *
+ * This function allocates a buffer from the Linux DMA heap
+ * (`/dev/dma_heap/system`) that can be used with V4L2 USERPTR mode while
+ * remaining DMA-capable.
+ *
+ * This is useful for cameras that support USERPTR but not DMABUF export.
+ * By allocating the userptr buffer from DMA heap, the buffer can still be
+ * used zero-copy with downstream components that require DMA-capable memory
+ * (hardware encoders, display controllers, etc.).
+ *
+ * @param[in]  size   Size of buffer to allocate in bytes
+ * @param[out] dma_fd Output: DMA buffer file descriptor for downstream use
+ * @return Mapped buffer pointer on success, or NULL on error
+ * @retval NULL Failed to allocate (check errno)
+ * @retval errno=ENOMEM Out of memory
+ * @retval errno=ENOENT DMA heap device not found
+ * @retval errno=EACCES Permission denied
+ *
+ * @note Caller must free with vsl_v4l2_free_userptr()
+ * @note The returned pointer can be passed to V4L2 USERPTR operations
+ * @note The dma_fd can be passed to encoders/displays that accept DMABUF
+ *
+ * @par Example
+ * @code{.c}
+ * int dma_fd;
+ * size_t size = 1920 * 1080 * 3 / 2;  // NV12 buffer
+ * void* ptr = vsl_v4l2_alloc_userptr(size, &dma_fd);
+ * if (ptr) {
+ *     // Use ptr with V4L2 USERPTR for camera capture
+ *     // Use dma_fd with encoder DMABUF import
+ *     vsl_v4l2_free_userptr(ptr, size, dma_fd);
+ * }
+ * @endcode
+ *
+ * @see vsl_v4l2_free_userptr
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+void*
+vsl_v4l2_alloc_userptr(size_t size, int* dma_fd);
+
+/**
+ * @brief Frees a buffer allocated by vsl_v4l2_alloc_userptr()
+ *
+ * Unmaps the buffer and closes the DMA buffer file descriptor.
+ *
+ * @param[in] ptr    Buffer pointer returned by vsl_v4l2_alloc_userptr()
+ * @param[in] size   Size that was passed to vsl_v4l2_alloc_userptr()
+ * @param[in] dma_fd DMA fd that was returned by vsl_v4l2_alloc_userptr()
+ *
+ * @see vsl_v4l2_alloc_userptr
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+void
+vsl_v4l2_free_userptr(void* ptr, size_t size, int dma_fd);
+
+/* ============================================================================
+ * V4L2 Utility Functions
+ * ============================================================================
+ */
+
+/**
+ * @brief Gets human-readable name for a device type
+ *
+ * @param[in] type Device type
+ * @return Static string (e.g., "Camera", "Encoder", "Decoder", "ISP")
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+const char*
+vsl_v4l2_device_type_name(VSLDeviceType type);
+
+/**
+ * @brief Checks if a fourcc code represents a compressed video format
+ *
+ * Returns true for compressed formats including H.264, HEVC, VP8, VP9,
+ * MPEG-1/2/4, MJPEG, and JPEG.
+ *
+ * @param[in] fourcc Pixel format fourcc code
+ * @return true if compressed format, false if raw format
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+bool
+vsl_v4l2_is_compressed_format(uint32_t fourcc);
+
+/**
+ * @brief Converts a fourcc code to a printable 4-character string
+ *
+ * @param[in]  fourcc Fourcc code to convert
+ * @param[out] buf    Output buffer (must be at least 5 bytes for null
+ * terminator)
+ * @return buf pointer for convenience
+ *
+ * @par Example
+ * @code{.c}
+ * char buf[5];
+ * printf("Format: %s\n", vsl_v4l2_fourcc_to_string(VSL_FOURCC('N','V','1','2'),
+ * buf));
+ * // Output: Format: NV12
+ * @endcode
+ *
+ * @since 2.2
+ */
+VSL_AVAILABLE_SINCE_2_2
+VSL_API
+char*
+vsl_v4l2_fourcc_to_string(uint32_t fourcc, char buf[5]);
+
+/** @} */ /* end of v4l2_device group */
 
 #ifdef __cplusplus
 }

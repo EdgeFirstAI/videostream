@@ -3,27 +3,31 @@
 
 use crate::error::CliError;
 use crate::utils;
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueEnum};
 use std::fs::File;
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use videostream::{camera, encoder, fourcc::FourCC, frame::Frame};
+use videostream::{camera, client, encoder, fourcc::FourCC, frame::Frame};
 
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Output file path (.h264 or .h265)
     output: String,
 
-    /// Camera device
-    #[arg(short, long, default_value = "/dev/video3")]
+    /// Camera device (mutually exclusive with --ipc)
+    #[arg(short, long, default_value = "/dev/video3", conflicts_with = "ipc")]
     device: String,
+
+    /// VSL IPC socket path (mutually exclusive with --device)
+    #[arg(long)]
+    ipc: Option<String>,
 
     /// Resolution in WxH format
     #[arg(short, long, default_value = "1920x1080")]
     resolution: String,
 
-    /// Input pixel format
+    /// Input pixel format (for camera input)
     #[arg(long, default_value = "YUYV")]
     format: String,
 
@@ -46,6 +50,36 @@ pub struct Args {
     /// Video codec: h264|h265
     #[arg(long, default_value = "h264")]
     codec: String,
+
+    /// IPC timeout in seconds
+    #[arg(long, default_value = "5.0")]
+    timeout: f64,
+
+    /// Encoder backend: auto|v4l2|hantro
+    #[arg(long, default_value = "auto")]
+    backend: Backend,
+}
+
+/// Encoder backend selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum Backend {
+    /// Auto-detect best available backend
+    #[default]
+    Auto,
+    /// V4L2 kernel driver (i.MX 95 Wave6, etc.)
+    V4l2,
+    /// Hantro userspace library (i.MX 8M, etc.)
+    Hantro,
+}
+
+impl From<Backend> for encoder::CodecBackend {
+    fn from(backend: Backend) -> Self {
+        match backend {
+            Backend::Auto => encoder::CodecBackend::Auto,
+            Backend::V4l2 => encoder::CodecBackend::V4L2,
+            Backend::Hantro => encoder::CodecBackend::Hantro,
+        }
+    }
 }
 
 /// Parsed recording configuration
@@ -158,10 +192,20 @@ fn init_camera(
 
 /// Initialize encoder with specified configuration
 fn init_encoder(args: &Args, config: &RecordConfig) -> Result<encoder::Encoder, CliError> {
-    log::info!("Creating {} encoder", args.codec.to_uppercase());
+    log::info!(
+        "Creating {} encoder (backend: {:?})",
+        args.codec.to_uppercase(),
+        args.backend
+    );
     let profile = utils::bitrate_to_encoder_profile(config.bitrate_kbps);
-    let encoder = encoder::Encoder::create(profile as u32, config.output_fourcc, args.fps)?;
-    log::debug!("Created encoder with profile {:?}", profile);
+    let backend: encoder::CodecBackend = args.backend.into();
+    let encoder =
+        encoder::Encoder::create_ex(profile as u32, config.output_fourcc, args.fps, backend)?;
+    log::debug!(
+        "Created encoder with profile {:?}, backend {:?}",
+        profile,
+        args.backend
+    );
     Ok(encoder)
 }
 
@@ -169,6 +213,21 @@ fn init_encoder(args: &Args, config: &RecordConfig) -> Result<encoder::Encoder, 
 fn create_output_file(path: &str) -> Result<File, CliError> {
     File::create(path)
         .map_err(|e| CliError::General(format!("Failed to create output file: {}", e)))
+}
+
+/// Frame source abstraction for camera or IPC input
+enum FrameSource {
+    Camera(camera::CameraReader),
+    Ipc(client::Client),
+}
+
+/// Initialize IPC client for receiving frames
+fn init_ipc_client(socket_path: &str, timeout: f64) -> Result<client::Client, CliError> {
+    log::info!("Connecting to IPC socket: {}", socket_path);
+    let client = client::Client::new(socket_path, client::Reconnect::Yes)?;
+    client.set_timeout(timeout as f32)?;
+    log::info!("Connected to IPC socket");
+    Ok(client)
 }
 
 pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
@@ -180,11 +239,27 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
 
     // Initialize resources
     let term = utils::install_signal_handler()?;
-    let cam = init_camera(&args, config.width, config.height, config.fourcc)?;
+
+    // Initialize frame source (camera or IPC)
+    let source = if let Some(ref ipc_path) = args.ipc {
+        FrameSource::Ipc(init_ipc_client(ipc_path, args.timeout)?)
+    } else {
+        FrameSource::Camera(init_camera(
+            &args,
+            config.width,
+            config.height,
+            config.fourcc,
+        )?)
+    };
+
     let encoder = init_encoder(&args, &config)?;
     let mut output_file = create_output_file(&args.output)?;
 
-    log::info!("Recording started...");
+    let source_name = match &source {
+        FrameSource::Camera(_) => "camera",
+        FrameSource::Ipc(_) => "IPC",
+    };
+    log::info!("Recording from {} started...", source_name);
     log::info!(
         "Output format: Raw {} Annex-B bitstream (power-loss resilient)",
         args.codec.to_uppercase()
@@ -198,11 +273,6 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
 
     while limits.should_continue(frame_count, start_time.elapsed()) && !term.load(Ordering::Relaxed)
     {
-        // Read frame from camera
-        log::trace!("Reading frame {} from camera", frame_count);
-        let buffer = cam.read()?;
-        log::debug!("Camera read succeeded: frame {}", frame_count);
-
         // Create output frame for encoded data
         log::trace!("Creating output frame for encoder");
         let output_frame = encoder.new_output_frame(
@@ -214,42 +284,64 @@ pub fn execute(args: Args, _json: bool) -> Result<(), CliError> {
         )?;
         log::debug!("Output frame created successfully");
 
-        // Encode the frame - keep buffer alive during encoding
-        let keyframe = {
-            // Create input frame from camera buffer (borrows buffer)
-            log::trace!("Converting CameraBuffer to Frame");
-            let input_frame: Frame = (&buffer).try_into()?;
-            log::debug!("Input frame created successfully");
+        // Get frame from source and encode
+        let keyframe = match &source {
+            FrameSource::Camera(cam) => {
+                // Read frame from camera
+                log::trace!("Reading frame {} from camera", frame_count);
+                let buffer = cam.read()?;
+                log::debug!("Camera read succeeded: frame {}", frame_count);
 
-            // Encode the frame
-            log::trace!("Encoding frame {}", frame_count);
-            let mut keyframe: i32 = 0;
-            unsafe {
-                encoder.frame(&input_frame, &output_frame, &crop, &mut keyframe)?;
-            }
-            log::debug!(
-                "Frame {} encoded successfully (keyframe={})",
-                frame_count,
+                // Create input frame from camera buffer (borrows buffer)
+                log::trace!("Converting CameraBuffer to Frame");
+                let input_frame: Frame = (&buffer).try_into()?;
+                log::debug!("Input frame created successfully");
+
+                // Encode the frame
+                log::trace!("Encoding frame {}", frame_count);
+                let mut keyframe: i32 = 0;
+                unsafe {
+                    encoder.frame(&input_frame, &output_frame, &crop, &mut keyframe)?;
+                }
+                log::debug!(
+                    "Frame {} encoded successfully (keyframe={})",
+                    frame_count,
+                    keyframe
+                );
                 keyframe
-            );
+            }
+            FrameSource::Ipc(client) => {
+                // Get frame from IPC socket
+                log::trace!("Waiting for frame {} from IPC", frame_count);
+                let input_frame = client.get_frame(0)?;
+                log::debug!(
+                    "IPC frame received: {}x{} serial={}",
+                    input_frame.width()?,
+                    input_frame.height()?,
+                    input_frame.serial()?
+                );
 
-            // input_frame drops here, before buffer
-            keyframe
+                // Lock frame for reading (required for IPC frames)
+                input_frame.trylock()?;
+
+                // Encode the frame
+                log::trace!("Encoding frame {}", frame_count);
+                let mut keyframe: i32 = 0;
+                unsafe {
+                    encoder.frame(&input_frame, &output_frame, &crop, &mut keyframe)?;
+                }
+
+                // Unlock frame
+                input_frame.unlock()?;
+
+                log::debug!(
+                    "Frame {} encoded successfully (keyframe={})",
+                    frame_count,
+                    keyframe
+                );
+                keyframe
+            }
         };
-
-        // IMPORTANT: Buffer lifetime and memory safety
-        // -------------------------------------------
-        // The buffer MUST outlive input_frame because input_frame borrows from buffer.
-        // Dropping buffer before input_frame would cause use-after-free bugs.
-        //
-        // In hardware-accelerated pipelines, buffer may be mapped directly to device
-        // memory (DMA buffers). Premature deallocation can cause:
-        // - Memory corruption
-        // - DMA transfer failures
-        // - Hardware encoder hangs
-        //
-        // Always preserve this scoping pattern to ensure memory safety.
-        // buffer drops here, after input_frame
 
         // Write encoded frame to file (raw Annex-B bitstream)
         // Note: Encoder output frames don't need locking (they're not from a client)

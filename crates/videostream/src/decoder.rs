@@ -152,7 +152,7 @@ pub type DecoderInputCodec = DecoderCodec;
 /// ```
 pub fn is_available() -> Result<bool, Error> {
     let lib = ffi::init()?;
-    Ok(lib.is_decoder_available())
+    Ok(lib.vsl_decoder_create.is_ok())
 }
 
 /// Check if explicit backend selection is available.
@@ -163,7 +163,7 @@ pub fn is_available() -> Result<bool, Error> {
 /// Older library versions may not support this function.
 pub fn is_backend_selection_available() -> Result<bool, Error> {
     let lib = ffi::init()?;
-    Ok(lib.is_decoder_create_ex_available())
+    Ok(lib.vsl_decoder_create_ex.is_ok())
 }
 
 impl Decoder {
@@ -191,16 +191,16 @@ impl Decoder {
     pub fn create(codec: DecoderCodec, fps: c_int) -> Result<Self, Error> {
         let lib = ffi::init()?;
 
-        if !lib.is_decoder_available() {
+        if lib.vsl_decoder_create.is_err() {
             return Err(Error::SymbolNotFound("vsl_decoder_create"));
         }
 
-        let ptr = unsafe { lib.try_vsl_decoder_create(codec as ffi::VSLDecoderCodec, fps) };
+        let ptr = unsafe { lib.vsl_decoder_create(codec as ffi::VSLDecoderCodec, fps) };
 
-        match ptr {
-            Some(p) if !p.is_null() => Ok(Decoder { ptr: p }),
-            Some(_) => Err(Error::HardwareNotAvailable("VPU decoder")),
-            None => Err(Error::SymbolNotFound("vsl_decoder_create")),
+        if ptr.is_null() {
+            Err(Error::HardwareNotAvailable("VPU decoder"))
+        } else {
+            Ok(Decoder { ptr })
         }
     }
 
@@ -233,18 +233,18 @@ impl Decoder {
     ) -> Result<Self, Error> {
         let lib = ffi::init()?;
 
-        if !lib.is_decoder_create_ex_available() {
+        if lib.vsl_decoder_create_ex.is_err() {
             return Err(Error::SymbolNotFound("vsl_decoder_create_ex"));
         }
 
         let ptr = unsafe {
-            lib.try_vsl_decoder_create_ex(codec.to_fourcc(), fps, backend as ffi::VSLCodecBackend)
+            lib.vsl_decoder_create_ex(codec.to_fourcc(), fps, backend as ffi::VSLCodecBackend)
         };
 
-        match ptr {
-            Some(p) if !p.is_null() => Ok(Decoder { ptr: p }),
-            Some(_) => Err(Error::HardwareNotAvailable("VPU decoder")),
-            None => Err(Error::SymbolNotFound("vsl_decoder_create_ex")),
+        if ptr.is_null() {
+            Err(Error::HardwareNotAvailable("VPU decoder"))
+        } else {
+            Ok(Decoder { ptr })
         }
     }
 
@@ -253,8 +253,10 @@ impl Decoder {
     /// Only valid after decoder initialization (after first [`decode_frame`](Self::decode_frame)).
     pub fn width(&self) -> Result<i32, Error> {
         let lib = ffi::init()?;
-        unsafe { lib.try_vsl_decoder_width(self.ptr) }
-            .ok_or(Error::SymbolNotFound("vsl_decoder_width"))
+        if lib.vsl_decoder_width.is_err() {
+            return Err(Error::SymbolNotFound("vsl_decoder_width"));
+        }
+        Ok(unsafe { lib.vsl_decoder_width(self.ptr) })
     }
 
     /// Returns the height of decoded frames in pixels.
@@ -262,8 +264,10 @@ impl Decoder {
     /// Only valid after decoder initialization (after first [`decode_frame`](Self::decode_frame)).
     pub fn height(&self) -> Result<i32, Error> {
         let lib = ffi::init()?;
-        unsafe { lib.try_vsl_decoder_height(self.ptr) }
-            .ok_or(Error::SymbolNotFound("vsl_decoder_height"))
+        if lib.vsl_decoder_height.is_err() {
+            return Err(Error::SymbolNotFound("vsl_decoder_height"));
+        }
+        Ok(unsafe { lib.vsl_decoder_height(self.ptr) })
     }
 
     /// Returns the crop region for decoded frames.
@@ -273,9 +277,9 @@ impl Decoder {
     /// requirements.
     pub fn crop(&self) -> Result<VSLRect, Error> {
         let lib = ffi::init()?;
-        unsafe { lib.try_vsl_decoder_crop(self.ptr) }
-            .map(|rect| VSLRect { rect })
-            .ok_or(Error::SymbolNotFound("vsl_decoder_crop"))
+        // vsl_decoder_crop returns directly, not via Result
+        let rect = unsafe { lib.vsl_decoder_crop(self.ptr) };
+        Ok(VSLRect { rect })
     }
 
     /// Decodes a frame from compressed video data.
@@ -325,21 +329,25 @@ impl Decoder {
         data: &[u8],
     ) -> Result<(DecodeReturnCode, usize, Option<Frame>), Error> {
         let lib = ffi::init()?;
+
+        if lib.vsl_decode_frame.is_err() {
+            return Err(Error::SymbolNotFound("vsl_decode_frame"));
+        }
+
         let mut output_frame: *mut vsl_frame = null_mut();
         let output_frame_ptr: *mut *mut vsl_frame = &mut output_frame;
         let len = data.len() as u32;
         let mut bytes_used: usize = 0;
 
         let ret_code = unsafe {
-            lib.try_vsl_decode_frame(
+            lib.vsl_decode_frame(
                 self.ptr,
                 data.as_ptr() as *const c_void,
                 len,
                 &mut bytes_used,
                 output_frame_ptr,
             )
-        }
-        .ok_or(Error::SymbolNotFound("vsl_decode_frame"))?;
+        };
 
         let output_frame = Frame::wrap(output_frame).ok();
         if ret_code & VSLDecoderRetCode_VSL_DEC_ERR > 0 {
@@ -364,8 +372,10 @@ impl Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         if let Ok(lib) = ffi::init() {
-            unsafe {
-                lib.try_vsl_decoder_release(self.ptr);
+            if lib.vsl_decoder_release.is_ok() {
+                unsafe {
+                    lib.vsl_decoder_release(self.ptr);
+                }
             }
         }
     }

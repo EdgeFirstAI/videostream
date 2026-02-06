@@ -18,6 +18,7 @@ path = "src/main.rs"
 assert_cmd = "2.0"
 predicates = "3.0"
 serial_test = "3.0"
+serde_json.workspace = true
 
 [dependencies]
 # VideoStream library

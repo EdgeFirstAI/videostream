@@ -66,7 +66,7 @@ pub enum VSLEncoderProfileEnum {
 /// ```
 pub fn is_available() -> Result<bool, Error> {
     let lib = ffi::init()?;
-    Ok(lib.is_encoder_available())
+    Ok(lib.vsl_encoder_create.is_ok())
 }
 
 impl VSLRect {
@@ -109,16 +109,16 @@ impl Encoder {
     pub fn create(profile: u32, output_fourcc: u32, fps: c_int) -> Result<Self, Error> {
         let lib = ffi::init()?;
 
-        if !lib.is_encoder_available() {
+        if lib.vsl_encoder_create.is_err() {
             return Err(Error::SymbolNotFound("vsl_encoder_create"));
         }
 
-        let ptr = unsafe { lib.try_vsl_encoder_create(profile, output_fourcc, fps) };
+        let ptr = unsafe { lib.vsl_encoder_create(profile, output_fourcc, fps) };
 
-        match ptr {
-            Some(p) if !p.is_null() => Ok(Encoder { ptr: p }),
-            Some(_) => Err(Error::HardwareNotAvailable("VPU encoder")),
-            None => Err(Error::SymbolNotFound("vsl_encoder_create")),
+        if ptr.is_null() {
+            Err(Error::HardwareNotAvailable("VPU encoder"))
+        } else {
+            Ok(Encoder { ptr })
         }
     }
 
@@ -154,23 +154,18 @@ impl Encoder {
     ) -> Result<Self, Error> {
         let lib = ffi::init()?;
 
-        if !lib.is_encoder_create_ex_available() {
+        if lib.vsl_encoder_create_ex.is_err() {
             return Err(Error::SymbolNotFound("vsl_encoder_create_ex"));
         }
 
         let ptr = unsafe {
-            lib.try_vsl_encoder_create_ex(
-                profile,
-                output_fourcc,
-                fps,
-                backend as ffi::VSLCodecBackend,
-            )
+            lib.vsl_encoder_create_ex(profile, output_fourcc, fps, backend as ffi::VSLCodecBackend)
         };
 
-        match ptr {
-            Some(p) if !p.is_null() => Ok(Encoder { ptr: p }),
-            Some(_) => Err(Error::HardwareNotAvailable("VPU encoder")),
-            None => Err(Error::SymbolNotFound("vsl_encoder_create_ex")),
+        if ptr.is_null() {
+            Err(Error::HardwareNotAvailable("VPU encoder"))
+        } else {
+            Ok(Encoder { ptr })
         }
     }
 
@@ -183,14 +178,19 @@ impl Encoder {
         dts: i64,
     ) -> Result<frame::Frame, Error> {
         let lib = ffi::init()?;
+
+        if lib.vsl_encoder_new_output_frame.is_err() {
+            return Err(Error::SymbolNotFound("vsl_encoder_new_output_frame"));
+        }
+
         let frame_ptr = unsafe {
-            lib.try_vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts)
+            lib.vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts)
         };
 
-        match frame_ptr {
-            Some(p) if !p.is_null() => p.try_into().map_err(|()| Error::NullPointer),
-            Some(_) => Err(Error::NullPointer),
-            None => Err(Error::SymbolNotFound("vsl_encoder_new_output_frame")),
+        if frame_ptr.is_null() {
+            Err(Error::NullPointer)
+        } else {
+            frame_ptr.try_into().map_err(|()| Error::NullPointer)
         }
     }
 
@@ -205,7 +205,12 @@ impl Encoder {
         keyframe: *mut c_int,
     ) -> Result<i32, Error> {
         let lib = ffi::init()?;
-        let result = lib.try_vsl_encode_frame(
+
+        if lib.vsl_encode_frame.is_err() {
+            return Err(Error::SymbolNotFound("vsl_encode_frame"));
+        }
+
+        let result = lib.vsl_encode_frame(
             self.ptr,
             source.get_ptr(),
             destination.get_ptr(),
@@ -213,18 +218,17 @@ impl Encoder {
             keyframe,
         );
 
-        match result {
-            Some(r) => Ok(r),
-            None => Err(Error::SymbolNotFound("vsl_encode_frame")),
-        }
+        Ok(result)
     }
 }
 
 impl Drop for Encoder {
     fn drop(&mut self) {
         if let Ok(lib) = ffi::init() {
-            unsafe {
-                lib.try_vsl_encoder_release(self.ptr);
+            if lib.vsl_encoder_release.is_ok() {
+                unsafe {
+                    lib.vsl_encoder_release(self.ptr);
+                }
             }
         }
     }

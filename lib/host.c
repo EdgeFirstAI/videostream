@@ -628,6 +628,10 @@ recv_client_control(int sock, struct vsl_frame_control* control)
             errno = ENOMSG;
             return -1;
         case ECONNRESET:
+        case ENOTSOCK:
+        case EBADF:
+            // Expected when client disconnects or socket is closed by another
+            // thread
             return -1;
         default:
             fprintf(stderr,
@@ -790,7 +794,8 @@ service_client(VSLHost* host, int sock)
             errno = ENOMSG;
             return -1;
         }
-        if (errno != ECONNRESET) {
+        if (errno != ECONNRESET && errno != ENOTSOCK && errno != EBADF &&
+            errno != EPIPE) {
 #ifndef NDEBUG
             fprintf(stderr,
                     "%s send error: %s\n",
