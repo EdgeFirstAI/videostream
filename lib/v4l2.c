@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "common.h"
 #include "dma-buf.h"
 #include "v4l2.h"
 #include <linux/videodev2.h>
@@ -728,10 +729,8 @@ isp_cam_json(const vsl_camera* ctx, char* json, int size)
 #ifndef NDEBUG
     printf("json response: %s", ec.string);
 #endif
-    json[size - 1] = 0;
-    strncpy(json, ec.string, size);
-    if (json[size - 1] != 0) {
-        json[size - 1] = 0;
+    int err = vsl_strncpy_s(json, size, ec.string, size - 1);
+    if (err == ERANGE) {
         fprintf(stderr,
                 "%s: response of length %d did not fit inside json buffer "
                 "of length %d and was truncated\n",

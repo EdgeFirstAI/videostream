@@ -8,6 +8,8 @@
 
 #include "v4l2_device.h"
 
+#include "common.h"
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -211,9 +213,9 @@ enum_formats_for_type(int         fd,
         VSLFormat* fmt = &formats[count];
         memset(fmt, 0, sizeof(*fmt));
         fmt->fourcc = fmtdesc.pixelformat;
-        strncpy(fmt->description,
-                (char*) fmtdesc.description,
-                sizeof(fmt->description) - 1);
+        vsl_strcpy_s(fmt->description,
+                     sizeof(fmt->description),
+                     (char*) fmtdesc.description);
         fmt->flags      = fmtdesc.flags;
         fmt->compressed = is_compressed(fmtdesc.pixelformat);
 
@@ -302,12 +304,10 @@ probe_device(const char* path, VSLDevice* device)
 
     // Fill basic info
     memset(device, 0, sizeof(*device));
-    strncpy(device->path, path, sizeof(device->path) - 1);
-    strncpy(device->driver, (char*) cap.driver, sizeof(device->driver) - 1);
-    strncpy(device->card, (char*) cap.card, sizeof(device->card) - 1);
-    strncpy(device->bus_info,
-            (char*) cap.bus_info,
-            sizeof(device->bus_info) - 1);
+    vsl_strcpy_s(device->path, sizeof(device->path), path);
+    vsl_strcpy_s(device->driver, sizeof(device->driver), (char*) cap.driver);
+    vsl_strcpy_s(device->card, sizeof(device->card), (char*) cap.card);
+    vsl_strcpy_s(device->bus_info, sizeof(device->bus_info), (char*) cap.bus_info);
 
     device->caps        = get_device_caps(&cap);
     device->multiplanar = is_multiplanar(device->caps);
@@ -501,7 +501,7 @@ vsl_v4l2_find_encoder(uint32_t codec_fourcc)
         // Check capture formats (encoder output = capture queue)
         for (size_t j = 0; j < dev->num_capture_formats; j++) {
             if (dev->capture_formats[j].fourcc == codec_fourcc) {
-                strncpy(found_path, dev->path, sizeof(found_path) - 1);
+                vsl_strcpy_s(found_path, sizeof(found_path), dev->path);
                 result = found_path;
                 break;
             }
@@ -525,7 +525,7 @@ vsl_v4l2_find_decoder(uint32_t codec_fourcc)
         // Check output formats (decoder input = output queue)
         for (size_t j = 0; j < dev->num_output_formats; j++) {
             if (dev->output_formats[j].fourcc == codec_fourcc) {
-                strncpy(found_path, dev->path, sizeof(found_path) - 1);
+                vsl_strcpy_s(found_path, sizeof(found_path), dev->path);
                 result = found_path;
                 break;
             }
@@ -560,13 +560,13 @@ vsl_v4l2_find_camera_with_resolution(uint32_t format_fourcc,
             if (dev->capture_formats[j].fourcc == format_fourcc) {
                 // If no resolution specified, accept any
                 if (width == 0 && height == 0) {
-                    strncpy(found_path, dev->path, sizeof(found_path) - 1);
+                    vsl_strcpy_s(found_path, sizeof(found_path), dev->path);
                     result = found_path;
                     break;
                 }
                 // TODO: Check resolutions when resolution enumeration is
                 // implemented
-                strncpy(found_path, dev->path, sizeof(found_path) - 1);
+                vsl_strcpy_s(found_path, sizeof(found_path), dev->path);
                 result = found_path;
                 break;
             }
