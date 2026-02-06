@@ -2,7 +2,7 @@
 // Copyright 2025 Au-Zone Technologies
 
 use crate::error::CliError;
-use signal_hook::consts::SIGINT;
+use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::flag;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -103,10 +103,16 @@ pub fn fourcc_to_str(fourcc: u32) -> String {
 pub fn install_signal_handler() -> Result<Arc<AtomicBool>, CliError> {
     let term = Arc::new(AtomicBool::new(false));
 
+    // Register SIGINT (Ctrl+C) handler
     flag::register(SIGINT, Arc::clone(&term))
-        .map_err(|e| CliError::General(format!("Failed to register signal handler: {}", e)))?;
+        .map_err(|e| CliError::General(format!("Failed to register SIGINT handler: {}", e)))?;
 
-    log::debug!("Installed SIGINT handler");
+    // Register SIGTERM handler (sent by kill command, CI timeouts, etc.)
+    // This ensures coverage data is flushed when process is terminated gracefully
+    flag::register(SIGTERM, Arc::clone(&term))
+        .map_err(|e| CliError::General(format!("Failed to register SIGTERM handler: {}", e)))?;
+
+    log::debug!("Installed SIGINT and SIGTERM handlers");
     Ok(term)
 }
 

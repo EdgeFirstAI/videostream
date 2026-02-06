@@ -485,9 +485,18 @@ jobs:
       - name: Clean workspace (self-hosted runner)
         run: |
           # Self-hosted runners persist state between runs
+          # Clean build artifacts and test directories
           rm -rf build/ venv/ coverage/ target/ rust-tests/ 2>/dev/null || true
-          find . -name "*.gcda" -delete 2>/dev/null || true
-          find . -name "*.profraw" -delete 2>/dev/null || true
+
+          # Clean stale coverage files that may cause corruption
+          # Use -f to avoid errors on missing files
+          find . -name "*.gcda" -type f -delete 2>/dev/null || true
+          find . -name "*.profraw" -type f -delete 2>/dev/null || true
+
+          # Also clean common temp locations where profraw files may be written
+          rm -rf /tmp/videostream_* 2>/dev/null || true
+
+          echo "Workspace cleaned"
 
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -598,8 +607,10 @@ jobs:
           mkdir -p build/rust-test-results
 
           # Set up profraw collection directory
-          export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
+          # Clean any stale profraw files first to avoid corruption from previous runs
+          rm -rf build/profraw 2>/dev/null || true
           mkdir -p build/profraw
+          export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
 
           # Verify CLI binary exists for integration tests
           if [ -f "$VIDEOSTREAM_BIN" ]; then
