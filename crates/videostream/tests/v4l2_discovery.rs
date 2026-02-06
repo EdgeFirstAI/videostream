@@ -322,7 +322,7 @@ fn test_fourcc_to_string_nv12() {
     if let Ok(fourcc_to_string) = lib.vsl_v4l2_fourcc_to_string.as_ref() {
         let fourcc = FourCC(*b"NV12").as_u32();
         let mut buf = [0u8; 5];
-        let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr() as *mut i8) };
+        let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr().cast()) };
         assert!(!result.is_null());
         let s = unsafe { std::ffi::CStr::from_ptr(result) }
             .to_string_lossy()
@@ -340,7 +340,7 @@ fn test_fourcc_to_string_h264() {
     if let Ok(fourcc_to_string) = lib.vsl_v4l2_fourcc_to_string.as_ref() {
         let fourcc = FourCC(*b"H264").as_u32();
         let mut buf = [0u8; 5];
-        let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr() as *mut i8) };
+        let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr().cast()) };
         assert!(!result.is_null());
         let s = unsafe { std::ffi::CStr::from_ptr(result) }
             .to_string_lossy()
@@ -360,7 +360,7 @@ fn test_fourcc_to_string_roundtrip() {
         for format in &[b"NV12", b"YUYV", b"H264", b"HEVC", b"MJPG", b"RGB3"] {
             let fourcc = FourCC(**format).as_u32();
             let mut buf = [0u8; 5];
-            let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr() as *mut i8) };
+            let result = unsafe { fourcc_to_string(fourcc, buf.as_mut_ptr().cast()) };
             assert!(!result.is_null());
             let s = unsafe { std::ffi::CStr::from_ptr(result) }
                 .to_string_lossy()
