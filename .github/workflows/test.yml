@@ -981,7 +981,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
         with:
-          toolchain: stable
           components: llvm-tools-preview
 
       - name: Install gcov tools

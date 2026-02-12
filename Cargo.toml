@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "2.2.0"
+version = "2.2.1"
 authors = ["Au-Zone Technologies"]
 license = "Apache-2.0"
 edition = "2021"
@@ -34,7 +34,7 @@ env_logger = "0.11"
 log = "0.4"
 
 # Workspace crates
-videostream-sys = { version = "2.2.0", path = "crates/videostream-sys" }
+videostream-sys = { version = "2.2.1", path = "crates/videostream-sys" }
 videostream = { version = "2.1.4", path = "crates/videostream" }
 
 [profile.release]

@@ -449,14 +449,14 @@ install(DIRECTORY videostream
 )
 
 # Rust CLI binary (videostream)
-# Note: The Rust CLI is built by cargo during the build process (see debian/rules and build.yml)
-# This install command picks up the pre-built binary for packaging
-if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/usr/bin/videostream")
-    install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/usr/bin/videostream
-        COMPONENT runtime
-        DESTINATION bin
-    )
-endif()
+# Built by cargo during the build process (see debian/rules and build.yml).
+# OPTIONAL allows cpack to succeed even if the binary hasn't been built yet
+# (e.g., when packaging only the C library).
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/usr/bin/videostream
+    COMPONENT runtime
+    DESTINATION bin
+    OPTIONAL
+)
 
 # CPack configuration for relocatable archives
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSTEM_NAME)

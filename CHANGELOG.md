@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-02-12
+
+### Fixed
+
+- Fixed Rust CLI binary (`videostream`) missing from ZIP packages due to CMake
+  configure-time `if(EXISTS)` check evaluating before cargo build completes
+- Eliminated redundant build.yml trigger on tag push; release workflow now waits
+  for CI artifacts instead of rebuilding
+- Pinned Rust toolchain to 1.93.1 via `rust-toolchain.toml` to prevent profraw
+  incompatibility between build and coverage processing jobs
+
 ## [2.2.0] - 2026-02-12
 
 ### Added
