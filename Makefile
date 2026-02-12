@@ -99,14 +99,14 @@ sbom:
 .PHONY: test
 test: build
 	@echo "Running Rust tests with coverage (cargo-llvm-cov)..."
-	@LD_LIBRARY_PATH=$(CURDIR)/build:$$LD_LIBRARY_PATH VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 \
+	@LD_LIBRARY_PATH=$(CURDIR)/build:$$LD_LIBRARY_PATH VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so \
 		cargo llvm-cov nextest --workspace --all-features --lcov --output-path build/coverage_rust.lcov
 
 	@echo "Running Python tests with coverage (pytest-cov)..."
 	@if [ -f env.sh ]; then \
-		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
+		bash -c "source env.sh && source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	else \
-		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so.1 && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
+		bash -c "source venv/bin/activate && export LD_LIBRARY_PATH=$(CURDIR)/build:\$$LD_LIBRARY_PATH && export VIDEOSTREAM_LIBRARY=$(CURDIR)/build/libvideostream.so && pytest -x -v --cov=videostream --cov-report=xml:build/coverage_python.xml --junitxml=build/pytest_results.xml"; \
 	fi
 
 	@echo "Generating C/C++ coverage reports..."

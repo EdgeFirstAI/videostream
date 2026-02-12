@@ -51,9 +51,7 @@
 static inline int
 vsl_strcpy_s(char* dest, size_t destsz, const char* src)
 {
-    if (dest == NULL || destsz == 0) {
-        return EINVAL;
-    }
+    if (dest == NULL || destsz == 0) { return EINVAL; }
 
     if (src == NULL) {
         dest[0] = '\0';
@@ -86,9 +84,7 @@ vsl_strcpy_s(char* dest, size_t destsz, const char* src)
 static inline int
 vsl_strncpy_s(char* dest, size_t destsz, const char* src, size_t count)
 {
-    if (dest == NULL || destsz == 0) {
-        return EINVAL;
-    }
+    if (dest == NULL || destsz == 0) { return EINVAL; }
 
     if (src == NULL) {
         dest[0] = '\0';

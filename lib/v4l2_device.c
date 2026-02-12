@@ -307,7 +307,9 @@ probe_device(const char* path, VSLDevice* device)
     vsl_strcpy_s(device->path, sizeof(device->path), path);
     vsl_strcpy_s(device->driver, sizeof(device->driver), (char*) cap.driver);
     vsl_strcpy_s(device->card, sizeof(device->card), (char*) cap.card);
-    vsl_strcpy_s(device->bus_info, sizeof(device->bus_info), (char*) cap.bus_info);
+    vsl_strcpy_s(device->bus_info,
+                 sizeof(device->bus_info),
+                 (char*) cap.bus_info);
 
     device->caps        = get_device_caps(&cap);
     device->multiplanar = is_multiplanar(device->caps);

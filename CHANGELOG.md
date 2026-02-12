@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.2.0] - 2026-02-02
+## [Unreleased]
+
+## [2.2.0] - 2026-02-12
 
 ### Added
 
@@ -59,6 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI info Command**: `videostream info --v4l2` now uses the native V4L2 discovery API
   to show real device capabilities and formats instead of sysfs-based heuristics.
 
+- **SOVERSION Bump**: Library SOVERSION changed from 1 to 2 (`libvideostream.so.2`).
+  Applications linking against VideoStream must be rebuilt.
+
+- **Rust Client API**: Removed unsound public `Client::release()` method that could trigger
+  use-after-free in safe code. Resource cleanup is now handled exclusively by `Drop`. (Fixes #8)
+
+- **Safe String Functions**: Replaced all `strncpy` calls with new `vsl_strcpy_s` and
+  `vsl_strncpy_s` functions following C11 Annex K conventions, ensuring null-termination
+  and SonarCloud compliance.
+
 ### Fixed
 
 - **vslsink DMA Buffer Pool**: Fixed DMA heap memory exhaustion when vslsink copies system memory
@@ -89,6 +101,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `VSL_AVAILABLE_SINCE_2_2` macro decorators on all new functions
 - Full Rust rustdoc with examples for docs.rs publication
 - V4L2 types moved from internal `lib/v4l2_device.h` to public `include/videostream.h`
+- Migrated AI assistant guidelines to `.github/copilot-instructions.md` with skill references
+- Merged i.MX 95 hardware documentation into `HARDWARE.md`
+- Hash-pinned all GitHub Actions for SPS v2.1 compliance
+- Added i.MX 95 to issue template platform dropdowns
+- Consolidated duplicate aarch64 toolchain files
+- Fixed CONTRIBUTING.md release process to reflect auto-generated `debian/changelog`
+- Updated SECURITY.md version support table for 2.x
 
 ---
 
