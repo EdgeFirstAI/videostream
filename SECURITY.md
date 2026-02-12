@@ -6,11 +6,11 @@ Au-Zone Technologies provides security updates for the following versions of Vid
 
 | Version | Support Status | Notes |
 |---------|----------------|-------|
-| 1.x     | ✅ Full support | Active development, all security fixes |
-| 0.9.x   | 🔒 Security fixes only | Critical vulnerabilities only, until 2026-06-01 |
-| < 0.9   | ❌ End of life | No security updates - please upgrade |
+| 2.x     | ✅ Full support | Active development, all security fixes |
+| 1.x     | 🔒 Security fixes only | Critical vulnerabilities only |
+| < 1.0   | ❌ End of life | No security updates — please upgrade |
 
-**Recommendation**: Always use the latest 1.x release for production deployments.
+**Recommendation**: Always use the latest 2.x release for production deployments.
 
 ---
 
@@ -154,23 +154,22 @@ Security updates are distributed through:
 **For package installations:**
 
 ```bash
-# Check current version
-vsl-monitor --version
+# Check installed version
+dpkg -l videostream 2>/dev/null || pip show videostream
 
-# Update via package manager (example for Debian/Ubuntu)
+# Update via package manager (Debian/Ubuntu)
 sudo apt-get update
 sudo apt-get install --only-upgrade videostream
 
 # Verify new version
-vsl-monitor --version
+dpkg -l videostream
 ```
 
 **For source builds:**
 
 ```bash
-cd videostream
 git fetch origin
-git checkout tags/v1.x.y  # Latest secure version
+git checkout tags/v2.x.y  # Latest secure version
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 sudo cmake --install build

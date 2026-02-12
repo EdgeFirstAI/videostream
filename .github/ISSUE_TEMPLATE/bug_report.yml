@@ -62,6 +62,7 @@ body:
       label: Platform
       description: Which platform are you running on?
       options:
+        - NXP i.MX 95
         - NXP i.MX8M Plus
         - NXP i.MX8M
         - NXP i.MX8

@@ -28,7 +28,8 @@ VideoStream Library provides three core capabilities for embedded Linux video ap
 
 ### 2. Hardware H.264/H.265 Encoding
 
-- **Hantro VPU integration** for hardware-accelerated encoding on NXP i.MX8 platforms
+- **V4L2 codec integration** for hardware-accelerated encoding on NXP platforms
+- **Hantro VPU** on i.MX 8M Plus, **Wave6 VPU** on i.MX 95
 - **Zero-copy input** from DmaBuf or camera buffers
 - **H.264/H.265 codec support** with configurable bitrate profiles
 - **Low-power encoding** minimizes CPU load
@@ -69,7 +70,7 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 
 ### Hardware H.264/H.265 Encoding
 
-- **Hantro VPU** - Hardware-accelerated encoding on NXP i.MX8 platforms
+- **V4L2 Codec Backend** - Unified interface for Hantro VPU (i.MX 8M Plus) and Wave6 VPU (i.MX 95)
 - **Codec Support** - H.264 (AVC) and H.265 (HEVC) with profile/level configuration
 - **Rate Control** - CBR, VBR, and fixed QP encoding modes
 - **Zero-Copy Input** - Direct encoding from camera DmaBuf or shared memory
@@ -78,10 +79,13 @@ Originally developed as part of the DeepView project, VideoStream is now used by
 
 ### Platform Support
 
-- **NXP i.MX8M Plus** - Full support (G2D, VPU, V4L2 DmaBuf)
+- **NXP i.MX8M Plus** - Full support (G2D, Hantro VPU, V4L2 DmaBuf)
+- **NXP i.MX 95** - V4L2 codec (Wave6 VPU), G2D (DPU), libcamera NEO-ISP camera pipeline
 - **NXP i.MX8M** - DmaBuf and basic hardware acceleration
 - **Generic ARM64/ARMv7** - POSIX shared memory fallback
 - **x86_64** - Development and testing (software encoding)
+
+See [HARDWARE.md](HARDWARE.md) for detailed platform capabilities and tested configurations.
 
 ---
 
@@ -209,7 +213,7 @@ int main(int argc, char *argv[])
 }
 ```
 
-#### Example 2: Hardware H.264 Encoding (C API)
+#### Example 3: Hardware H.264 Encoding (C API)
 
 ```c
 #include <videostream.h>
@@ -266,7 +270,7 @@ int main(int argc, char *argv[])
 }
 ```
 
-#### Example 3: Inter-Process Frame Sharing with GStreamer
+#### Example 4: Inter-Process Frame Sharing with GStreamer
 
 This example demonstrates sharing camera frames between processes using vslsink and vslsrc.
 
@@ -301,7 +305,7 @@ gst-launch-1.0 vslsrc path=/tmp/vsl_camera ! \
     x264enc ! mp4mux ! filesink location=recording.mp4
 ```
 
-#### Example 4: Frame Sharing with Native C API
+#### Example 5: Frame Sharing with Native C API
 
 ```c
 #include <videostream.h>
@@ -517,10 +521,11 @@ VideoStream is organized into three main functional areas:
 
 ### 3. Hardware Encoding Pipeline
 
-- **VPU wrapper**: Abstraction layer for Hantro VPU hardware
+- **V4L2 codec wrapper**: Abstraction layer for Hantro VPU (i.MX 8M Plus) and Wave6 VPU (i.MX 95)
 - **Zero-copy encoding**: Direct encoding from DmaBuf or camera buffers
 - **Buffer recycling**: Efficient frame buffer reuse for low latency
 - **Bitrate control**: Configurable CBR/VBR encoding modes
+- **Device discovery**: Automatic V4L2 device probing by capability
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed threading diagrams, data flow, and internal design.
 

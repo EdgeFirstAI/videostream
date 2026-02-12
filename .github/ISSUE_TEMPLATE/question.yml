@@ -62,7 +62,7 @@ body:
     attributes:
       label: Pre-submission Checklist
       options:
-        - label: I checked the documentation (README, CONTRIBUTING, ARCHITECTURE)
+        - label: I checked the documentation (README, CONTRIBUTING, ARCHITECTURE, HARDWARE)
           required: true
         - label: I searched existing issues and discussions
           required: true

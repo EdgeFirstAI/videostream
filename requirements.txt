@@ -1,5 +1,5 @@
-# Note: Dockerfile installs from a hardcoded list of packages copied from here.
-# If you change this list make sure you change the list in Dockerfile too!
+# Python test dependencies for VideoStream
+# Install: venv/bin/pip install -r requirements.txt
 gcovr
 numpy
 pytest

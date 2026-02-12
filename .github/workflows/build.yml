@@ -94,7 +94,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get remove libunwind-*
+          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
@@ -178,7 +178,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get remove libunwind-*
+          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             debhelper \

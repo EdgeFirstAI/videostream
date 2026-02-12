@@ -7,9 +7,9 @@
 3. [Test Layers](#test-layers)
    - [Layer 1: Unit Tests](#layer-1-unit-tests-generic-platform)
    - [Layer 2: Cross-Process IPC Tests](#layer-2-cross-process-ipc-tests-generic-linux)
-   - [Layer 3: Integration Tests](#layer-3-integration-tests-imx-8m-plus-hardware)
+   - [Layer 3: Integration Tests](#layer-3-integration-tests-nxp-hardware)
 4. [GitHub Actions CI](#github-actions-ci)
-5. [On-Target Testing](#on-target-testing-imx-8m-plus)
+5. [On-Target Testing](#on-target-testing)
 6. [Coverage Collection](#coverage-collection)
 7. [Benchmark Reporting](#benchmark-reporting)
 8. [Test Data](#test-data)
@@ -64,9 +64,9 @@ flowchart TB
 |---------------|----------------------|-------|
 | **Unit Tests** | Any Linux (x86_64, aarch64) | No hardware dependencies |
 | **IPC Tests** | Any Linux with POSIX shared memory | No camera or VPU required |
-| **VPU Encoder Tests** | NXP i.MX 8M Plus EVK or compatible | Hantro VC8000e encoder |
-| **VPU Decoder Tests** | NXP i.MX 8M Plus EVK or compatible | Hantro VC8000d decoder |
-| **Camera Tests** | i.MX 8M Plus with OV5640 or compatible | Camera on /dev/video3 |
+| **VPU Encoder Tests** | NXP i.MX 8M Plus or i.MX 95 | Hantro VC8000e or Wave6 encoder |
+| **VPU Decoder Tests** | NXP i.MX 8M Plus or i.MX 95 | Hantro VC8000d or Wave6 decoder |
+| **Camera Tests** | i.MX 8M Plus or i.MX 95 with compatible camera | See [HARDWARE.md](HARDWARE.md) |
 | **DMA Heap Tests** | Kernel 5.10+ with CONFIG_DMABUF_HEAPS | /dev/dma_heap/linux,cma |
 
 ---
@@ -90,13 +90,13 @@ flowchart TB
 **Examples**:
 ```bash
 # C unit tests
-cd build && ctest --output-on-failure
+cmake --build build && ctest --test-dir build --output-on-failure
 
 # Rust unit tests
 cargo test --package videostream
 
 # Python unit tests (when implemented)
-pytest videostream/tests/
+venv/bin/pytest videostream/tests/
 ```
 
 **Platforms**: x86_64, aarch64, any Linux
@@ -128,9 +128,8 @@ pytest videostream/tests/
 
 **Run**:
 ```bash
-cd build
-./src/vsl-test-host &
-./src/vsl-test-client
+build/src/vsl-test-host &
+build/src/vsl-test-client
 ```
 
 **Platforms**: Any Linux (x86_64, aarch64, Raspberry Pi, etc.)
@@ -139,14 +138,14 @@ cd build
 
 ---
 
-### Layer 3: Integration Tests (i.MX 8M Plus Hardware)
+### Layer 3: Integration Tests (NXP Hardware)
 
 **Purpose**: Validate complete video pipeline with camera, VPU encoder/decoder, and DMA buffers.
 
 **Requirements**:
-- NXP i.MX 8M Plus EVK or compatible
-- Camera connected to /dev/video3 (OV5640 or compatible)
-- VPU: Hantro H1 encoder, G1/G2 decoder (via /dev/mxc_hantro* low-level API)
+- NXP i.MX 8M Plus EVK (or compatible) or NXP i.MX 95 EVK
+- Camera connected (OV5640, OS08A20, or compatible — see [HARDWARE.md](HARDWARE.md))
+- VPU: Hantro (i.MX 8M Plus) or Wave6 (i.MX 95) via V4L2
 - DMA heap: /dev/dma_heap/linux,cma
 
 **Pipeline Validated**:
@@ -184,7 +183,7 @@ RUST_LOG=debug cargo test test_camera_encode_h264_pipeline -- --ignored --nocapt
 - Keyframe detection: ≥1 per 60 frames
 - Drop rate: <5%
 
-**Platforms**: i.MX 8M Plus only
+**Platforms**: NXP i.MX 8M Plus, NXP i.MX 95
 
 **CI**: Not automated (requires physical hardware access)
 
@@ -296,21 +295,21 @@ flowchart LR
 
 ---
 
-## On-Target Testing (i.MX 8M Plus)
+## On-Target Testing
 
-### Setup
+### Setup (i.MX 8M Plus)
 
 **Target System**:
 - NXP i.MX 8M Plus EVK
 - Yocto Linux or Ubuntu 22.04+ for aarch64
 - Camera: OV5640 on /dev/video3
-- SSH access: root@10.10.40.182 (example)
+- SSH access: root@<target-ip>
 
 **Build & Deploy**:
 ```bash
 # Host: Cross-compile for aarch64
 cmake -S . -B build-aarch64 \
-  -DCMAKE_TOOLCHAIN_FILE=toolchain-aarch64.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64-linux-gnu.cmake \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DENABLE_GSTREAMER=OFF
 
@@ -325,17 +324,17 @@ cargo test --package videostream --test integration_pipeline \
   --target aarch64-unknown-linux-gnu --no-run
 
 # Deploy to target
-scp build-aarch64/libvideostream.so.2.0.0 root@10.10.40.182:/tmp/vsl/lib/
-scp target/aarch64-unknown-linux-gnu/release/videostream root@10.10.40.182:/tmp/vsl/bin/
+scp build-aarch64/libvideostream.so.2.0.0 root@<target-ip>:/tmp/vsl/lib/
+scp target/aarch64-unknown-linux-gnu/release/videostream root@<target-ip>:/tmp/vsl/bin/
 scp target/aarch64-unknown-linux-gnu/debug/deps/integration_pipeline-* \
-    root@10.10.40.182:/tmp/vsl/bin/integration_pipeline
+    root@<target-ip>:/tmp/vsl/bin/integration_pipeline
 ```
 
 ### Running Tests
 
 **On Target**:
 ```bash
-ssh root@10.10.40.182
+ssh root@<target-ip>
 
 cd /tmp/vsl
 export LD_LIBRARY_PATH=/tmp/vsl/lib:/usr/lib
@@ -425,13 +424,12 @@ cmake --build build
 
 **Run Tests and Collect**:
 ```bash
-cd build
-ctest --output-on-failure
+ctest --test-dir build --output-on-failure
 
 # Generate coverage report
-lcov --capture --directory . --output-file coverage.info
+lcov --capture --directory build --output-file coverage.info
 lcov --remove coverage.info '/usr/*' 'ext/*' --output-file coverage.info
-genhtml coverage.info --output-directory coverage
+genhtml coverage.info --output-directory build/coverage
 ```
 
 **View Report**: Open `build/coverage/index.html`
@@ -636,13 +634,13 @@ target_link_libraries(vsl-test-feature videostream)
 **Development**: Run unit tests frequently during development
 ```bash
 cargo test --workspace
-cd build && ctest
+ctest --test-dir build --output-on-failure
 ```
 
 **Pre-Commit**: Ensure all unit and IPC tests pass
 ```bash
 cargo test --workspace
-./build/src/vsl-test-shm
+build/src/vsl-test-shm
 ```
 
 **Release**: Validate on hardware before tagging

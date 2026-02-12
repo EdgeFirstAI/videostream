@@ -58,6 +58,7 @@ body:
       multiple: true
       options:
         - All platforms
+        - NXP i.MX 95
         - NXP i.MX8M Plus
         - NXP i.MX8M
         - NXP i.MX8

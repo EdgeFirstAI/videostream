@@ -72,8 +72,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
    - This helps ensure your contribution aligns with project direction
 
 3. **Review the architecture**
-   - Read [DESIGN.md](DESIGN.md) for high-level architecture
-   - Read [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details
+   - Read [ARCHITECTURE.md](ARCHITECTURE.md) for design and implementation details
+   - Read [HARDWARE.md](HARDWARE.md) for platform-specific capabilities
    - Understand the EdgeFirst Perception ecosystem: https://doc.edgefirst.ai/test/perception/
 
 4. **Consider EdgeFirst Studio integration**
@@ -318,7 +318,7 @@ venv/bin/pytest tests/
 
 ### Running C Unit Tests (Future)
 
-C unit tests are planned - see [TODO.md](TODO.md) for status.
+C unit tests are planned for a future release.
 
 ```bash
 # Once implemented:
@@ -382,13 +382,20 @@ valgrind --leak-check=full \
 
 ---
 
+## Contribution Process
+
 ### 1. Fork and Clone
 
-#### 1. Fork the Repository
+1. Go to https://github.com/EdgeFirstAI/videostream and click **Fork**
+2. Clone your fork and add the upstream remote:
 
-1. Go to https://github.com/EdgeFirstAI/videostream
-2. Click the "Fork" button in the top-right corner
-3. This creates a copy under your GitHub account
+```bash
+git clone https://github.com/YOUR_USERNAME/videostream.git
+git remote add upstream https://github.com/EdgeFirstAI/videostream.git
+git fetch upstream
+```
+
+---
 
 ## Code Style
 
@@ -398,10 +405,6 @@ VideoStream follows **C11 standard** with the following conventions:
 
 #### Formatting
 
-# Add upstream remote
-
-git remote add upstream https://github.com/EdgeFirstAI/videostream.git
-git fetch upstream
 We use **clang-format** with the included [.clang-format](.clang-format) configuration.
 
 **Format your code before committing:**
@@ -701,14 +704,6 @@ perf record -g ./build/src/vsl-monitor /tmp/test-vsl
 perf report
 ```
 
-**Use `tracy` profiler (if integrated):**
-
-```bash
-cmake -DENABLE_TRACY=ON ..
-make
-# Run with Tracy server connected
-```
-
 ### Common Issues
 
 **GStreamer plugin not found:**
@@ -758,7 +753,6 @@ gst-inspect-1.0 vslsink  # Should list the plugin
 
 Contributors are recognized in several ways:
 
-- Listed in [CONTRIBUTORS.md](CONTRIBUTORS.md) (coming soon)
 - Mentioned in release notes for significant contributions
 - Acknowledged in commit messages and PR comments
 
@@ -778,13 +772,14 @@ This section is for VideoStream maintainers who perform releases.
 
 VideoStream uses a **manual release process** that ensures version consistency across multiple languages and package formats. The process requires careful attention to detail as versions must be synchronized across:
 
-- **C Library** (`include/videostream.h` - `VSL_VERSION`)
+- **C Library** (`include/videostream.h` - `VSL_VERSION`, source of truth)
 - **Rust Crates** (`Cargo.toml` workspace and member crates)
 - **Python Package** (`pyproject.toml`)
-- **CMake** (`CMakeLists.txt` - parsed from videostream.h)
-- **Debian Package** (`debian/changelog`)
 - **Documentation** (`doc/conf.py`)
 - **Release Notes** (`CHANGELOG.md`)
+- **License Notice** (`NOTICE`)
+
+> **Note:** `CMakeLists.txt` parses the version from `include/videostream.h` automatically. `debian/changelog` is auto-generated from `CHANGELOG.md` by `debian/gen-changelog.py`.
 
 ### Prerequisites
 
@@ -870,21 +865,9 @@ cmake --build build -j$(nproc)
 - Required by modern IDEs and automation
 - Cross-platform compatible
 
-#### Pitfall 3: Missing debian/changelog Update
+#### Pitfall 3: debian/changelog Format Issues
 
-**Symptom**: `make verify-version` fails, CI/CD fails
-
-**Solution**: debian/changelog requires NEW entry at TOP with specific format:
-
-```
-videostream (X.Y.Z-1) stable; urgency=medium
-
-  * Brief description of changes
-
- -- Your Name <email@domain.com>  Day, DD Mon YYYY HH:MM:SS +0000
-
-[existing entries below...]
-```
+**Note**: `debian/changelog` is auto-generated from `CHANGELOG.md` by `debian/gen-changelog.py`. You do not need to edit it manually. If the generated output has issues, fix the entries in `CHANGELOG.md` instead.
 
 #### Pitfall 4: Version Files Out of Sync
 
@@ -892,12 +875,12 @@ videostream (X.Y.Z-1) stable; urgency=medium
 
 **Solution**: All 6 files MUST have identical version:
 
-1. `Cargo.toml` - line ~6: `version = "X.Y.Z"`
-2. `include/videostream.h` - line ~16: `#define VSL_VERSION "X.Y.Z"`
-3. `pyproject.toml` - line ~7: `version = "X.Y.Z"`
-4. `doc/conf.py` - line ~28: `version = 'X.Y.Z'` (single quotes!)
-5. `debian/changelog` - line 1: `videostream (X.Y.Z-1) stable;`
-6. `CHANGELOG.md` - `## [X.Y.Z] - YYYY-MM-DD`
+1. `include/videostream.h` - `#define VSL_VERSION "X.Y.Z"`
+2. `Cargo.toml` - `version = "X.Y.Z"`
+3. `pyproject.toml` - `version = "X.Y.Z"`
+4. `doc/conf.py` - `version = 'X.Y.Z'` (single quotes!)
+5. `CHANGELOG.md` - `## [X.Y.Z] - YYYY-MM-DD`
+6. `NOTICE` - version in copyright notice
 
 Verify with: `make verify-version`
 
@@ -1005,20 +988,20 @@ vim CHANGELOG.md
 
 **Files requiring version updates**:
 
-1. **`Cargo.toml`** (Rust workspace):
-
-   ```toml
-   [workspace.package]
-   version = "1.5.0"  # Update this line
-   ```
-
-2. **`include/videostream.h`** (C header - single source of truth for CMake):
+1. **`include/videostream.h`** (C header - source of truth for CMake):
 
    ```c
    #define VSL_VERSION "1.5.0"  // Update this line
    ```
 
    Note: CMake parses this file to extract PROJECT_VERSION automatically
+
+2. **`Cargo.toml`** (Rust workspace):
+
+   ```toml
+   [workspace.package]
+   version = "1.5.0"  # Update this line
+   ```
 
 3. **`pyproject.toml`** (Python package):
 
@@ -1030,33 +1013,25 @@ vim CHANGELOG.md
 4. **`doc/conf.py`** (Sphinx documentation):
 
    ```python
-   version = '1.5.0'  # Update this line (keep quotes)
+   version = '1.5.0'  # Update this line (keep single quotes)
    release = version  # This line stays unchanged
    ```
 
-5. **`debian/changelog`** (Debian package):
+5. **`CHANGELOG.md`** (Release notes):
 
-   ```bash
-   # Add NEW entry at the TOP of the file
-   videostream (1.5.0-1) stable; urgency=medium
+   Move items from `## [Unreleased]` to `## [1.5.0] - YYYY-MM-DD`
 
-     * Release version 1.5.0
-     * See CHANGELOG.md for detailed changes
+6. **`NOTICE`** (License notice):
 
-    -- Au-Zone Technologies <support@au-zone.com>  Wed, 20 Nov 2025 14:30:00 -0400
-   ```
+   Update the version reference in the copyright notice
 
-   **Important**: Use `dch` tool or manually ensure proper Debian changelog format
+> **Note:** `debian/changelog` is auto-generated from `CHANGELOG.md` by `debian/gen-changelog.py` — do not edit it manually.
 
 **Update checklist**:
 
 ```bash
 # Verify all files updated with same version
-grep "version = \"1.5.0\"" Cargo.toml
-grep "VSL_VERSION \"1.5.0\"" include/videostream.h  
-grep "version = \"1.5.0\"" pyproject.toml
-grep "version = '1.5.0'" doc/conf.py
-grep "videostream (1.5.0-1)" debian/changelog
+make verify-version
 ```
 
 #### Step 4: Create Release Commit
@@ -1065,12 +1040,12 @@ grep "videostream (1.5.0-1)" debian/changelog
 
 ```bash
 # Stage all version changes
-git add Cargo.toml \
-        include/videostream.h \
+git add include/videostream.h \
+        Cargo.toml \
         pyproject.toml \
         doc/conf.py \
-        debian/changelog \
-        CHANGELOG.md
+        CHANGELOG.md \
+        NOTICE
 
 # Create commit with structured message
 git commit -m "Prepare Version 1.5.0
