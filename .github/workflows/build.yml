@@ -17,11 +17,8 @@ name: Build
 on:
   push:
     branches: [ main, develop ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ main, develop ]
-  workflow_call:  # Allow this workflow to be called by other workflows
 
 jobs:
   documentation:
@@ -238,3 +235,14 @@ jobs:
           name: debian-source-${{ matrix.platform.name }}
           path: "source/*"
           retention-days: 90
+
+  # Sentinel job for release.yml to wait on via lewagon/wait-on-check-action.
+  # This ensures all build artifacts are ready before the release workflow
+  # downloads them.
+  verify-builds:
+    name: Verify Builds
+    runs-on: ubuntu-22.04
+    needs: [documentation, build-zip, build-deb]
+    steps:
+      - name: All builds completed
+        run: echo "All build jobs completed successfully"

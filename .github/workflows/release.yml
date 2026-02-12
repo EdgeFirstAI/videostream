@@ -1,58 +1,36 @@
 # GitHub Actions workflow for publishing releases
 #
-# This workflow publishes release artifacts when a version tag is pushed:
-# - Python wheel to PyPI
-# - Rust crates to crates.io (videostream-sys and videostream)
-# - GitHub Release with changelog notes
-# - Release artifacts: ZIP packages, DEB packages, SBOM, documentation PDF
+# This workflow publishes release artifacts when a version tag is pushed.
+# It does NOT rebuild artifacts — instead it waits for the build.yml and
+# sbom.yml workflows (triggered by the same commit on main) to complete,
+# then downloads their artifacts for the GitHub Release.
 #
 # Release Process:
-# 1. Use cargo-release to bump version and create tag:
-#    cargo release [patch|minor|major] --execute
-# 2. Push tags to trigger this workflow:
-#    git push --tags
-#
-# cargo-release automatically:
-# - Updates version in Cargo.toml, pyproject.toml, include/videostream.h, etc.
-# - Updates CHANGELOG.md with version and date
-# - Creates git tag (v1.4.0)
-# - Commits changes
+# 1. Prepare version (update all 6 version files, CHANGELOG.md)
+# 2. Commit and push to main
+# 3. Tag: git tag -a -m "Version X.Y.Z" vX.Y.Z && git push origin vX.Y.Z
 #
 # This workflow then:
+# - Waits for build.yml and sbom.yml to complete
+# - Downloads pre-built artifacts (ZIP, DEB, docs, SBOM)
 # - Publishes Python wheel to PyPI
 # - Publishes Rust crates to crates.io
-# - Creates GitHub Release with artifacts
-#
-# Triggered by: git push --tags (tags matching v*)
+# - Creates GitHub Release with all artifacts
 #
 # Publishing Configuration:
 # - PyPI: Uses Trusted Publishing (OIDC) - no API token needed
 #   Configure at: https://pypi.org/manage/account/publishing/
-#   - Publisher: GitHub Actions
-#   - Owner: EdgeFirstAI
-#   - Repository: videostream
-#   - Workflow: release.yml
-#   - Environment: pypi
-#
 # - crates.io: Uses Trusted Publishing (OIDC) - no API token needed
 #   Configure at: https://crates.io/settings/tokens
-#   - Click "New Token" → "Generate new GitHub Actions token"
-#   - Repository: EdgeFirstAI/videostream
-#   - Workflow: release.yml
-#   - Environment: crates-io
-#   Documentation: https://crates.io/docs/trusted-publishing
-#
-# No secrets required - both use OIDC authentication via Trusted Publishers
 #
 # Action Versions (hash-pinned per SPS v2.1):
 # - actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (v4.2.2)
 # - actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b (v5.3.0)
-# - actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 (v4.1.8)
 # - softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 (v2.0.8)
-#
-# Runner Notes:
-# - ubuntu-22.04: Standard GitHub-hosted runner (x86_64)
-# - ubuntu-22.04-arm: Custom larger runner (ARM64)
+# - lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc (v1.3.4)
+# - dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 (v6)
+# - pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e (release/v1)
+# - rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec (v1)
 
 name: Release
 
@@ -62,14 +40,16 @@ on:
       - 'v*'
 
 jobs:
-  # Extract version and changelog for use in other jobs
+  # ==========================================================================
+  # Prepare Release Information
+  # ==========================================================================
   prepare-release:
     name: Prepare Release Information
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.version.outputs.version }}
       changelog: ${{ steps.changelog.outputs.changelog }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -87,51 +67,63 @@ jobs:
         id: changelog
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          
-          # Extract changelog section for this version
-          # Format: ## [X.Y.Z] - YYYY-MM-DD
+
           CHANGELOG=$(awk -v ver="$VERSION" '
             /^## \['"$VERSION"'\]/ { found=1; next }
             found && /^## \[/ { exit }
             found { print }
           ' CHANGELOG.md)
-          
+
           if [ -z "$CHANGELOG" ]; then
             echo "ERROR: No changelog entry found for version $VERSION"
             exit 1
           fi
-          
-          # Save to file and output
+
           echo "$CHANGELOG" > /tmp/changelog.txt
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
+
           echo "Extracted changelog:"
           cat /tmp/changelog.txt
 
-  # Build all artifacts (documentation, ZIP, DEB, SBOM)
-  build-artifacts:
-    name: Build Release Artifacts
-    needs: prepare-release
-    uses: ./.github/workflows/build.yml
+  # ==========================================================================
+  # Wait for CI Workflows to Complete
+  # ==========================================================================
+  wait-for-ci:
+    name: Wait for CI Workflows
+    needs: [prepare-release]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Wait for Build workflow
+        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc  # v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'Verify Builds'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
 
-  build-sbom:
-    name: Generate SBOM
-    needs: prepare-release
-    uses: ./.github/workflows/sbom.yml
+      - name: Wait for SBOM workflow
+        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc  # v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'Generate Software Bill of Materials'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
 
+  # ==========================================================================
   # Publish Python wheel to PyPI
+  # ==========================================================================
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-22.04
-    needs: prepare-release
+    needs: [prepare-release]
     environment:
       name: pypi
       url: https://pypi.org/project/videostream/
     permissions:
-      id-token: write  # Required for trusted publishing
-    
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -150,39 +142,39 @@ jobs:
         run: |
           TAG_VERSION="${{ needs.prepare-release.outputs.version }}"
           PKG_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
-          
+
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "ERROR: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
             exit 1
           fi
-          
+
           echo "Version verified: $TAG_VERSION"
 
       - name: Build Python wheel and sdist
-        run: |
-          python3 -m build
+        run: python3 -m build
 
       - name: Check distribution
-        run: |
-          python3 -m twine check dist/*
+        run: python3 -m twine check dist/*
 
       - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e  # release/v1
         with:
           verbose: true
 
+  # ==========================================================================
   # Publish Rust crates to crates.io
+  # ==========================================================================
   publish-crates:
     name: Publish to crates.io
     runs-on: ubuntu-22.04
-    needs: prepare-release
+    needs: [prepare-release]
     environment:
       name: crates-io
       url: https://crates.io/crates/videostream
     permissions:
-      id-token: write  # Required for trusted publishing
+      id-token: write
       contents: read
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -196,18 +188,18 @@ jobs:
         run: |
           TAG_VERSION="${{ needs.prepare-release.outputs.version }}"
           CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
-          
+
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
             echo "ERROR: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
             exit 1
           fi
-          
+
           echo "Version verified: $TAG_VERSION"
 
       - name: Install C library build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get remove libunwind-*
+          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
@@ -226,107 +218,128 @@ jobs:
         id: auth
 
       - name: Publish all crates to crates.io (workspace publishing)
-        run: |
-          cargo publish --workspace
+        run: cargo publish --workspace
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  # Create GitHub Release with all artifacts
+  # ==========================================================================
+  # Create GitHub Release with pre-built artifacts
+  # ==========================================================================
   create-github-release:
     name: Create GitHub Release
     runs-on: ubuntu-22.04
     needs:
       - prepare-release
-      - build-artifacts
-      - build-sbom
+      - wait-for-ci
       - publish-pypi
       - publish-crates
     permissions:
       contents: write
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      actions: read
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+    steps:
+      - name: Download documentation artifact
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
         with:
-          path: artifacts
+          workflow: build.yml
+          commit: ${{ github.sha }}
+          name: documentation
+          path: artifacts/documentation
+
+      - name: Download x86_64 ZIP package
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        with:
+          workflow: build.yml
+          commit: ${{ github.sha }}
+          name: zip-package-x86_64
+          path: artifacts/zip-package-x86_64
+
+      - name: Download aarch64 ZIP package
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        with:
+          workflow: build.yml
+          commit: ${{ github.sha }}
+          name: zip-package-aarch64
+          path: artifacts/zip-package-aarch64
+
+      - name: Download x86_64 Debian packages
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        with:
+          workflow: build.yml
+          commit: ${{ github.sha }}
+          name: debian-packages-x86_64
+          path: artifacts/debian-packages-x86_64
+
+      - name: Download aarch64 Debian packages
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        with:
+          workflow: build.yml
+          commit: ${{ github.sha }}
+          name: debian-packages-aarch64
+          path: artifacts/debian-packages-aarch64
+
+      - name: Download SBOM
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        with:
+          workflow: sbom.yml
+          commit: ${{ github.sha }}
+          name: sbom
+          path: artifacts/sbom
 
       - name: Organize release assets
         run: |
           mkdir -p release-assets
-          
-          # Debug: Show artifact structure
-          echo "=== Artifact directory structure ==="
-          find artifacts -type f || echo "No artifacts found"
-          echo ""
-          
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+
           # Documentation PDF
           PDF_PATH=$(find artifacts/documentation -name "VideoStream.pdf" -type f 2>/dev/null | head -1)
           if [ -n "$PDF_PATH" ] && [ -f "$PDF_PATH" ]; then
-            cp "$PDF_PATH" \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf
-            echo "✓ Documentation PDF copied"
+            cp "$PDF_PATH" "release-assets/videostream-${VERSION}-documentation.pdf"
+            echo "✓ Documentation PDF"
           else
             echo "ERROR: Documentation PDF not found"
             exit 1
           fi
-          
+
           # ZIP packages
           ZIP_X86=$(find artifacts/zip-package-x86_64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
           if [ -n "$ZIP_X86" ] && [ -f "$ZIP_X86" ]; then
-            cp "$ZIP_X86" \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-x86_64.zip
-            echo "✓ x86_64 ZIP package copied"
-          else
-            echo "⚠ x86_64 ZIP package not found"
+            cp "$ZIP_X86" "release-assets/videostream-${VERSION}-linux-x86_64.zip"
+            echo "✓ x86_64 ZIP package"
           fi
-          
+
           ZIP_ARM=$(find artifacts/zip-package-aarch64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
           if [ -n "$ZIP_ARM" ] && [ -f "$ZIP_ARM" ]; then
-            cp "$ZIP_ARM" \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-linux-aarch64.zip
-            echo "✓ aarch64 ZIP package copied"
-          else
-            echo "⚠ aarch64 ZIP package not found"
+            cp "$ZIP_ARM" "release-assets/videostream-${VERSION}-linux-aarch64.zip"
+            echo "✓ aarch64 ZIP package"
           fi
-          
+
           # Debian packages (x86_64)
           if [ -d artifacts/debian-packages-x86_64 ]; then
             for deb in artifacts/debian-packages-x86_64/*.deb; do
-              if [ -f "$deb" ]; then
-                BASENAME=$(basename "$deb")
-                cp "$deb" "release-assets/${BASENAME%.deb}-x86_64.deb"
-                echo "✓ Copied x86_64 DEB: $BASENAME"
-              fi
+              [ -f "$deb" ] || continue
+              BASENAME=$(basename "$deb")
+              cp "$deb" "release-assets/${BASENAME%.deb}-x86_64.deb"
+              echo "✓ x86_64 DEB: $BASENAME"
             done
-          else
-            echo "⚠ x86_64 Debian packages directory not found"
           fi
-          
+
           # Debian packages (aarch64)
           if [ -d artifacts/debian-packages-aarch64 ]; then
             for deb in artifacts/debian-packages-aarch64/*.deb; do
-              if [ -f "$deb" ]; then
-                BASENAME=$(basename "$deb")
-                cp "$deb" "release-assets/${BASENAME%.deb}-aarch64.deb"
-                echo "✓ Copied aarch64 DEB: $BASENAME"
-              fi
+              [ -f "$deb" ] || continue
+              BASENAME=$(basename "$deb")
+              cp "$deb" "release-assets/${BASENAME%.deb}-aarch64.deb"
+              echo "✓ aarch64 DEB: $BASENAME"
             done
-          else
-            echo "⚠ aarch64 Debian packages directory not found"
           fi
-          
+
           # SBOM
           if [ -f artifacts/sbom/sbom.json ]; then
-            cp artifacts/sbom/sbom.json \
-               release-assets/videostream-${{ needs.prepare-release.outputs.version }}-sbom.json
-            echo "✓ SBOM copied"
-          else
-            echo "⚠ SBOM not found (non-critical)"
+            cp artifacts/sbom/sbom.json "release-assets/videostream-${VERSION}-sbom.json"
+            echo "✓ SBOM"
           fi
-          
+
           echo ""
           echo "Release assets prepared:"
           ls -lh release-assets/
@@ -337,47 +350,47 @@ jobs:
           name: VideoStream v${{ needs.prepare-release.outputs.version }}
           body: |
             # VideoStream v${{ needs.prepare-release.outputs.version }}
-            
+
             ## Installation
-            
+
             ### Python (PyPI)
             ```bash
             pip install videostream==${{ needs.prepare-release.outputs.version }}
             ```
-            
+
             ### Rust (crates.io)
             ```toml
             [dependencies]
             videostream = "${{ needs.prepare-release.outputs.version }}"
             ```
-            
+
             ### Debian Package
             Download the appropriate `.deb` file for your architecture (x86_64 or aarch64) and install:
             ```bash
             sudo dpkg -i videostream-*.deb
             sudo apt-get install -f  # Install dependencies
             ```
-            
+
             ### Binary Release (ZIP)
             Download the ZIP archive for your architecture and extract to desired location.
-            
+
             ---
-            
+
             ## What's Changed
-            
+
             ${{ needs.prepare-release.outputs.changelog }}
-            
+
             ---
-            
+
             ## Assets
-            
+
             - **Documentation**: `videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf`
             - **SBOM**: `videostream-${{ needs.prepare-release.outputs.version }}-sbom.json` (CycloneDX format)
             - **Linux x86_64**: ZIP and DEB packages
             - **Linux ARM64**: ZIP and DEB packages
-            
+
             ## Links
-            
+
             - [PyPI Package](https://pypi.org/project/videostream/${{ needs.prepare-release.outputs.version }}/)
             - [crates.io](https://crates.io/crates/videostream/${{ needs.prepare-release.outputs.version }})
             - [Documentation](https://github.com/EdgeFirstAI/videostream#readme)
