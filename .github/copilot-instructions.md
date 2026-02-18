@@ -188,6 +188,86 @@ videostream info
 | CPU usage (1080p30 distribution) | <2% |
 | Memory per client | <100KB |
 
+## i.MX 95 Device Tree Configuration
+
+The i.MX 95 EVK uses device tree overlays to configure camera and display combinations. Pre-built DTBs on the boot partition pair a camera with a specific display, but custom combinations require merging overlays manually. See [HARDWARE.md](../HARDWARE.md) for the overlay compatibility table.
+
+### MIPI Interface Constraints
+
+The 19x19 EVK has two MIPI CSI receive paths. CSI0 uses a dedicated D-PHY (independent, on lpi2c3/I2C3). CSI1 uses a combo PHY shared with MIPI DSI display output (on lpi2c2/I2C2). Overlays named `*-combo.dtbo` use CSI1 and disable DSI display — they cannot coexist with HDMI (ADV7535). Non-combo camera overlays use the dedicated CSI0 and are compatible with any display.
+
+### Creating a Custom DTB (Camera + Display)
+
+When the user needs a camera+display combination that has no pre-built DTB:
+
+1. **List available overlays** on the boot partition:
+   ```bash
+   ssh <target> 'ls /run/media/boot-mmcblk0p1/*.dtbo'
+   ```
+
+2. **Identify overlay conflicts** by decompiling with `dtc` and checking `__fixups__`:
+   - Overlays targeting `combo_rx`/`mipi_csi1` conflict with `mipi_dsi`/`adv7535`
+   - Overlays targeting `dphy_rx`/`mipi_csi0` conflict with each other (only one CSI0 camera)
+   - `neoisp.dtbo` has no conflicts (enables the M2M ISP independently)
+
+3. **Merge overlays** using `fdtoverlay` on the target:
+   ```bash
+   ssh <target> 'fdtoverlay \
+       -i /run/media/boot-mmcblk0p1/imx95-19x19-evk.dtb \
+       -o /run/media/boot-mmcblk0p1/<output-name>.dtb \
+       /run/media/boot-mmcblk0p1/<overlay1>.dtbo \
+       /run/media/boot-mmcblk0p1/<overlay2>.dtbo \
+       /run/media/boot-mmcblk0p1/<overlay3>.dtbo && sync'
+   ```
+
+4. **Verify the merged DTB** contains all expected nodes:
+   ```bash
+   ssh <target> 'dtc -I dtb -O dts /run/media/boot-mmcblk0p1/<output-name>.dtb 2>/dev/null | \
+       grep -E "(status.*okay|compatible)" | grep -E "(sensor|hdmi|adv7535|neoisp)"'
+   ```
+
+5. **Configure u-boot** — the user must set `fdtfile` from the serial console:
+   ```
+   setenv fdtfile <output-name>.dtb
+   saveenv
+   boot
+   ```
+   Note: `fw_printenv` may not be installed. If unavailable, u-boot env must be changed via serial console.
+
+6. **Verify after boot:**
+   ```bash
+   # Check device tree model loaded
+   cat /proc/device-tree/model
+
+   # Check camera sensor node is enabled
+   cat /proc/device-tree/soc/bus@42000000/i2c@42540000/os08a20_mipi@36/status
+
+   # Check NeoISP is enabled
+   cat /proc/device-tree/soc/isp@4ae00000/status
+
+   # List video devices
+   v4l2-ctl --list-devices
+
+   # Test camera with libcamera
+   export LIBCAMERA_PIPELINES_MATCH_LIST='nxp/neo,imx8-isi'
+   cam -l
+   ```
+
+### Common DTB Recipes
+
+| Configuration | Overlays (applied to `imx95-19x19-evk.dtb`) |
+|---------------|----------------------------------------------|
+| OS08A20 + HDMI + NeoISP | `adv7535.dtbo` + `os08a20.dtbo` + `neoisp.dtbo` |
+| OS08A20 + LVDS + NeoISP | Use pre-built `imx95-19x19-evk-os08a20-isp-it6263-lvds0.dtb` |
+| AP1302 + HDMI | Use pre-built `imx95-19x19-evk-adv7535-ap1302.dtb` |
+| OX05B1S + HDMI + NeoISP | `adv7535.dtbo` + `ox05b1s.dtbo` + `neoisp.dtbo` |
+
+### DTB Naming Convention
+
+Merged DTBs should follow: `imx95-<board>-<camera>-isp-<display>.dtb`
+
+Example: `imx95-19x19-evk-os08a20-isp-adv7535.dtb`
+
 ## Testing
 
 ```bash

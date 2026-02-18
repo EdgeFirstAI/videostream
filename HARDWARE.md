@@ -223,6 +223,52 @@ Camera support requires sensor-specific DTB files:
 | OX05B1S | imx95-19x19-evk-ox05b1s-isp-*.dtb | imx95-15x15-evk-ox05b1s-isp-*.dtb | imx95-19x19-verdin-ox05b1s-isp-*.dtb |
 | AP1302 (smart) | imx95-19x19-evk-adv7535-ap1302.dtb | — | imx95-15x15-verdin-adv7535-ap1302.dtb |
 
+Pre-built DTBs pair a camera with a specific display (LVDS or HDMI). For custom combinations (e.g. OS08A20 camera + HDMI display), merge overlays from the base DTB using `fdtoverlay`. See the [DTB Overlay Merging](#dtb-overlay-merging-imx-95-evk) section below.
+
+#### MIPI Interface Architecture (19x19 EVK)
+
+The EVK has two independent MIPI CSI-2 receive paths:
+
+| Port | PHY | I2C Bus | Connector | Shared With |
+|------|-----|---------|-----------|-------------|
+| CSI0 | Dedicated D-PHY (`dphy_rx`) | lpi2c3 (I2C3) | J42 | Nothing (independent) |
+| CSI1 | Combo PHY (`combo_rx`) | lpi2c2 (I2C2) | — | MIPI DSI display output |
+
+Camera overlays named `*-combo.dtbo` use the CSI1 combo PHY and **disable DSI display output** (HDMI via ADV7535 or LVDS). Non-combo overlays (e.g. `os08a20.dtbo`) use the dedicated CSI0 port and are compatible with any display.
+
+#### DTB Overlay Merging (i.MX 95 EVK)
+
+The boot partition contains both pre-merged DTBs and individual `.dtbo` overlays. To create a custom camera+display configuration, merge the base DTB with the desired overlays:
+
+```bash
+# Example: OS08A20 camera + HDMI display + NEO-ISP
+fdtoverlay \
+    -i /run/media/boot-mmcblk0p1/imx95-19x19-evk.dtb \
+    -o /run/media/boot-mmcblk0p1/imx95-19x19-evk-os08a20-isp-adv7535.dtb \
+    /run/media/boot-mmcblk0p1/imx95-19x19-evk-adv7535.dtbo \
+    /run/media/boot-mmcblk0p1/imx95-19x19-evk-os08a20.dtbo \
+    /run/media/boot-mmcblk0p1/imx95-19x19-evk-neoisp.dtbo
+```
+
+Then set u-boot to load the new DTB (via serial console):
+
+```
+setenv fdtfile imx95-19x19-evk-os08a20-isp-adv7535.dtb
+saveenv
+boot
+```
+
+**Available overlays and their hardware targets:**
+
+| Overlay | Targets | Conflicts |
+|---------|---------|-----------|
+| `adv7535.dtbo` | lpi2c2, mipi_dsi, DPU, pixel_interleaver | combo camera overlays |
+| `os08a20.dtbo` | lpi2c3, dphy_rx, mipi_csi0, pixel_formatter_0 | other CSI0 cameras |
+| `os08a20-combo.dtbo` | lpi2c2, combo_rx, mipi_csi1, pixel_formatter_1 | adv7535 (disables DSI) |
+| `neoisp.dtbo` | neoisp0 | none |
+| `ap1302.dtbo` | lpi2c3, dphy_rx, mipi_csi0, pixel_formatter_0 | other CSI0 cameras |
+| `it6263-lvds0.dtbo` | LVDS0 display | none |
+
 #### Supported Cameras
 
 | Sensor | Type | Resolution | Features |
