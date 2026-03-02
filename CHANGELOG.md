@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-03-01
+
+### Fixed
+
+- **aarch64 Release Builds**: Enabled VPU, G2D, and Hantro codec backends for aarch64 ZIP
+  packages. Previously all hardware acceleration was disabled in release builds, causing
+  `vsl_encoder_create_ex: backend hantro not available (compiled out or unsupported)` on
+  i.MX 8M Plus and i.MX 95 targets. These backends use dlopen at runtime and do not require
+  target libraries at compile time.
+
 ## [2.2.1] - 2026-02-12
 
 ### Fixed

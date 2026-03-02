@@ -80,8 +80,13 @@ jobs:
         platform:
           - name: x86_64
             runner: ubuntu-22.04
+            # x86_64 has no VPU/G2D hardware — disable acceleration backends
+            cmake_flags: -DENABLE_VPU=OFF -DENABLE_G2D=OFF
           - name: aarch64
             runner: ubuntu-22.04-arm
+            # aarch64 targets (i.MX 8M Plus, i.MX 95) have VPU and G2D hardware.
+            # These use dlopen at runtime so no target libraries needed at build time.
+            cmake_flags: -DENABLE_VPU=ON -DENABLE_G2D=ON -DENABLE_HANTRO_CODEC=ON
       fail-fast: false
 
     steps:
@@ -112,8 +117,7 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/usr \
                 -DCMAKE_C_FLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
-                -DENABLE_VPU=OFF \
-                -DENABLE_G2D=OFF \
+                ${{ matrix.platform.cmake_flags }} \
                 -DENABLE_COVER=OFF \
                 -DPORTABLE_ARCHIVE=ON
 
