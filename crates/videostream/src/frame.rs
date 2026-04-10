@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Au-Zone Technologies
 
-use crate::{camera::CameraBuffer, client, Error};
+use crate::{camera::CameraBuffer, Error};
 use std::{
     ffi::{CStr, CString},
     io,
@@ -185,18 +185,41 @@ impl Frame {
         Ok(())
     }
 
-    #[allow(clippy::result_unit_err)]
-    pub fn wrap(ptr: *mut ffi::VSLFrame) -> Result<Self, ()> {
+    /// Constructs a [`Frame`] from a raw `VSLFrame` pointer, taking ownership.
+    ///
+    /// Returns `None` if `ptr` is null. On `Some`, the returned `Frame` owns
+    /// the underlying allocation and will call `vsl_frame_release` in its
+    /// `Drop` implementation.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must have been obtained from a libvideostream API that
+    ///   transfers ownership of a frame reference to the caller — for example
+    ///   `vsl_frame_init`, `vsl_frame_wait`, or `vsl_decode_frame`.
+    /// - `ptr` must not already be owned by another [`Frame`]. Wrapping the
+    ///   same raw pointer in two `Frame`s will cause a double-free when both
+    ///   are dropped.
+    /// - `ptr` must not be passed to `vsl_frame_release` outside of the
+    ///   returned `Frame`'s `Drop` implementation.
+    /// - After this call, the caller must not use the raw pointer except
+    ///   through the returned `Frame` or through a non-owning pointer
+    ///   obtained from [`Frame::as_ptr`].
+    ///
+    /// # Example
+    ///
+    /// The function is `unsafe`, so it cannot be called from safe code:
+    ///
+    /// ```compile_fail
+    /// # use videostream::frame::Frame;
+    /// # use videostream_sys as ffi;
+    /// let ptr: *mut ffi::VSLFrame = std::ptr::null_mut();
+    /// let _ = Frame::from_raw(ptr); // ERROR: call to unsafe function requires unsafe block
+    /// ```
+    pub unsafe fn from_raw(ptr: *mut ffi::VSLFrame) -> Option<Self> {
         if ptr.is_null() {
-            return Err(());
+            return None;
         }
-
-        Ok(Frame { ptr })
-    }
-
-    pub fn wait(client: &client::Client, until: i64) -> Result<Self, Error> {
-        let wrapper = client.get_frame(until)?;
-        Ok(Frame { ptr: wrapper.ptr })
+        Some(Frame { ptr })
     }
 
     /// Attempts to acquire a read lock on the frame.
@@ -792,21 +815,17 @@ impl Frame {
         Ok(ret)
     }
 
-    pub fn get_ptr(&self) -> *mut ffi::VSLFrame {
+    /// Returns a non-owning raw pointer to the underlying `VSLFrame`.
+    ///
+    /// The returned pointer is borrowed and valid only for the lifetime of
+    /// `&self`. The caller **must not** pass it to `vsl_frame_release` or
+    /// use it to construct another [`Frame`] via [`Frame::from_raw`] —
+    /// doing so would cause a double-free.
+    pub fn as_ptr(&self) -> *mut ffi::VSLFrame {
         self.ptr
     }
 }
 
-impl TryFrom<*mut ffi::VSLFrame> for Frame {
-    type Error = ();
-
-    fn try_from(ptr: *mut ffi::VSLFrame) -> Result<Self, Self::Error> {
-        if ptr.is_null() {
-            return Err(());
-        }
-        Ok(Frame { ptr })
-    }
-}
 impl TryFrom<&CameraBuffer<'_>> for Frame {
     type Error = Error;
 

@@ -272,7 +272,10 @@ impl Client {
             let err = io::Error::last_os_error();
             return Err(err.into());
         }
-        Ok(Frame::wrap(frame).unwrap())
+        // Safety: vsl_frame_wait transfers ownership of a new frame reference
+        // to the caller on success. The null case is handled above, so
+        // `from_raw` will return `Some`.
+        Ok(unsafe { Frame::from_raw(frame) }.expect("non-null checked above"))
     }
 }
 
