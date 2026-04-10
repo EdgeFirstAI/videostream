@@ -209,13 +209,18 @@ impl Encoder {
             return Err(Error::SymbolNotFound("vsl_encode_frame"));
         }
 
-        let result = lib.vsl_encode_frame(
-            self.ptr,
-            source.as_ptr(),
-            destination.as_ptr(),
-            &crop_region.rect,
-            keyframe,
-        );
+        // Safety: forwarded from the enclosing unsafe fn's contract -
+        // `keyframe` is either null or points to a valid `c_int`. The frame
+        // pointers are non-null borrows from `source` and `destination`.
+        let result = unsafe {
+            lib.vsl_encode_frame(
+                self.ptr,
+                source.as_ptr(),
+                destination.as_ptr(),
+                &crop_region.rect,
+                keyframe,
+            )
+        };
 
         Ok(result)
     }
