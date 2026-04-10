@@ -169,18 +169,28 @@ impl Frame {
     }
 
     pub fn alloc(&self, path: Option<&Path>) -> Result<(), Error> {
-        let path_ptr;
-        if let Some(path) = path {
-            let path = path.to_str().unwrap();
-            let path = CString::new(path).unwrap();
-            path_ptr = path.into_raw();
-        } else {
-            path_ptr = ptr::null_mut();
-        }
+        // Hold the CString on the stack so it drops after vsl_frame_alloc
+        // returns. The previous implementation used into_raw without a
+        // matching from_raw, leaking the path string on every call.
+        let c_path = match path {
+            Some(p) => {
+                let s = p.to_str().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8")
+                })?;
+                Some(
+                    CString::new(s)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
+                )
+            }
+            None => None,
+        };
+        let path_ptr = c_path
+            .as_ref()
+            .map_or(ptr::null_mut(), |s| s.as_ptr() as *mut _);
+
         let ret = vsl!(vsl_frame_alloc(self.ptr, path_ptr)) as i32;
         if ret != 0 {
-            let err = io::Error::last_os_error();
-            return Err(err.into());
+            return Err(io::Error::last_os_error().into());
         }
         Ok(())
     }
