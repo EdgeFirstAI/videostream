@@ -273,9 +273,10 @@ impl Client {
             return Err(err.into());
         }
         // Safety: vsl_frame_wait transfers ownership of a new frame reference
-        // to the caller on success. The null case is handled above, so
-        // `from_raw` will return `Some`.
-        Ok(unsafe { Frame::from_raw(frame) }.expect("non-null checked above"))
+        // to the caller on success. The null case is handled above; if
+        // `from_raw` still rejects the pointer, surface it as an error rather
+        // than panicking from this public API.
+        unsafe { Frame::from_raw(frame) }.ok_or(Error::NullPointer)
     }
 }
 

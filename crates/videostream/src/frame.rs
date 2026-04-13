@@ -177,16 +177,11 @@ impl Frame {
                 let s = p.to_str().ok_or_else(|| {
                     io::Error::new(io::ErrorKind::InvalidInput, "path is not valid UTF-8")
                 })?;
-                Some(
-                    CString::new(s)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?,
-                )
+                Some(CString::new(s).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?)
             }
             None => None,
         };
-        let path_ptr = c_path
-            .as_ref()
-            .map_or(ptr::null_mut(), |s| s.as_ptr() as *mut _);
+        let path_ptr = c_path.as_ref().map_or(ptr::null(), |s| s.as_ptr());
 
         let ret = vsl!(vsl_frame_alloc(self.ptr, path_ptr)) as i32;
         if ret != 0 {
