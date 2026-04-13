@@ -298,7 +298,7 @@ impl Host {
         pts: i64,
         dts: i64,
     ) -> Result<(), Error> {
-        let frame_ptr = frame.get_ptr();
+        let frame_ptr = frame.as_ptr();
 
         let ret = vsl!(vsl_host_post(
             self.ptr, frame_ptr, expires, duration, pts, dts
@@ -346,7 +346,7 @@ impl Host {
     /// # Ok::<(), videostream::Error>(())
     /// ```
     pub fn drop_frame(&self, frame: &crate::frame::Frame) -> Result<(), Error> {
-        let ret = vsl!(vsl_host_drop(self.ptr, frame.get_ptr()));
+        let ret = vsl!(vsl_host_drop(self.ptr, frame.as_ptr()));
         if ret < 0 {
             let err = io::Error::last_os_error();
             return Err(err.into());

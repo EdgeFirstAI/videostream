@@ -349,7 +349,10 @@ impl Decoder {
             )
         };
 
-        let output_frame = Frame::wrap(output_frame).ok();
+        // Safety: vsl_decode_frame writes a newly-allocated frame pointer into
+        // the out-parameter on success, transferring ownership to the caller.
+        // `from_raw` returns `None` if the decoder did not produce a frame.
+        let output_frame = unsafe { Frame::from_raw(output_frame) };
         if ret_code & VSLDecoderRetCode_VSL_DEC_ERR > 0 {
             return Err(Error::Io(io::Error::new(
                 io::ErrorKind::Other,

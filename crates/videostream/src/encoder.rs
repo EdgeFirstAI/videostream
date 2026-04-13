@@ -187,11 +187,10 @@ impl Encoder {
             lib.vsl_encoder_new_output_frame(self.ptr, width, height, duration, pts, dts)
         };
 
-        if frame_ptr.is_null() {
-            Err(Error::NullPointer)
-        } else {
-            frame_ptr.try_into().map_err(|()| Error::NullPointer)
-        }
+        // Safety: vsl_encoder_new_output_frame transfers ownership of a new
+        // frame reference to the caller on success. Null is handled by
+        // `ok_or` and indicates failure.
+        unsafe { frame::Frame::from_raw(frame_ptr) }.ok_or(Error::NullPointer)
     }
 
     /// # Safety
@@ -210,13 +209,18 @@ impl Encoder {
             return Err(Error::SymbolNotFound("vsl_encode_frame"));
         }
 
-        let result = lib.vsl_encode_frame(
-            self.ptr,
-            source.get_ptr(),
-            destination.get_ptr(),
-            &crop_region.rect,
-            keyframe,
-        );
+        // Safety: forwarded from the enclosing unsafe fn's contract -
+        // `keyframe` is either null or points to a valid `c_int`. The frame
+        // pointers are non-null borrows from `source` and `destination`.
+        let result = unsafe {
+            lib.vsl_encode_frame(
+                self.ptr,
+                source.as_ptr(),
+                destination.as_ptr(),
+                &crop_region.rect,
+                keyframe,
+            )
+        };
 
         Ok(result)
     }

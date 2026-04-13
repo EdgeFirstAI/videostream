@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-04-10
+
+### Breaking
+
+- **`Frame::wrap` renamed to `Frame::from_raw` and marked `unsafe`.** The
+  previous safe signature violated Rust's soundness contract by allowing safe
+  code to trigger a double-free when combined with `Frame::get_ptr`. Callers
+  must now write `unsafe { Frame::from_raw(ptr) }` and uphold the documented
+  safety contract: the pointer must come from an ownership-transferring
+  libvideostream API (`vsl_frame_init`, `vsl_frame_wait`, `vsl_decode_frame`,
+  ...) and must not already be owned by another `Frame`. The return type is
+  now `Option<Self>` instead of `Result<Self, ()>`. Reported by Tim Lange
+  ([@t1mlange](https://github.com/t1mlange)) in
+  [#12](https://github.com/EdgeFirstAI/videostream/issues/12).
+- **`Frame::get_ptr` renamed to `Frame::as_ptr`** to match Rust naming
+  conventions (`Vec::as_ptr`, `CStr::as_ptr`). The pointer returned is borrowed
+  and tied to `&self`'s lifetime; the method remains safe, but callers must
+  not pass the pointer to `vsl_frame_release` or `Frame::from_raw`.
+- **Removed `impl TryFrom<*mut ffi::VSLFrame> for Frame`.** This conversion
+  could not be made sound because `TryFrom::try_from` is a safe trait method.
+  Use `unsafe { Frame::from_raw(ptr) }` instead.
+- **Removed `Frame::wait`.** It had zero callers in the workspace, duplicated
+  `Client::get_frame`, and contained a latent double-free where the wrapper
+  `Frame` was aliased without `mem::forget`. Use `client.get_frame(until)`
+  directly.
+
+### Fixed
+
+- Fixed soundness hole in the Rust `Frame` API that allowed safe code to
+  trigger a double-free via `Frame::wrap` + `Frame::get_ptr`
+  ([#12](https://github.com/EdgeFirstAI/videostream/issues/12)).
+- Fixed memory leak in `Frame::alloc` where the path `CString` was converted
+  via `into_raw` but never reclaimed.
+- Replaced two `.unwrap()` panics in `Frame::alloc` (non-UTF-8 paths and paths
+  containing interior NUL bytes) with `Error::Io` returns.
+
+### Internal
+
+- Enabled `unsafe_op_in_unsafe_fn = "deny"` lint crate-wide in `videostream`
+  per Microsoft Pragmatic Rust Guidelines M-UNSAFE.
+- Fixed workspace version inconsistency where the `videostream` workspace
+  dependency entry was pinned to 2.1.4 despite the package version being 2.2.2.
+
+### Migration Guide
+
+```rust
+// Before
+let frame = Frame::wrap(ptr).unwrap();
+let raw = frame.get_ptr();
+let frame = Frame::wait(&client, 0)?;
+
+// After
+let frame = unsafe { Frame::from_raw(ptr) }.expect("non-null");
+let raw = frame.as_ptr();
+let frame = client.get_frame(0)?;
+```
+
 ## [2.2.2] - 2026-03-01
 
 ### Fixed
