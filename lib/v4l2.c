@@ -698,9 +698,8 @@ vsl_camera_init_device(vsl_camera* ctx,
     err = init_dma(ctx, buf_count);
     if (err) return -1;
 
-    u_int32_t bpl = ctx->not_plane
-                        ? fmt.fmt.pix.bytesperline
-                        : fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
+    u_int32_t bpl = ctx->not_plane ? fmt.fmt.pix.bytesperline
+                                   : fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
 
     for (unsigned int i = 0; i < ctx->n_buffers; i++) {
         ctx->buffers[i].fourcc = ctx->not_plane ? fmt.fmt.pix.pixelformat
