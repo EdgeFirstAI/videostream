@@ -511,6 +511,46 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that `CameraBuffer::bytes_per_line()` returns the
+    /// driver-negotiated row stride (EDGEAI-1239). On Vivante/Mali-aligned
+    /// capture drivers this is strictly >= width and may exceed `width * bpp`
+    /// when the driver pads rows; the assertion here is intentionally loose
+    /// (non-zero and >= width) so the test holds on any well-formed driver,
+    /// MPLANE or single-plane.
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
+    #[test]
+    #[serial]
+    fn test_bytes_per_line() -> Result<(), Error> {
+        let device = get_camera_device();
+        println!("Using camera device: {}", device);
+
+        let cam = create_camera()
+            .with_device(&device)
+            .with_format(FourCC(*b"YUYV"))
+            .open()?;
+        cam.start()?;
+        let buf = cam.read()?;
+
+        let bpl = buf.bytes_per_line()?;
+        let width = buf.width();
+        println!(
+            "bytes_per_line = {} (width = {}, format = {})",
+            bpl,
+            width,
+            buf.format()
+        );
+
+        assert!(bpl > 0, "bytes_per_line must be non-zero after negotiation");
+        assert!(
+            i32::try_from(bpl).is_ok_and(|v| v >= width),
+            "bytes_per_line ({}) must cover at least one row of width pixels ({})",
+            bpl,
+            width
+        );
+
+        Ok(())
+    }
+
     #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
