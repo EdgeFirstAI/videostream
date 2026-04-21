@@ -68,6 +68,14 @@ vsl_camera_buffer_fourcc(const vsl_camera_buffer* buffer)
     return buffer->fourcc;
 }
 
+VSL_API
+u_int32_t
+vsl_camera_buffer_bytes_per_line(const vsl_camera_buffer* buffer)
+{
+    if (!buffer) { return 0; }
+    return buffer->bytes_per_line;
+}
+
 static int
 xioctl(int fh, int request, void* arg)
 {
@@ -690,9 +698,14 @@ vsl_camera_init_device(vsl_camera* ctx,
     err = init_dma(ctx, buf_count);
     if (err) return -1;
 
+    u_int32_t bpl = ctx->not_plane
+                        ? fmt.fmt.pix.bytesperline
+                        : fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
+
     for (unsigned int i = 0; i < ctx->n_buffers; i++) {
         ctx->buffers[i].fourcc = ctx->not_plane ? fmt.fmt.pix.pixelformat
                                                 : fmt.fmt.pix_mp.pixelformat;
+        ctx->buffers[i].bytes_per_line = bpl;
     }
 
     return 0;

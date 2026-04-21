@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "2.3.0"
+#define VSL_VERSION "2.4.0"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -252,6 +252,17 @@
 #define VSL_DEPRECATED_SINCE_2_2 VSL_DEPRECATED(2.2)
 #define VSL_DEPRECATED_SINCE_2_2_FOR(replacement) \
     VSL_DEPRECATED_FOR(2.2, replacement)
+#endif
+
+#if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(2, 4, 0)
+#define VSL_AVAILABLE_SINCE_2_4 VSL_UNAVAILABLE(2.4)
+#define VSL_DEPRECATED_SINCE_2_4
+#define VSL_DEPRECATED_SINCE_2_4_FOR(replacement)
+#else
+#define VSL_AVAILABLE_SINCE_2_4
+#define VSL_DEPRECATED_SINCE_2_4 VSL_DEPRECATED(2.4)
+#define VSL_DEPRECATED_SINCE_2_4_FOR(replacement) \
+    VSL_DEPRECATED_FOR(2.4, replacement)
 #endif
 
 #define VSL_FOURCC(a, b, c, d)                                         \
@@ -1710,6 +1721,31 @@ VSL_AVAILABLE_SINCE_1_3
 VSL_API
 uint32_t
 vsl_camera_buffer_fourcc(const vsl_camera_buffer* buffer);
+
+/**
+ * Returns the V4L2-negotiated bytes-per-line for the camera buffer.
+ *
+ * Returns the exact row stride in **bytes** for plane 0 as reported by the
+ * driver via VIDIOC_G_FMT at negotiation time. This reflects any hardware
+ * alignment padding applied by the driver (e.g. Vivante/Mali 16-byte or
+ * 64-byte row alignment) and is correct for both single-plane
+ * (V4L2_BUF_TYPE_VIDEO_CAPTURE) and multi-plane
+ * (V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) capture queues.
+ *
+ * For contiguous FOURCCs (NV12, YUYV, YU12 with num_planes=1) this is the
+ * full buffer's row stride. For non-contiguous "M" variants (NM12, YM12)
+ * it is the plane-0 (luma) stride — chroma strides are not exposed by this
+ * accessor and are out of scope until a multi-fd API is added.
+ *
+ * @param buffer Camera buffer from vsl_camera_get_data()
+ * @return Bytes-per-line (plane 0). Returns 0 if buffer is NULL.
+ * @since 2.4
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_4
+VSL_API
+uint32_t
+vsl_camera_buffer_bytes_per_line(const vsl_camera_buffer* buffer);
 
 /**
  * Reads the timestamp of the camera buffer.

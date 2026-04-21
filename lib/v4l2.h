@@ -26,6 +26,7 @@ struct vsl_camera_buffer {
     u_int64_t      phys_addr;
     u_int32_t      length;
     u_int32_t      fourcc;
+    u_int32_t      bytes_per_line;
     int            bufID;
     struct timeval timestamp;
 };

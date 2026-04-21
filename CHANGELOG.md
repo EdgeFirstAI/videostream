@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-04-21
+
+Feature release rolling up the decoder/Frame API clean-up from [EDGEAI-1238]
+and the MPLANE-aware row-stride accessor requested in [EDGEAI-1239]. The new
+C symbol `vsl_camera_buffer_bytes_per_line` is additive; all Rust changes are
+source-compatible for positional callers.
+
+### Added
+
+- **`vsl_camera_buffer_bytes_per_line()` / `CameraBuffer::bytes_per_line()`**
+  — returns the exact V4L2-negotiated row stride (bytes, plane 0) for the
+  camera buffer, reading from `fmt.pix.bytesperline` on single-plane queues
+  and `fmt.pix_mp.plane_fmt[0].bytesperline` on multi-plane queues. Replaces
+  the `length / height` approximation used downstream and is correct on
+  drivers that apply hardware row alignment (i.MX8MP Vivante, i.MX95 Wave6).
+  Scope is explicitly plane 0; a multi-fd / per-plane accessor family is
+  deferred until a concrete non-contiguous FOURCC consumer appears. Tagged
+  `VSL_AVAILABLE_SINCE_2_4`.
+- `Decoder::pool_depth() -> usize` accessor so publishers can size retention
+  queues without hard-coding the value they passed at construction.
+
+### Fixed
+
+- `Frame::fourcc()` now returns `Error::SymbolNotFound("vsl_frame_fourcc")`
+  when the underlying FFI symbol is unavailable, instead of silently returning
+  `0`. Previously, missing-symbol conditions produced misleading
+  "unsupported FourCC: \0\0\0\0" errors in downstream consumers.
+
+### Changed
+
+- `Decoder::create` and `Decoder::create_ex` rename their second parameter
+  `fps` → `pool_depth`, and their documentation now accurately describes the
+  parameter as the size of the decoder's internal dma-buf pool (not the stream
+  frame rate). Positional callers are unaffected; only callers passing the
+  argument by name need to update. The Frame-retention contract — that a live
+  `Frame` pins its dma-buf slot against decoder recycling — is now documented
+  on both constructors and cross-referenced from `Frame::trylock` /
+  `Frame::unlock`.
+
+[EDGEAI-1238]: https://au-zone.atlassian.net/browse/EDGEAI-1238
+[EDGEAI-1239]: https://au-zone.atlassian.net/browse/EDGEAI-1239
+
 ## [2.3.0] - 2026-04-10
 
 ### Breaking

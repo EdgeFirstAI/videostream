@@ -375,6 +375,33 @@ impl CameraBuffer<'_> {
         Ok(usize::try_from(vsl!(vsl_camera_buffer_length(self.ptr))).unwrap_or(0))
     }
 
+    /// Returns the V4L2-negotiated bytes-per-line (row stride in bytes) for
+    /// plane 0 of this buffer.
+    ///
+    /// This is the exact value the driver wrote to `fmt.pix.bytesperline`
+    /// (single-plane queues) or `fmt.pix_mp.plane_fmt[0].bytesperline`
+    /// (multi-plane queues) at negotiation time — not a width-derived
+    /// approximation. It accounts for any driver-imposed row alignment
+    /// (typical on Vivante/Mali-backed i.MX8MP and i.MX95 ISI drivers).
+    ///
+    /// For contiguous pixel formats (NV12, YUYV, YU12) this is the row
+    /// stride of the whole buffer. For the non-contiguous "M" variants
+    /// (NM12, YM12) it is the plane-0 (luma) stride only; chroma-plane
+    /// strides and fds are not exposed until a multi-plane accessor family
+    /// is introduced.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.4 and does not export `vsl_camera_buffer_bytes_per_line`.
+    pub fn bytes_per_line(&self) -> Result<u32, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_buffer_bytes_per_line.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_buffer_bytes_per_line"));
+        }
+        Ok(unsafe { lib.vsl_camera_buffer_bytes_per_line(self.ptr) })
+    }
+
     pub fn width(&self) -> i32 {
         self.parent.width()
     }
