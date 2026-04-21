@@ -45,6 +45,7 @@ use videostream_sys::{
 /// explicitly specified via [`Decoder::create_ex`].
 pub struct Decoder {
     ptr: *mut ffi::VSLDecoder,
+    pool_depth: usize,
 }
 
 /// Video codec type for hardware decoder.
@@ -172,7 +173,23 @@ impl Decoder {
     /// # Arguments
     ///
     /// * `codec` - The video codec type (H.264 or H.265)
-    /// * `fps` - Expected frame rate (used for buffer management)
+    /// * `pool_depth` - Number of dma-buf slots the decoder allocates for decoded
+    ///   frames. Despite being passed to the C API as what historical versions
+    ///   called `fps`, this value does **not** describe the stream's frame rate —
+    ///   it directly sizes the decoder's internal buffer pool.
+    ///
+    /// # Retention contract
+    ///
+    /// While a [`Frame`](crate::frame::Frame) returned from
+    /// [`decode_frame`](Self::decode_frame) is alive, the decoder will not recycle
+    /// its backing dma-buf slot. Publishers that need to keep `N` decoded frames
+    /// in flight downstream (e.g. to hand fds to a `rt/camera/dma` consumer) must
+    /// pass `pool_depth ≥ N + working_set`, where `working_set` is typically 2
+    /// (one frame being decoded, one just produced). Dropping a `Frame` returns
+    /// its slot to the pool immediately.
+    ///
+    /// The [`pool_depth`](Self::pool_depth) accessor echoes the value passed here
+    /// so publishers can size retention queues without hard-coding.
     ///
     /// # Errors
     ///
@@ -185,22 +202,27 @@ impl Decoder {
     /// ```no_run
     /// use videostream::decoder::{Decoder, DecoderCodec};
     ///
-    /// let decoder = Decoder::create(DecoderCodec::H264, 30)?;
+    /// // Allocate a pool large enough to retain 4 frames downstream plus a
+    /// // 2-frame decoder working set.
+    /// let decoder = Decoder::create(DecoderCodec::H264, 6)?;
     /// # Ok::<(), videostream::Error>(())
     /// ```
-    pub fn create(codec: DecoderCodec, fps: c_int) -> Result<Self, Error> {
+    pub fn create(codec: DecoderCodec, pool_depth: c_int) -> Result<Self, Error> {
         let lib = ffi::init()?;
 
         if lib.vsl_decoder_create.is_err() {
             return Err(Error::SymbolNotFound("vsl_decoder_create"));
         }
 
-        let ptr = unsafe { lib.vsl_decoder_create(codec as ffi::VSLDecoderCodec, fps) };
+        let ptr = unsafe { lib.vsl_decoder_create(codec as ffi::VSLDecoderCodec, pool_depth) };
 
         if ptr.is_null() {
             Err(Error::HardwareNotAvailable("VPU decoder"))
         } else {
-            Ok(Decoder { ptr })
+            Ok(Decoder {
+                ptr,
+                pool_depth: pool_depth.max(0) as usize,
+            })
         }
     }
 
@@ -209,7 +231,9 @@ impl Decoder {
     /// # Arguments
     ///
     /// * `codec` - The video codec type (H.264 or H.265)
-    /// * `fps` - Expected frame rate (used for buffer management)
+    /// * `pool_depth` - Number of dma-buf slots the decoder allocates for decoded
+    ///   frames. See [`Decoder::create`] for the full retention contract — the
+    ///   same semantics apply here.
     /// * `backend` - Which backend to use (Auto, Hantro, or V4L2)
     ///
     /// # Errors
@@ -222,13 +246,13 @@ impl Decoder {
     /// ```no_run
     /// use videostream::decoder::{Decoder, DecoderCodec, CodecBackend};
     ///
-    /// // Force V4L2 backend for better performance
-    /// let decoder = Decoder::create_ex(DecoderCodec::H264, 30, CodecBackend::V4L2)?;
+    /// // Force V4L2 backend with a 6-slot pool.
+    /// let decoder = Decoder::create_ex(DecoderCodec::H264, 6, CodecBackend::V4L2)?;
     /// # Ok::<(), videostream::Error>(())
     /// ```
     pub fn create_ex(
         codec: DecoderCodec,
-        fps: c_int,
+        pool_depth: c_int,
         backend: CodecBackend,
     ) -> Result<Self, Error> {
         let lib = ffi::init()?;
@@ -238,14 +262,31 @@ impl Decoder {
         }
 
         let ptr = unsafe {
-            lib.vsl_decoder_create_ex(codec.to_fourcc(), fps, backend as ffi::VSLCodecBackend)
+            lib.vsl_decoder_create_ex(
+                codec.to_fourcc(),
+                pool_depth,
+                backend as ffi::VSLCodecBackend,
+            )
         };
 
         if ptr.is_null() {
             Err(Error::HardwareNotAvailable("VPU decoder"))
         } else {
-            Ok(Decoder { ptr })
+            Ok(Decoder {
+                ptr,
+                pool_depth: pool_depth.max(0) as usize,
+            })
         }
+    }
+
+    /// Returns the dma-buf pool depth this decoder was created with.
+    ///
+    /// Publishers that need to retain decoded frames for downstream consumers
+    /// can use this to size their retention queue: holding more than
+    /// `pool_depth - working_set` frames alive risks stalling the decoder.
+    /// See [`Decoder::create`] for the full retention contract.
+    pub fn pool_depth(&self) -> usize {
+        self.pool_depth
     }
 
     /// Returns the width of decoded frames in pixels.
