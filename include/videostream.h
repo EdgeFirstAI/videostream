@@ -1725,10 +1725,12 @@ vsl_camera_buffer_fourcc(const vsl_camera_buffer* buffer);
 /**
  * Returns the V4L2-negotiated bytes-per-line for the camera buffer.
  *
- * Returns the exact row stride in **bytes** for plane 0 as reported by the
- * driver via VIDIOC_G_FMT at negotiation time. This reflects any hardware
- * alignment padding applied by the driver (e.g. Vivante/Mali 16-byte or
- * 64-byte row alignment) and is correct for both single-plane
+ * Returns the exact row stride in **bytes** for plane 0 as negotiated with
+ * and returned by the driver. The value is captured from the `v4l2_format`
+ * struct populated by VIDIOC_S_FMT during `vsl_camera_init_device()` (and
+ * reflects any subsequent VIDIOC_G_FMT if queried later). This accounts
+ * for hardware alignment padding applied by the driver (e.g. Vivante/Mali
+ * 16-byte or 64-byte row alignment) and is correct for both single-plane
  * (V4L2_BUF_TYPE_VIDEO_CAPTURE) and multi-plane
  * (V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) capture queues.
  *
