@@ -246,8 +246,7 @@ impl Frame {
     /// retention is controlled by the `Frame`'s *lifetime*: as long as the
     /// `Frame` is alive, the decoder will not recycle its slot. See
     /// [`Decoder::create`](crate::decoder::Decoder::create) for the full
-    /// retention contract and [`Decoder::pool_depth`](crate::decoder::Decoder::pool_depth)
-    /// for sizing retention queues.
+    /// retention contract.
     ///
     /// # Example
     ///
@@ -482,9 +481,11 @@ impl Frame {
     ///
     /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
     /// Returns [`Error::SymbolNotFound`] if `vsl_frame_fourcc` is not exported by
-    /// the loaded library (older library builds). Previously this condition would
-    /// silently return `0`, producing misleading "unsupported FourCC" errors
-    /// downstream.
+    /// the loaded library (older library builds). Previously this condition
+    /// would panic during FFI symbol resolution (via the `vsl!` macro's
+    /// `.expect("Expected function, got error.")` on the missing
+    /// `libloading` symbol), giving callers no way to recover cleanly when
+    /// running against an older runtime.
     ///
     /// # Example
     ///

@@ -11,42 +11,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.4.0] - 2026-04-21
 
-Feature release rolling up the decoder/Frame API clean-up from [EDGEAI-1238]
-and the MPLANE-aware row-stride accessor requested in [EDGEAI-1239]. The new
-C symbol `vsl_camera_buffer_bytes_per_line` is additive; all Rust changes are
-source-compatible for positional callers.
+Feature release adding the MPLANE-aware camera row-stride accessor requested
+in [EDGEAI-1239], together with a scoped subset of the decoder/Frame API
+clean-up from [EDGEAI-1238]. The new C symbol
+`vsl_camera_buffer_bytes_per_line` is additive; no existing public API
+surface changes semantics in this release.
 
 ### Added
 
 - **`vsl_camera_buffer_bytes_per_line()` / `CameraBuffer::bytes_per_line()`**
   — returns the exact V4L2-negotiated row stride (bytes, plane 0) for the
-  camera buffer, reading from `fmt.pix.bytesperline` on single-plane queues
-  and `fmt.pix_mp.plane_fmt[0].bytesperline` on multi-plane queues. Replaces
-  the `length / height` approximation used downstream and is correct on
-  drivers that apply hardware row alignment (i.MX8MP Vivante, i.MX95 Wave6).
-  Scope is explicitly plane 0; a multi-fd / per-plane accessor family is
-  deferred until a concrete non-contiguous FOURCC consumer appears. Tagged
-  `VSL_AVAILABLE_SINCE_2_4`.
-- `Decoder::pool_depth() -> usize` accessor so publishers can size retention
-  queues without hard-coding the value they passed at construction.
+  camera buffer, captured from the `v4l2_format` struct written by
+  VIDIOC_S_FMT at negotiation time (`fmt.pix.bytesperline` on single-plane
+  queues, `fmt.pix_mp.plane_fmt[0].bytesperline` on multi-plane queues).
+  Replaces the `length / height` approximation used downstream and is
+  correct on drivers that apply hardware row alignment (i.MX8MP Vivante,
+  i.MX95 Wave6). Scope is explicitly plane 0; a multi-fd / per-plane
+  accessor family is deferred until a concrete non-contiguous FOURCC
+  consumer appears. Tagged `VSL_AVAILABLE_SINCE_2_4`.
 
 ### Fixed
 
 - `Frame::fourcc()` now returns `Error::SymbolNotFound("vsl_frame_fourcc")`
-  when the underlying FFI symbol is unavailable, instead of silently returning
-  `0`. Previously, missing-symbol conditions produced misleading
-  "unsupported FourCC: \0\0\0\0" errors in downstream consumers.
+  when the underlying FFI symbol is unavailable, instead of panicking at
+  FFI symbol resolution via the `vsl!` macro's `.expect(...)`. Older
+  library builds that lack the symbol can now be detected and handled by
+  the caller instead of aborting the process.
 
 ### Changed
 
-- `Decoder::create` and `Decoder::create_ex` rename their second parameter
-  `fps` → `pool_depth`, and their documentation now accurately describes the
-  parameter as the size of the decoder's internal dma-buf pool (not the stream
-  frame rate). Positional callers are unaffected; only callers passing the
-  argument by name need to update. The Frame-retention contract — that a live
-  `Frame` pins its dma-buf slot against decoder recycling — is now documented
-  on both constructors and cross-referenced from `Frame::trylock` /
-  `Frame::unlock`.
+- The Frame-retention contract — that a live `Frame` returned by
+  `Decoder::decode_frame` pins its backing dma-buf slot against decoder
+  recycling — is now documented explicitly on `Decoder::create`,
+  `Decoder::create_ex`, and cross-referenced from `Frame::trylock` /
+  `Frame::unlock`. No behavior change; this codifies what was already true.
+
+### Known limitations (tracked for 3.x)
+
+- `Decoder::create` / `Decoder::create_ex` still accept an `fps: c_int`
+  parameter that the current V4L2 and Hantro backends accept but do not
+  act on (the V4L2 backend uses a fixed CAPTURE buffer count; Hantro
+  stores the value and never reads it). The parameter is retained in
+  2.4.0 for source compatibility. A future 3.x release will either wire
+  the hint through to actually size the backend's buffer pool or remove
+  the parameter entirely.
 
 [EDGEAI-1238]: https://au-zone.atlassian.net/browse/EDGEAI-1238
 [EDGEAI-1239]: https://au-zone.atlassian.net/browse/EDGEAI-1239
