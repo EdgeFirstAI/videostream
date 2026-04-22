@@ -237,6 +237,17 @@ impl Frame {
     ///
     /// Returns [`Error::Io`] if the lock cannot be acquired (frame is busy).
     ///
+    /// # Scope of the lock
+    ///
+    /// `trylock` is **cooperative between mmap readers** sharing a frame — it
+    /// does not guarantee that the underlying dma-buf slot will not be reused
+    /// by the hardware decoder. For `Frame`s obtained from
+    /// [`Decoder::decode_frame`](crate::decoder::Decoder::decode_frame), slot
+    /// retention is controlled by the `Frame`'s *lifetime*: as long as the
+    /// `Frame` is alive, the decoder will not recycle its slot. See
+    /// [`Decoder::create`](crate::decoder::Decoder::create) for the full
+    /// retention contract.
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -469,6 +480,12 @@ impl Frame {
     /// # Errors
     ///
     /// Returns [`Error::LibraryNotLoaded`] if `libvideostream.so` cannot be loaded.
+    /// Returns [`Error::SymbolNotFound`] if `vsl_frame_fourcc` is not exported by
+    /// the loaded library (older library builds). Previously this condition
+    /// would panic during FFI symbol resolution (via the `vsl!` macro's
+    /// `.expect("Expected function, got error.")` on the missing
+    /// `libloading` symbol), giving callers no way to recover cleanly when
+    /// running against an older runtime.
     ///
     /// # Example
     ///
@@ -483,7 +500,11 @@ impl Frame {
     /// # Ok::<(), videostream::Error>(())
     /// ```
     pub fn fourcc(&self) -> Result<u32, Error> {
-        Ok(vsl!(vsl_frame_fourcc(self.ptr)))
+        let lib = ffi::init()?;
+        if lib.vsl_frame_fourcc.is_err() {
+            return Err(Error::SymbolNotFound("vsl_frame_fourcc"));
+        }
+        Ok(unsafe { lib.vsl_frame_fourcc(self.ptr) })
     }
 
     pub fn width(&self) -> Result<i32, Error> {

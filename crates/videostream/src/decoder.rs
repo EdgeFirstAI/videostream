@@ -172,7 +172,24 @@ impl Decoder {
     /// # Arguments
     ///
     /// * `codec` - The video codec type (H.264 or H.265)
-    /// * `fps` - Expected frame rate (used for buffer management)
+    /// * `fps` - Frame-rate hint historically forwarded to the C API. The
+    ///   current native backends (`decoder_v4l2`, `decoder_hantro`) accept
+    ///   this argument but do not use it to size any buffer pool or drive
+    ///   timing — the V4L2 backend allocates a fixed CAPTURE buffer count
+    ///   and the Hantro backend stores the value without acting on it.
+    ///   Callers should pass a plausible stream frame rate for forward
+    ///   compatibility; a future release (tracked for 3.x) will either
+    ///   wire the hint through to the backend or remove the parameter.
+    ///
+    /// # Retention contract
+    ///
+    /// While a [`Frame`](crate::frame::Frame) returned from
+    /// [`decode_frame`](Self::decode_frame) is alive, the decoder will not
+    /// recycle that frame's backing dma-buf slot. Dropping a `Frame` returns
+    /// its slot to the pool immediately. The number of frames that may be
+    /// retained concurrently is bounded by the backend's internal pool size
+    /// (currently fixed); over-retention will stall the decoder when the
+    /// pool runs out of free slots.
     ///
     /// # Errors
     ///
@@ -209,7 +226,8 @@ impl Decoder {
     /// # Arguments
     ///
     /// * `codec` - The video codec type (H.264 or H.265)
-    /// * `fps` - Expected frame rate (used for buffer management)
+    /// * `fps` - Frame-rate hint. See [`Decoder::create`] for the caveat
+    ///   that current native backends accept but do not act on this value.
     /// * `backend` - Which backend to use (Auto, Hantro, or V4L2)
     ///
     /// # Errors

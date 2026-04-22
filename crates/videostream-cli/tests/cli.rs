@@ -304,8 +304,10 @@ fn test_record_and_convert_to_mp4() {
         .arg("60")
         .arg("--device")
         .arg("/dev/video3")
-        // Timeout is a safety net; process should exit after recording frames
-        .timeout(Duration::from_secs(30))
+        // Timeout is a safety net; process should exit after recording frames.
+        // Bumped from 30s -> 60s to match the convert-step allowance below;
+        // both steps see the same coverage instrumentation slowdown on CI.
+        .timeout(Duration::from_secs(60))
         .assert()
         .success();
 
@@ -317,7 +319,7 @@ fn test_record_and_convert_to_mp4() {
         .arg(&h264_file)
         .arg(&mp4_file)
         // Allow more time for conversion with coverage instrumentation overhead
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60))
         .assert()
         .success()
         .stderr(predicate::str::contains("Conversion complete"));
@@ -493,7 +495,10 @@ fn test_record_invalid_device() {
         .arg("/dev/videoNONEXISTENT")
         .arg("--frames")
         .arg("10")
-        .timeout(Duration::from_secs(5))
+        // Allow for coverage instrumentation overhead on the CI hardware
+        // runner: a bare binary exit with exit code 3 still has to wait for
+        // llvm-profdata flush of accumulated .profraw blocks.
+        .timeout(Duration::from_secs(30))
         .assert()
         .failure()
         .code(3); // CameraNotFound

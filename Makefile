@@ -141,10 +141,17 @@ verify-version:
 	echo "Expected version: $$VERSION"; \
 	echo -n "Cargo.toml: "; grep "^version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "Cargo.toml (videostream-sys dep): "; grep "videostream-sys = { version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
+	echo -n "Cargo.toml (videostream dep): "; grep "^videostream = { version = \"$$VERSION\"" Cargo.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "pyproject.toml: "; grep "^version = \"$$VERSION\"" pyproject.toml && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "doc/conf.py: "; grep "^version = '$$VERSION'" doc/conf.py && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "CHANGELOG.md: "; grep "^\#\# \[$$VERSION\]" CHANGELOG.md && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
 	echo -n "NOTICE (videostream-sys): "; grep "videostream-sys $$VERSION" NOTICE && echo "✓" || (echo "✗ MISMATCH" && exit 1); \
+	echo -n "crates/videostream-sys/src/ffi.rs (VSL_VERSION const): "; grep "^pub const VSL_VERSION: &\[u8; [0-9]*\] = b\"$$VERSION\\\\0\";" crates/videostream-sys/src/ffi.rs && echo "✓" || (echo "✗ MISMATCH (regenerate with crates/videostream-sys/update.sh)" && exit 1); \
+	for cdx in crates/videostream/videostream.cdx.json crates/videostream-sys/videostream-sys.cdx.json crates/videostream-cli/videostream-cli.cdx.json; do \
+		actual=$$(jq -r '.metadata.component.version' $$cdx 2>/dev/null); \
+		echo -n "$$cdx: $$actual "; \
+		[ "$$actual" = "$$VERSION" ] && echo "✓" || { echo "✗ MISMATCH (regenerate with make sbom)"; exit 1; }; \
+	done; \
 	echo "All version files verified ✓"
 
 # Build Debian packages
