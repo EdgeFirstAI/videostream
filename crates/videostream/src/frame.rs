@@ -339,10 +339,19 @@ impl Frame {
         Ok(())
     }
 
-    /// Returns the frame sequence number.
+    /// Returns the IPC host-assigned serial number for this frame.
     ///
-    /// Serial numbers increment for each frame posted by a host, allowing clients
-    /// to detect dropped frames.
+    /// Host-side monotonic counter incremented for each frame posted by a
+    /// [`Host`](crate::host::Host) to its subscribed clients, allowing
+    /// clients to detect dropped frames at the IPC boundary.
+    ///
+    /// This is **not** the V4L2 / libcamera capture-source sequence
+    /// number — for that, see
+    /// [`CameraBuffer::sequence`](crate::camera::CameraBuffer::sequence),
+    /// which surfaces the driver's own frame counter. The two counters
+    /// are independent and may diverge: a dropped frame on the camera
+    /// side leaves a gap in `CameraBuffer::sequence`, a dropped frame on
+    /// the IPC side leaves a gap in `Frame::serial`.
     ///
     /// # Errors
     ///

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Au-Zone Technologies
 
-use crate::{fourcc::FourCC, Error};
+use crate::{
+    colorimetry::{ColorEncoding, ColorRange, ColorSpace, ColorTransfer},
+    fourcc::FourCC,
+    Error,
+};
 use dma_buf::DmaBuf;
 use std::{
     ffi::{c_int, CString},
@@ -307,6 +311,107 @@ impl CameraReader {
         self.format
     }
 
+    /// Returns the negotiated color primaries (`color_space` in the
+    /// EdgeFirst [`CameraFrame.msg`][msg] schema), captured from the
+    /// V4L2 format at `init` time.
+    ///
+    /// Returns `Ok(None)` if the driver left the field as
+    /// `V4L2_COLORSPACE_DEFAULT`, or if the driver-reported value does
+    /// not map to a surfaced [`ColorSpace`] variant. Callers may infer a
+    /// default from [`format`](Self::format) when this returns `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export `vsl_camera_color_space`.
+    ///
+    /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
+    pub fn color_space(&self) -> Result<Option<ColorSpace>, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_color_space.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_space"));
+        }
+        Ok(ColorSpace::from_v4l2(unsafe {
+            lib.vsl_camera_color_space(self.ptr)
+        }))
+    }
+
+    /// Returns the negotiated transfer function (`color_transfer` in
+    /// the EdgeFirst [`CameraFrame.msg`][msg] schema), captured from
+    /// the V4L2 format at `init` time.
+    ///
+    /// Returns `Ok(None)` if the driver left the field as
+    /// `V4L2_XFER_FUNC_DEFAULT`, or if the driver-reported value does
+    /// not map to a surfaced [`ColorTransfer`] variant (e.g. `OPRGB`,
+    /// `SMPTE240M`, `DCI_P3`). Callers may infer a default from
+    /// [`format`](Self::format) when this returns `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export `vsl_camera_color_transfer`.
+    ///
+    /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
+    pub fn color_transfer(&self) -> Result<Option<ColorTransfer>, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_color_transfer.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_transfer"));
+        }
+        Ok(ColorTransfer::from_v4l2(unsafe {
+            lib.vsl_camera_color_transfer(self.ptr)
+        }))
+    }
+
+    /// Returns the negotiated YCbCr encoding matrix (`color_encoding`
+    /// in the EdgeFirst [`CameraFrame.msg`][msg] schema), captured from
+    /// the V4L2 format at `init` time.
+    ///
+    /// Not applicable to RGB formats — drivers typically return
+    /// `V4L2_YCBCR_ENC_DEFAULT` in that case, which this accessor
+    /// surfaces as `Ok(None)`. Also returns `Ok(None)` for V4L2 values
+    /// that do not map to a surfaced [`ColorEncoding`] variant
+    /// (`XV601`, `XV709`, `SYCC`, `BT2020_CONST_LUM`, `SMPTE240M`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export `vsl_camera_color_encoding`.
+    ///
+    /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
+    pub fn color_encoding(&self) -> Result<Option<ColorEncoding>, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_color_encoding.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_encoding"));
+        }
+        Ok(ColorEncoding::from_v4l2(unsafe {
+            lib.vsl_camera_color_encoding(self.ptr)
+        }))
+    }
+
+    /// Returns the negotiated quantization range (`color_range` in the
+    /// EdgeFirst [`CameraFrame.msg`][msg] schema), captured from the
+    /// V4L2 format at `init` time.
+    ///
+    /// Returns `Ok(None)` if the driver left the field as
+    /// `V4L2_QUANTIZATION_DEFAULT`, or if the driver-reported value
+    /// does not map to a surfaced [`ColorRange`] variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export `vsl_camera_color_range`.
+    ///
+    /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
+    pub fn color_range(&self) -> Result<Option<ColorRange>, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_color_range.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_range"));
+        }
+        Ok(ColorRange::from_v4l2(unsafe {
+            lib.vsl_camera_color_range(self.ptr)
+        }))
+    }
+
     pub fn read(&self) -> Result<CameraBuffer<'_>, Error> {
         let ptr = vsl!(vsl_camera_get_data(self.ptr));
         if ptr.is_null() {
@@ -400,6 +505,46 @@ impl CameraBuffer<'_> {
             return Err(Error::SymbolNotFound("vsl_camera_buffer_bytes_per_line"));
         }
         Ok(unsafe { lib.vsl_camera_buffer_bytes_per_line(self.ptr) })
+    }
+
+    /// Returns the capture-source frame sequence number for this buffer.
+    ///
+    /// Monotonic frame counter set by the capture source; increments
+    /// per successfully delivered frame and may skip when frames are
+    /// dropped by the driver or pipeline. On the V4L2 backend this
+    /// mirrors `struct v4l2_buffer::sequence` as populated by
+    /// `VIDIOC_DQBUF`; a future libcamera backend would mirror
+    /// `libcamera::FrameMetadata::sequence`.
+    ///
+    /// Gap-interpretation and reset-on-stream-start semantics are
+    /// backend- and driver-specific. Some drivers (notably certain USB
+    /// UVC webcams) never populate the field and always return 0;
+    /// callers relying on this counter for drop detection should
+    /// verify that consecutive reads actually increment before
+    /// trusting the value.
+    ///
+    /// The counter is `u32` and wraps at [`u32::MAX`] — at 60 fps that
+    /// is ~2.3 years of continuous streaming. The EdgeFirst
+    /// [`CameraFrame.msg`][msg] schema's `seq` field is `uint64`;
+    /// upstream serialisers that need the wider type are responsible
+    /// for extending this `u32` across wraps.
+    ///
+    /// This is distinct from [`Frame::serial`](crate::frame::Frame::serial),
+    /// which is an IPC-host-assigned counter set when a host posts a
+    /// [`Frame`](crate::frame::Frame) to subscribed clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export `vsl_camera_buffer_sequence`.
+    ///
+    /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
+    pub fn sequence(&self) -> Result<u32, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_buffer_sequence.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_buffer_sequence"));
+        }
+        Ok(unsafe { lib.vsl_camera_buffer_sequence(self.ptr) })
     }
 
     pub fn width(&self) -> i32 {
@@ -709,6 +854,48 @@ mod tests {
 
         let result = camera.open();
         assert!(result.is_err());
+    }
+
+    /// Verifies the `Error::SymbolNotFound` variant for each new 2.5
+    /// accessor carries the exact C symbol name string. A typo in the
+    /// string literal in `camera.rs` would be invisible at runtime
+    /// unless an actual older-ABI `libvideostream.so` is loaded — this
+    /// test catches the typo at compile time in CI. Symbol names are
+    /// compared to the bytes the FFI loader uses in
+    /// `videostream-sys/src/ffi.rs`.
+    #[test]
+    fn test_new_accessor_symbol_names() {
+        let cases: &[(Error, &str)] = &[
+            (
+                Error::SymbolNotFound("vsl_camera_buffer_sequence"),
+                "vsl_camera_buffer_sequence",
+            ),
+            (
+                Error::SymbolNotFound("vsl_camera_color_space"),
+                "vsl_camera_color_space",
+            ),
+            (
+                Error::SymbolNotFound("vsl_camera_color_transfer"),
+                "vsl_camera_color_transfer",
+            ),
+            (
+                Error::SymbolNotFound("vsl_camera_color_encoding"),
+                "vsl_camera_color_encoding",
+            ),
+            (
+                Error::SymbolNotFound("vsl_camera_color_range"),
+                "vsl_camera_color_range",
+            ),
+        ];
+        for (err, expected) in cases {
+            let display = format!("{}", err);
+            assert!(
+                display.contains(expected),
+                "Error display {:?} should contain symbol name {:?}",
+                display,
+                expected,
+            );
+        }
     }
 
     #[test]

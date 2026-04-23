@@ -76,6 +76,46 @@ vsl_camera_buffer_bytes_per_line(const vsl_camera_buffer* buffer)
     return buffer->bytes_per_line;
 }
 
+VSL_API
+u_int32_t
+vsl_camera_buffer_sequence(const vsl_camera_buffer* buffer)
+{
+    if (!buffer) { return 0; }
+    return buffer->sequence;
+}
+
+VSL_API
+u_int32_t
+vsl_camera_color_space(const vsl_camera* ctx)
+{
+    if (!ctx) { return 0; }
+    return ctx->color_space;
+}
+
+VSL_API
+u_int32_t
+vsl_camera_color_transfer(const vsl_camera* ctx)
+{
+    if (!ctx) { return 0; }
+    return ctx->color_transfer;
+}
+
+VSL_API
+u_int32_t
+vsl_camera_color_encoding(const vsl_camera* ctx)
+{
+    if (!ctx) { return 0; }
+    return ctx->color_encoding;
+}
+
+VSL_API
+u_int32_t
+vsl_camera_color_range(const vsl_camera* ctx)
+{
+    if (!ctx) { return 0; }
+    return ctx->color_range;
+}
+
 static int
 xioctl(int fh, int request, void* arg)
 {
@@ -140,6 +180,7 @@ read_frame(vsl_camera* ctx)
 
     vsl_camera_buffer* vslbuf = &ctx->buffers[buf.index];
     memcpy(&vslbuf->timestamp, &buf.timestamp, sizeof(struct timeval));
+    vslbuf->sequence = buf.sequence;
 
     return vslbuf;
 }
@@ -700,6 +741,18 @@ vsl_camera_init_device(vsl_camera* ctx,
 
     u_int32_t bpl = ctx->not_plane ? fmt.fmt.pix.bytesperline
                                    : fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
+
+    if (ctx->not_plane) {
+        ctx->color_space    = fmt.fmt.pix.colorspace;
+        ctx->color_transfer = fmt.fmt.pix.xfer_func;
+        ctx->color_encoding = fmt.fmt.pix.ycbcr_enc;
+        ctx->color_range    = fmt.fmt.pix.quantization;
+    } else {
+        ctx->color_space    = fmt.fmt.pix_mp.colorspace;
+        ctx->color_transfer = fmt.fmt.pix_mp.xfer_func;
+        ctx->color_encoding = fmt.fmt.pix_mp.ycbcr_enc;
+        ctx->color_range    = fmt.fmt.pix_mp.quantization;
+    }
 
     for (unsigned int i = 0; i < ctx->n_buffers; i++) {
         ctx->buffers[i].fourcc = ctx->not_plane ? fmt.fmt.pix.pixelformat
