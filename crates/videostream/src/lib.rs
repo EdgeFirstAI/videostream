@@ -308,6 +308,16 @@ pub mod camera;
 /// four-character-code pixel formats (e.g., "YUYV", "NV12").
 pub mod fourcc;
 
+/// Colorimetry enums for camera capture formats.
+///
+/// Provides [`ColorSpace`](colorimetry::ColorSpace),
+/// [`ColorTransfer`](colorimetry::ColorTransfer),
+/// [`ColorEncoding`](colorimetry::ColorEncoding), and
+/// [`ColorRange`](colorimetry::ColorRange) — the four colorimetry fields
+/// returned by [`CameraReader`](camera::CameraReader) accessors. Naming
+/// follows the EdgeFirst `CameraFrame.msg` schema.
+pub mod colorimetry;
+
 /// V4L2 device discovery and enumeration.
 ///
 /// Provides [`DeviceEnumerator`](v4l2::DeviceEnumerator) for discovering

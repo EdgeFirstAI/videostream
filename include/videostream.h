@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "2.4.0"
+#define VSL_VERSION "2.5.0"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -161,6 +161,8 @@
 #define VSL_VERSION_2_0 VSL_VERSION_ENCODE(2, 0, 0)
 #define VSL_VERSION_2_1 VSL_VERSION_ENCODE(2, 1, 0)
 #define VSL_VERSION_2_2 VSL_VERSION_ENCODE(2, 2, 0)
+#define VSL_VERSION_2_4 VSL_VERSION_ENCODE(2, 4, 0)
+#define VSL_VERSION_2_5 VSL_VERSION_ENCODE(2, 5, 0)
 
 #ifndef VSL_TARGET_VERSION
 #define VSL_TARGET_VERSION VSL_VERSION_2_2
@@ -263,6 +265,17 @@
 #define VSL_DEPRECATED_SINCE_2_4 VSL_DEPRECATED(2.4)
 #define VSL_DEPRECATED_SINCE_2_4_FOR(replacement) \
     VSL_DEPRECATED_FOR(2.4, replacement)
+#endif
+
+#if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(2, 5, 0)
+#define VSL_AVAILABLE_SINCE_2_5 VSL_UNAVAILABLE(2.5)
+#define VSL_DEPRECATED_SINCE_2_5
+#define VSL_DEPRECATED_SINCE_2_5_FOR(replacement)
+#else
+#define VSL_AVAILABLE_SINCE_2_5
+#define VSL_DEPRECATED_SINCE_2_5 VSL_DEPRECATED(2.5)
+#define VSL_DEPRECATED_SINCE_2_5_FOR(replacement) \
+    VSL_DEPRECATED_FOR(2.5, replacement)
 #endif
 
 #define VSL_FOURCC(a, b, c, d)                                         \
@@ -1643,6 +1656,86 @@ VSL_API
 int
 vsl_camera_get_queued_buf_count(const vsl_camera* ctx);
 
+/*
+ * Camera colorimetry accessors — `vsl_camera_color_space`,
+ * `_color_transfer`, `_color_encoding`, `_color_range`.
+ *
+ * The four accessors that follow return the capture-format colorimetry
+ * captured at `vsl_camera_init_device()` time. Values are the raw V4L2
+ * UAPI enum constants — `V4L2_COLORSPACE_*`, `V4L2_XFER_FUNC_*`,
+ * `V4L2_YCBCR_ENC_*`, `V4L2_QUANTIZATION_*` — from `<linux/videodev2.h>`.
+ * The library treats the V4L2 enum set as the canonical colorimetry
+ * vocabulary; a future libcamera backend will normalise its
+ * `libcamera::ColorSpace` presets into this vocabulary.
+ *
+ * Naming follows the EdgeFirst schema
+ * (`edgefirst_msgs/msg/CameraFrame.msg`): `color_space` (primaries),
+ * `color_transfer` (transfer function), `color_encoding` (YCbCr
+ * encoding), `color_range` (quantization / range).
+ *
+ * A returned value of 0 is the V4L2 `_DEFAULT` sentinel — the driver
+ * did not resolve the field to a concrete value. Callers may infer a
+ * default from the negotiated pixel format, or treat the field as
+ * unknown. Values are constant between `vsl_camera_init_device()` and
+ * `vsl_camera_uninit_device()`.
+ */
+
+/**
+ * Returns the V4L2 color space (primaries) negotiated for the camera.
+ *
+ * @param ctx Camera context
+ * @return `V4L2_COLORSPACE_*` enum value, or 0 if `ctx` is NULL or the
+ *         driver left the field as `V4L2_COLORSPACE_DEFAULT`.
+ * @since 2.5
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_5
+VSL_API
+uint32_t
+vsl_camera_color_space(const vsl_camera* ctx);
+
+/**
+ * Returns the V4L2 transfer function negotiated for the camera.
+ *
+ * @param ctx Camera context
+ * @return `V4L2_XFER_FUNC_*` enum value, or 0 if `ctx` is NULL or the
+ *         driver left the field as `V4L2_XFER_FUNC_DEFAULT`.
+ * @since 2.5
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_5
+VSL_API
+uint32_t
+vsl_camera_color_transfer(const vsl_camera* ctx);
+
+/**
+ * Returns the V4L2 YCbCr encoding negotiated for the camera.
+ *
+ * @param ctx Camera context
+ * @return `V4L2_YCBCR_ENC_*` enum value, or 0 if `ctx` is NULL or the
+ *         driver left the field as `V4L2_YCBCR_ENC_DEFAULT`.
+ * @since 2.5
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_5
+VSL_API
+uint32_t
+vsl_camera_color_encoding(const vsl_camera* ctx);
+
+/**
+ * Returns the V4L2 quantization (color range) negotiated for the camera.
+ *
+ * @param ctx Camera context
+ * @return `V4L2_QUANTIZATION_*` enum value, or 0 if `ctx` is NULL or the
+ *         driver left the field as `V4L2_QUANTIZATION_DEFAULT`.
+ * @since 2.5
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_5
+VSL_API
+uint32_t
+vsl_camera_color_range(const vsl_camera* ctx);
+
 /**
  * Returns the mmap memory pointer of the camera buffer.
  *
@@ -1748,6 +1841,41 @@ VSL_AVAILABLE_SINCE_2_4
 VSL_API
 uint32_t
 vsl_camera_buffer_bytes_per_line(const vsl_camera_buffer* buffer);
+
+/**
+ * Returns the capture-source frame sequence number for this buffer.
+ *
+ * Monotonic frame counter set by the capture source; increments per
+ * successfully delivered frame and may skip when frames are dropped by
+ * the driver or pipeline. Backend-neutral by design: on the V4L2
+ * backend this mirrors `struct v4l2_buffer::sequence` as populated by
+ * VIDIOC_DQBUF; a future libcamera backend would mirror
+ * `libcamera::FrameMetadata::sequence`.
+ *
+ * Semantics of gaps and the reset point on stream start are driver-
+ * and backend-specific and are not defined by this API — consult the
+ * underlying source's documentation before interpreting deltas. Some
+ * drivers (notably certain USB UVC webcams) do not populate the field
+ * and leave it permanently at 0; callers relying on the counter for
+ * drop detection should verify that consecutive reads actually
+ * increment before trusting the value.
+ *
+ * The counter is 32-bit and wraps at `UINT32_MAX`. At 60 fps that is
+ * ~2.3 years of continuous streaming. If the EdgeFirst schema's wider
+ * `uint64` sequence is required, the caller is responsible for
+ * extending this `uint32_t` across wraps.
+ *
+ * @param buffer Camera buffer from vsl_camera_get_data()
+ * @return Sequence number. Returns 0 if buffer is NULL (which is
+ *         indistinguishable from a legitimate sequence of 0 — callers
+ *         must NULL-check the buffer themselves).
+ * @since 2.5
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_5
+VSL_API
+uint32_t
+vsl_camera_buffer_sequence(const vsl_camera_buffer* buffer);
 
 /**
  * Reads the timestamp of the camera buffer.

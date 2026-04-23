@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-04-22
+
+Feature release exposing the V4L2 capture-source frame counter and
+format-level colorimetry metadata on the camera API, with naming and
+values aligned to the EdgeFirst
+[`CameraFrame.msg`](https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg)
+schema. All additions are source- and ABI-compatible; no existing
+symbols change.
+
+### Added
+
+- **`vsl_camera_buffer_sequence()` / `CameraBuffer::sequence()`** — per-buffer
+  monotonic frame counter from the capture source. Mirrors
+  `struct v4l2_buffer::sequence` on the V4L2 backend (populated by
+  `VIDIOC_DQBUF`). Backend-neutral wording so a future libcamera backend
+  can map it to `libcamera::FrameMetadata::sequence` without a doc
+  change. Tagged `VSL_AVAILABLE_SINCE_2_5`.
+- **`vsl_camera_color_space()`, `vsl_camera_color_transfer()`,
+  `vsl_camera_color_encoding()`, `vsl_camera_color_range()`** — camera-level
+  colorimetry accessors returning raw V4L2 enum values
+  (`V4L2_COLORSPACE_*`, `V4L2_XFER_FUNC_*`, `V4L2_YCBCR_ENC_*`,
+  `V4L2_QUANTIZATION_*`) captured from the `v4l2_format` struct at
+  `vsl_camera_init_device()` time. Values are constant across a
+  streamon/streamoff cycle; a return of 0 is the V4L2 `_DEFAULT`
+  sentinel. Tagged `VSL_AVAILABLE_SINCE_2_5`.
+- **`colorimetry` Rust module** — `ColorSpace`, `ColorTransfer`,
+  `ColorEncoding`, `ColorRange` enums matching the `CameraFrame.msg`
+  vocabulary (`bt709`, `bt2020`, `srgb`, `smpte170m`, `pq`, `hlg`,
+  `linear`, `bt601`, `full`, `limited`). All enums are
+  `#[non_exhaustive]` so future V4L2 / libcamera additions do not
+  require a breaking change. `CameraReader::color_space()`,
+  `color_transfer()`, `color_encoding()`, `color_range()` return
+  `Result<Option<T>, Error>` where `None` expresses the V4L2 `_DEFAULT`
+  (driver did not resolve) — idiomatic per Microsoft Pragmatic Rust
+  Guidelines instead of a sentinel `u32`. All accessors use the
+  `libloading` symbol-not-found pattern established by `bytes_per_line`
+  in 2.4, so older `libvideostream.so` builds surface
+  `Error::SymbolNotFound` rather than aborting.
+
+### Changed
+
+- `Frame::serial()` docstring clarified to disambiguate the IPC
+  host-assigned counter (what `Frame::serial` returns) from the
+  capture-source counter (what `CameraBuffer::sequence` returns). No
+  behavior change; the two counters are independent.
+
 ## [2.4.0] - 2026-04-21
 
 Feature release adding the MPLANE-aware camera row-stride accessor requested
