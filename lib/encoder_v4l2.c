@@ -73,7 +73,9 @@ vsl_to_v4l2_input_format(uint32_t fourcc, int* num_planes)
         *num_planes = 1;
         return VSI_V4L2_PIX_FMT_AR24; // AR24 for ARGB on vsi_v4l2enc
     case VSL_FOURCC('N', 'V', '1', '2'):
-        *num_planes = 2;
+        *num_planes = 1; // Contiguous NV12 (single buffer for Y+UV), matches
+                         // decoder strategy. V4L2_PIX_FMT_NV12M would be the
+                         // 2-plane variant but requires multi-fd DMA-BUF import.
         return V4L2_PIX_FMT_NV12;
     case VSL_FOURCC('Y', 'U', 'Y', 'V'):
     case VSL_FOURCC('Y', 'U', 'Y', '2'):
@@ -167,12 +169,12 @@ setup_output_planes(struct vsl_encoder_v4l2* enc,
                     size_t                   frame_size)
 {
     if (enc->num_input_planes == 1) {
-        // Single-plane packed format (BGRA, YUYV, etc.)
+        // Contiguous format (NV12, BGRA, YUYV, etc.)
         planes[0].m.fd      = src_fd;
         planes[0].length    = frame_size;
         planes[0].bytesused = frame_size;
     } else {
-        // Multi-plane format (NV12: plane 0 = Y, plane 1 = UV)
+        // Multi-plane format (e.g. NV12M: plane 0 = Y, plane 1 = UV)
         size_t y_size  = enc->width * enc->height;
         size_t uv_size = enc->width * enc->height / 2;
 
@@ -209,11 +211,11 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
         return -1;
     }
 
-    // Compute per-format sizeimage for plane 0 (and plane 1 for NV12 MPLANE)
+    // Compute per-format sizeimage for plane 0
     size_t plane0_size;
     size_t plane1_size = 0;
     if (num_planes == 2) {
-        // Semi-planar NV12 in MPLANE mode: Y + UV as separate plane entries
+        // Multi-plane format (e.g. NV12M): Y + UV as separate plane entries
         plane0_size = (size_t) width * height;     // Y
         plane1_size = (size_t) width * height / 2; // UV
     } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUYV) {
@@ -240,8 +242,7 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
             fmt.fmt.pix_mp.plane_fmt[1].sizeimage = plane1_size;
         }
     } else {
-        // Single-plane API: NV12 is always contiguous (1 buffer). Collapse
-        // the num_planes==2 case into a single contiguous sizeimage.
+        // Single-plane API: always one contiguous buffer
         fmt.fmt.pix.width       = width;
         fmt.fmt.pix.height      = height;
         fmt.fmt.pix.pixelformat = v4l2_input_fmt;

@@ -794,7 +794,7 @@ ensure_capture_streaming(struct vsl_decoder_v4l2* dec)
 // made per-device at open time.
 // Returns: 0 on success, -1 on failure
 static int
-verify_m2m_capability(struct vsl_decoder_v4l2* dec)
+verify_m2m_capability(struct vsl_decoder_v4l2* dec, const char* dev_path)
 {
     struct v4l2_capability cap;
     memset(&cap, 0, sizeof(cap));
@@ -825,7 +825,8 @@ verify_m2m_capability(struct vsl_decoder_v4l2* dec)
 
 #ifndef NDEBUG
     fprintf(stderr,
-            "[decoder_v4l2] opened %s (%s mode)\n",
+            "[decoder_v4l2] opened %s (%s, %s mode)\n",
+            dev_path,
             cap.card,
             dec->multiplanar ? "MPLANE" : "single-plane");
 #endif
@@ -1004,7 +1005,7 @@ vsl_decoder_create_v4l2(uint32_t codec, int fps)
     }
 
     // Verify device capabilities and resolve MPLANE vs single-plane mode
-    if (verify_m2m_capability(dec) < 0) {
+    if (verify_m2m_capability(dec, dev_path) < 0) {
         close(dec->fd);
         free(dec);
         return NULL;
