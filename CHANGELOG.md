@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MPLANE V4L2 support for encoder and decoder** — the V4L2 codec backend now
+  auto-detects whether the hardware exposes `V4L2_CAP_VIDEO_M2M` (single-plane,
+  i.MX 8M Plus Hantro) or `V4L2_CAP_VIDEO_M2M_MPLANE` (multi-plane, i.MX 95
+  Wave6) and selects the correct buffer type at open time. No API changes
+  required; existing callers work on both platforms transparently.
+
 ## [2.5.0] - 2026-04-22
 
 Feature release exposing the V4L2 capture-source frame counter and

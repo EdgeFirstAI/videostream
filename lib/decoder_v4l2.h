@@ -65,6 +65,13 @@ struct vsl_decoder_v4l2 {
 
     int fd; // V4L2 device file descriptor
 
+    // Queue buffer types resolved from VIDIOC_QUERYCAP. i.MX 8M Plus Hantro
+    // uses V4L2_BUF_TYPE_VIDEO_{OUTPUT,CAPTURE}; i.MX 95 Wave6 uses the
+    // ..._MPLANE variants. The two APIs are mutually exclusive per device.
+    uint32_t output_type;
+    uint32_t capture_type;
+    bool     multiplanar;
+
     // Codec configuration
     VSLDecoderCodec codec;      // H.264 or HEVC
     int             fps;        // Frame rate hint
