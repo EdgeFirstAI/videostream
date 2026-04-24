@@ -74,8 +74,10 @@ vsl_to_v4l2_input_format(uint32_t fourcc, int* num_planes)
         return VSI_V4L2_PIX_FMT_AR24; // AR24 for ARGB on vsi_v4l2enc
     case VSL_FOURCC('N', 'V', '1', '2'):
         *num_planes = 1; // Contiguous NV12 (single buffer for Y+UV), matches
-                         // decoder strategy. V4L2_PIX_FMT_NV12M would be the
-                         // 2-plane variant but requires multi-fd DMA-BUF import.
+                         // decoder strategy. V4L2_PIX_FMT_NV12M is the 2-plane
+                         // variant and would require explicit multi-plane
+                         // DMA-BUF import handling with correct per-plane
+                         // offsets, rather than this single-buffer path.
         return V4L2_PIX_FMT_NV12;
     case VSL_FOURCC('Y', 'U', 'Y', 'V'):
     case VSL_FOURCC('Y', 'U', 'Y', '2'):

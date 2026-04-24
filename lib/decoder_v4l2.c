@@ -221,6 +221,14 @@ read_capture_format(struct vsl_decoder_v4l2* dec)
     fmt.type = dec->capture_type;
 
     if (dec->multiplanar) {
+        // Get current negotiated format first (preserves width/height)
+        if (xioctl(dec->fd, VIDIOC_G_FMT, &fmt) < 0) {
+            fprintf(stderr,
+                    "[decoder_v4l2] VIDIOC_G_FMT CAPTURE failed: %s\n",
+                    strerror(errno));
+            return -1;
+        }
+        // Override pixelformat and num_planes for contiguous NV12
         fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
         fmt.fmt.pix_mp.num_planes  = 1;
         if (xioctl(dec->fd, VIDIOC_S_FMT, &fmt) < 0) {

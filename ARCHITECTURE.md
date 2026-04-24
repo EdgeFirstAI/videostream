@@ -407,8 +407,9 @@ Key differences:
 | Bytes used | `buf.bytesused` | `planes[0].bytesused` |
 | `buf.length` meaning | Buffer size in bytes | Number of planes |
 
-For MPLANE, the decoder forces contiguous NV12 with `num_planes=1` to avoid the
-NV12M multi-plane format (multi-FD DMA-BUF import is not implemented).
+For MPLANE, the decoder currently forces contiguous NV12 with `num_planes=1`
+because NV12M handling would require multi-plane buffer management and
+per-plane DMA-BUF offset plumbing that is not implemented in this path.
 
 ### Device Discovery
 
