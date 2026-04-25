@@ -573,7 +573,7 @@ while (running) {
 **When to use VideoStream:**
 
 - Need V4L2 camera capture with DmaBuf export for DMA operation
-- Require hardware H.264/H.265 encoding (NXP i.MX8 platforms)
+- Require hardware H.264/H.265 encoding (NXP i.MX 8M Plus / i.MX 95 platforms)
 - Building standalone applications needing camera + codec APIs
 - Building multi-process vision pipelines with GStreamer
 - Need local inter-process frame sharing without network transport

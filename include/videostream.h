@@ -460,8 +460,10 @@ typedef enum {
     /**
      * Force V4L2 kernel driver backend.
      *
-     * Uses the vsi_v4l2 mem2mem driver. Provides:
-     * - 37-56x faster decode performance
+     * Uses the V4L2 mem2mem driver (vsi_v4l2 on i.MX 8M Plus, wave6 on
+     * i.MX 95). The library auto-detects single-plane M2M vs MPLANE M2M
+     * at device open time. Provides:
+     * - 37-56x faster decode performance (vs Hantro libcodec.so)
      * - Stable encoder (vs crashing libcodec.so)
      * - Standard Linux API
      */
@@ -1377,7 +1379,8 @@ vsl_encoder_release(VSLEncoder* encoder);
  * @brief Encode frame
  *
  * Encodes the source frame into the destination frame using hardware
- * acceleration (Hantro VPU on i.MX8). First call initializes the encoder with
+ * acceleration (Hantro VPU on i.MX 8M Plus, Wave6 VPU on i.MX 95).
+ * First call initializes the encoder with
  * the given parameters. Subsequent calls must use identical source/destination
  * dimensions, formats, and crop region.
  *
@@ -1406,8 +1409,8 @@ vsl_encode_frame(VSLEncoder*    encoder,
  * @brief Creates a new output frame for encoder
  *
  * Allocates a frame suitable for receiving encoded output from
- * vsl_encode_frame(). The frame uses encoder-specific memory (e.g., Hantro VPU
- * EWL memory on i.MX8) for efficient hardware encoding.
+ * vsl_encode_frame(). The frame uses encoder-specific memory for efficient
+ * hardware encoding.
  *
  * @param encoder VSLEncoder instance
  * @param width Encoded frame width in pixels (should match encoder source)

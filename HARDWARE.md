@@ -23,6 +23,8 @@ This document catalogs tested hardware configurations for VideoStream.
 | vsi_v4l2dec | Decoder | H.264, HEVC |
 | mxc-jpeg | JPEG | Encode/Decode |
 
+**V4L2 API:** Single-plane M2M (`V4L2_CAP_VIDEO_M2M`). The Hantro driver does not support the MPLANE API variant.
+
 **Note:** The Hantro backend also exposes a proprietary API via `/dev/mxc_hantro*`. VideoStream supports both the V4L2 and Hantro backends on this platform.
 
 ### Cameras
@@ -130,6 +132,8 @@ This document catalogs tested hardware configurations for VideoStream.
 | wave6-dec | Decoder | H.264, HEVC | MMAP, DMABUF |
 | mxc-jpeg (enc) | JPEG Encoder | JPEG | MMAP, DMABUF |
 | mxc-jpeg (dec) | JPEG Decoder | JPEG | MMAP, DMABUF |
+
+**V4L2 API:** Multi-plane M2M (`V4L2_CAP_VIDEO_M2M_MPLANE`). The Wave6 driver requires MPLANE buffer types; single-plane M2M ioctls are rejected.
 
 Device paths vary across boots. VideoStream discovers devices by probing driver name and V4L2 capabilities rather than hardcoding paths.
 

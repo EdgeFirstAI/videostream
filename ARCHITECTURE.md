@@ -1,7 +1,7 @@
 # VideoStream Library - Architecture Guide
 
-**Version:** 2.2  
-**Last Updated:** 2026-02-03
+**Version:** 2.3  
+**Last Updated:** 2026-04-24
 
 ---
 
@@ -251,7 +251,83 @@ flowchart LR
 
 ---
 
-## V4L2 Hardware
+## V4L2 Codec Implementation
+
+### Overview
+
+The V4L2 codec backend uses the Linux kernel's V4L2 mem2mem interface to access
+VPU hardware through a portable, high-performance path. It replaces the legacy
+Hantro user-space codec (libcodec.so) as the primary encode/decode backend.
+
+**Motivation:**
+
+- **Performance**: V4L2 decoder is 37–56× faster than libcodec.so across all resolutions
+- **Stability**: libcodec.so encoder crashes with SIGSEGV; V4L2 encoder is stable
+- **Portability**: V4L2 is a standard Linux API — no proprietary binary blobs
+- **Zero-copy**: V4L2 DMABUF support enables efficient buffer sharing
+
+The implementation supports two mutually exclusive V4L2 API variants:
+
+| Platform | VPU | V4L2 Capability | Buffer Types |
+|----------|-----|----------------|--------------|
+| i.MX 8M Plus | Hantro VC8000E | `V4L2_CAP_VIDEO_M2M` | `VIDEO_OUTPUT` / `VIDEO_CAPTURE` (single-plane) |
+| i.MX 95 | Chips&Media Wave6 | `V4L2_CAP_VIDEO_M2M_MPLANE` | `VIDEO_OUTPUT_MPLANE` / `VIDEO_CAPTURE_MPLANE` |
+
+The library auto-detects the capability at device open time via `VIDIOC_QUERYCAP`
+and stores the resolved buffer types in the encoder/decoder struct. All subsequent
+V4L2 operations use these stored types, branching on `multiplanar` where the
+`v4l2_format` union members differ (`fmt.pix` vs `fmt.pix_mp`).
+
+### Hardware Architecture
+
+#### i.MX 8M Plus (Hantro VC8000E — Single-Plane M2M)
+
+```mermaid
+graph TD
+    subgraph IMX8MP["i.MX 8M Plus SoC"]
+        direction TB
+        subgraph DEC_HW["Decoder Hardware"]
+            G1["Hantro G1<br/>H.264, VP8, MPEG-2/4"]
+            G2["Hantro G2<br/>HEVC/H.265, VP9"]
+        end
+        DEC_DRV["vsi_v4l2dec — /dev/video1<br/>V4L2_CAP_VIDEO_M2M"]
+
+        ENC_HW["Hantro VC8000E — Encoder<br/>H.264/HEVC up to 1080p60"]
+        ENC_DRV["vsi_v4l2enc — /dev/video0<br/>V4L2_CAP_VIDEO_M2M"]
+    end
+
+    G1 --> DEC_DRV
+    G2 --> DEC_DRV
+    ENC_HW --> ENC_DRV
+```
+
+#### i.MX 95 (Chips&Media Wave6 — MPLANE M2M)
+
+```mermaid
+graph TD
+    subgraph IMX95["i.MX 95 SoC"]
+        direction TB
+        WAVE6["Chips&Media Wave6<br/>H.264/HEVC up to 4Kp60"]
+        ENC95["wave6-enc — M2M_MPLANE"]
+        DEC95["wave6-dec — M2M_MPLANE"]
+    end
+
+    WAVE6 --> ENC95
+    WAVE6 --> DEC95
+```
+
+#### Device Nodes
+
+| Platform | Device | Driver | Function | Max Resolution | V4L2 API |
+|----------|--------|--------|----------|----------------|----------|
+| i.MX 8M Plus | `/dev/video0` | vsi_v4l2enc | H.264/HEVC Encoder | 1920×1080 @ 60fps | Single-plane M2M |
+| i.MX 8M Plus | `/dev/video1` | vsi_v4l2dec | H.264/HEVC/VP9 Decoder | 4096×2160 @ 60fps | Single-plane M2M |
+| i.MX 95 | auto-discovered | wave6-enc | H.264/HEVC Encoder | 4096×2160 @ 60fps | MPLANE M2M |
+| i.MX 95 | auto-discovered | wave6-dec | H.264/HEVC Decoder | 4096×2160 @ 60fps | MPLANE M2M |
+
+> **Note:** Hardware codec capability may exceed the set of codecs currently
+> exposed through the VideoStream API. See [Supported Codecs](#supported-codecs)
+> for what the library supports today.
 
 ### Codec Architecture
 
@@ -290,9 +366,16 @@ graph TB
 
 ### V4L2 mem2mem
 
+V4L2 mem2mem (memory-to-memory) is a kernel framework for hardware codecs that
+process data from one buffer queue to another:
+
 ```mermaid
 flowchart LR
-    OUT[OUTPUT Queue<br/>Raw/Compressed] -->|QBUF| HW[Hardware] -->|DQBUF| CAP[CAPTURE Queue<br/>Compressed/Raw]
+    IN[Source Data] --> OUT[OUTPUT Queue]
+    subgraph Device["V4L2 mem2mem Device"]
+        OUT -->|Hardware| CAP[CAPTURE Queue]
+    end
+    CAP --> RESULT[Result Data]
 ```
 
 | Operation | OUTPUT | CAPTURE |
@@ -300,13 +383,41 @@ flowchart LR
 | Encode | Raw NV12/BGRA | H.264/HEVC |
 | Decode | H.264/HEVC | Raw NV12 |
 
+**Buffer flow:**
+
+1. Application queues source buffer to OUTPUT (`VIDIOC_QBUF`)
+2. Hardware processes data
+3. Application dequeues result from CAPTURE (`VIDIOC_DQBUF`)
+4. Application returns buffer to OUTPUT (`VIDIOC_QBUF`)
+
+### MPLANE vs Single-Plane
+
+The two V4L2 API variants are **mutually exclusive per device** — each device
+advertises exactly one capability. Detection priority: check
+`V4L2_CAP_VIDEO_M2M_MPLANE` first, then `V4L2_CAP_VIDEO_M2M`.
+
+Key differences:
+
+| Aspect | Single-Plane (M2M) | Multi-Plane (M2M_MPLANE) |
+|--------|-------------------|-------------------------|
+| Buffer types | `VIDEO_OUTPUT` / `VIDEO_CAPTURE` | `VIDEO_OUTPUT_MPLANE` / `VIDEO_CAPTURE_MPLANE` |
+| Format union | `fmt.pix` | `fmt.pix_mp` |
+| Buffer offset | `buf.m.offset` | `planes[0].m.mem_offset` |
+| Buffer FD | `buf.m.fd` | `planes[0].m.fd` |
+| Bytes used | `buf.bytesused` | `planes[0].bytesused` |
+| `buf.length` meaning | Buffer size in bytes | Number of planes |
+
+For MPLANE, the decoder currently forces contiguous NV12 with `num_planes=1`
+because NV12M handling would require multi-plane buffer management and
+per-plane DMA-BUF offset plumbing that is not implemented in this path.
+
 ### Device Discovery
 
 ```mermaid
 flowchart TD
     SCAN[Scan /dev/video*] --> CAP{Capabilities}
     CAP -->|VIDEO_CAPTURE| CAMERA[Camera]
-    CAP -->|VIDEO_M2M| M2M{Format check}
+    CAP -->|VIDEO_M2M / M2M_MPLANE| M2M{Format check}
     M2M -->|Compressed output| ENCODER
     M2M -->|Compressed input| DECODER
     M2M -->|Raw both| CONVERTER
@@ -321,10 +432,488 @@ flowchart TD
 
 ### Platform Support
 
-| Platform | Encoder | Decoder | Camera |
-|----------|---------|---------|--------|
-| i.MX 95 | wave6-enc | wave6-dec | mxc-isi-cap |
-| i.MX 8M Plus | vsi_v4l2enc | vsi_v4l2dec | VIV |
+| Platform | Encoder | Decoder | Camera | V4L2 API |
+|----------|---------|---------|--------|----------|
+| i.MX 95 | wave6-enc | wave6-dec | mxc-isi-cap | M2M_MPLANE |
+| i.MX 8M Plus | vsi_v4l2enc | vsi_v4l2dec | VIV | M2M (single-plane) |
+
+### Backend Selection
+
+The library supports both V4L2 and Hantro backends with runtime selection and
+automatic fallback.
+
+> **Legacy Hantro backend:** The Hantro user-space codec (`libcodec.so` /
+> `vpu_wrapper`) remains available as a fallback for older BSPs that lack V4L2
+> M2M kernel drivers. On platforms with V4L2 support, the V4L2 backend is
+> preferred due to its 37–56× decoder speedup and stable encoder.
+
+#### Backend Enum
+
+```c
+typedef enum {
+    VSL_CODEC_BACKEND_AUTO,     // Auto-detect best backend (default)
+    VSL_CODEC_BACKEND_HANTRO,   // Force libcodec.so/vpu_wrapper
+    VSL_CODEC_BACKEND_V4L2,     // Force V4L2 kernel driver
+} VSLCodecBackend;
+```
+
+#### Extended API
+
+```c
+// Extended create functions with explicit backend selection
+VSLDecoder* vsl_decoder_create_ex(uint32_t codec, int fps,
+                                   VSLCodecBackend backend);
+VSLEncoder* vsl_encoder_create_ex(VSLEncoderProfile profile,
+                                   uint32_t codec, int fps,
+                                   VSLCodecBackend backend);
+
+// Original API uses AUTO backend (backwards compatible)
+// vsl_decoder_create() calls vsl_decoder_create_ex(..., VSL_CODEC_BACKEND_AUTO)
+```
+
+#### Environment Variable Override
+
+```bash
+VSL_CODEC_BACKEND=hantro ./my_app   # Force Hantro even if V4L2 available
+VSL_CODEC_BACKEND=v4l2 ./my_app     # Force V4L2 (fail if unavailable)
+VSL_CODEC_BACKEND=auto ./my_app     # Auto-detect (default)
+```
+
+#### Auto-Detection Logic
+
+```c
+// Backend selection priority (for VSL_CODEC_BACKEND_AUTO):
+//
+// 1. Check VSL_CODEC_BACKEND environment variable
+// 2. Scan /dev/video* for M2M devices matching requested codec
+//    - Query VIDIOC_QUERYCAP on each device
+//    - Accept V4L2_CAP_VIDEO_M2M or V4L2_CAP_VIDEO_M2M_MPLANE
+//    - Prefer V4L2 if a matching device is found
+// 3. Fallback to Hantro if V4L2 unavailable
+//    - Check /dev/hantrodec or /dev/hantroenc
+// 4. Return error if no backend available
+```
+
+#### Compile-Time Configuration
+
+```cmake
+option(ENABLE_V4L2_CODEC "Enable V4L2 codec backend" ON)
+option(ENABLE_HANTRO_CODEC "Enable Hantro/libcodec.so backend" ON)
+
+# At least one backend must be enabled
+if(NOT ENABLE_V4L2_CODEC AND NOT ENABLE_HANTRO_CODEC)
+    message(FATAL_ERROR "At least one codec backend must be enabled")
+endif()
+```
+
+### Decoder Implementation
+
+#### Data Structures
+
+```c
+typedef struct {
+    int fd;                          // V4L2 device fd
+
+    // Resolved buffer types (set at init from QUERYCAP)
+    uint32_t output_type;            // VIDEO_OUTPUT or VIDEO_OUTPUT_MPLANE
+    uint32_t capture_type;           // VIDEO_CAPTURE or VIDEO_CAPTURE_MPLANE
+    bool multiplanar;                // true for M2M_MPLANE devices
+
+    // OUTPUT queue (compressed data)
+    struct {
+        int count;
+        size_t size;
+        void *mmap[MAX_OUTPUT_BUFFERS];
+        int queued[MAX_OUTPUT_BUFFERS];
+    } output;
+
+    // CAPTURE queue (decoded frames)
+    struct {
+        int count;
+        int dmabuf_fds[MAX_CAPTURE_BUFFERS];
+        VSLFrame *frames[MAX_CAPTURE_BUFFERS];
+    } capture;
+
+    int width, height;
+    uint32_t pixelformat;
+    bool streaming;
+} VSLDecoderV4L2;
+```
+
+#### Initialization Sequence
+
+```c
+VSLDecoder* vsl_decoder_create_v4l2(uint32_t codec, int fps)
+{
+    // 1. Open device (auto-discovered by codec capability)
+    int fd = open(dev_path, O_RDWR | O_NONBLOCK);
+
+    // 2. Query capabilities and resolve buffer types
+    struct v4l2_capability cap;
+    ioctl(fd, VIDIOC_QUERYCAP, &cap);
+    // Check V4L2_CAP_VIDEO_M2M_MPLANE first, then V4L2_CAP_VIDEO_M2M
+    // Sets: dec->multiplanar, dec->output_type, dec->capture_type
+
+    // 3. Set OUTPUT format (compressed bitstream)
+    struct v4l2_format fmt = { .type = dec->output_type };
+    if (dec->multiplanar) {
+        fmt.fmt.pix_mp.pixelformat            = V4L2_PIX_FMT_H264;
+        fmt.fmt.pix_mp.num_planes             = 1;
+        fmt.fmt.pix_mp.plane_fmt[0].sizeimage = 2 * 1024 * 1024;
+    } else {
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_H264;
+        fmt.fmt.pix.sizeimage   = 2 * 1024 * 1024;
+    }
+    ioctl(fd, VIDIOC_S_FMT, &fmt);
+
+    // 4. Request OUTPUT buffers
+    struct v4l2_requestbuffers req = {
+        .count = NUM_OUTPUT_BUFFERS,
+        .type = dec->output_type,
+        .memory = V4L2_MEMORY_MMAP,
+    };
+    ioctl(fd, VIDIOC_REQBUFS, &req);
+
+    // 5. Query and mmap OUTPUT buffers
+    for (int i = 0; i < req.count; i++) {
+        struct v4l2_buffer buf = { .type = dec->output_type, .index = i };
+        struct v4l2_plane planes[1];
+        if (dec->multiplanar) {
+            buf.length = 1;
+            buf.m.planes = planes;
+        }
+        ioctl(fd, VIDIOC_QUERYBUF, &buf);
+        // mmap offset: planes[0].m.mem_offset (MPLANE) or buf.m.offset (single)
+    }
+
+    // CAPTURE queue setup deferred until resolution is known
+    // (after first decoded frame or SOURCE_CHANGE event)
+}
+```
+
+#### Decode Loop
+
+```c
+int vsl_decode_frame_v4l2(VSLDecoder *dec, const void *data,
+                          unsigned int len, size_t *consumed,
+                          VSLFrame **output)
+{
+    // 1. Find free OUTPUT buffer and copy compressed data
+    int out_idx = find_free_output_buffer(dec);
+    memcpy(dec->output.mmap[out_idx], data, len);
+
+    // 2. Queue OUTPUT buffer
+    struct v4l2_buffer buf = {
+        .type = dec->output_type, .index = out_idx,
+        .memory = V4L2_MEMORY_MMAP,
+    };
+    struct v4l2_plane planes[1];
+    if (dec->multiplanar) {
+        buf.length = 1;
+        buf.m.planes = planes;
+        planes[0].bytesused = len;
+    } else {
+        buf.bytesused = len;
+    }
+    ioctl(dec->fd, VIDIOC_QBUF, &buf);
+
+    // 3. Start streaming if not already
+    if (!dec->streaming) {
+        int type = (int) dec->output_type;
+        ioctl(dec->fd, VIDIOC_STREAMON, &type);
+        type = (int) dec->capture_type;
+        ioctl(dec->fd, VIDIOC_STREAMON, &type);
+        dec->streaming = true;
+    }
+
+    // 4. Poll and dequeue CAPTURE buffer (decoded frame)
+    struct v4l2_buffer cap_buf = {
+        .type = dec->capture_type,
+        .memory = V4L2_MEMORY_DMABUF,
+    };
+    struct v4l2_plane cap_planes[1];
+    if (dec->multiplanar) {
+        cap_buf.length = 1;
+        cap_buf.m.planes = cap_planes;
+    }
+    if (ioctl(dec->fd, VIDIOC_DQBUF, &cap_buf) == 0) {
+        *output = dec->capture.frames[cap_buf.index];
+        *consumed = len;
+        return VSL_DEC_FRAME_DEC;
+    }
+    return VSL_DEC_SUCCESS;
+}
+```
+
+#### Resolution Change Handling
+
+```c
+// V4L2 SOURCE_CHANGE event indicates resolution/format change
+void handle_source_change(VSLDecoderV4L2 *dec)
+{
+    // 1. Stop CAPTURE streaming
+    int type = (int) dec->capture_type;
+    ioctl(dec->fd, VIDIOC_STREAMOFF, &type);
+
+    // 2. Read new format
+    struct v4l2_format fmt = { .type = dec->capture_type };
+    if (dec->multiplanar) {
+        // Force contiguous NV12 (num_planes=1) to avoid multi-fd DMA-BUF
+        fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
+        fmt.fmt.pix_mp.num_planes  = 1;
+        ioctl(dec->fd, VIDIOC_S_FMT, &fmt);
+        dec->width  = fmt.fmt.pix_mp.width;
+        dec->height = fmt.fmt.pix_mp.height;
+    } else {
+        ioctl(dec->fd, VIDIOC_G_FMT, &fmt);
+        dec->width  = fmt.fmt.pix.width;
+        dec->height = fmt.fmt.pix.height;
+    }
+
+    // 3. Request new CAPTURE buffers with DMABUF
+    struct v4l2_requestbuffers req = {
+        .count = NUM_CAPTURE_BUFFERS,
+        .type = dec->capture_type,
+        .memory = V4L2_MEMORY_DMABUF,
+    };
+    ioctl(dec->fd, VIDIOC_REQBUFS, &req);
+
+    // 4. Allocate DMA buffers and queue
+    for (int i = 0; i < req.count; i++) {
+        dec->capture.frames[i] = vsl_frame_alloc_dma(dec->width, dec->height);
+        struct v4l2_buffer buf = {
+            .type = dec->capture_type, .index = i,
+            .memory = V4L2_MEMORY_DMABUF,
+        };
+        struct v4l2_plane planes[1];
+        if (dec->multiplanar) {
+            buf.length = 1;
+            buf.m.planes = planes;
+            planes[0].m.fd = vsl_frame_dma_fd(dec->capture.frames[i]);
+        } else {
+            buf.m.fd = vsl_frame_dma_fd(dec->capture.frames[i]);
+        }
+        ioctl(dec->fd, VIDIOC_QBUF, &buf);
+    }
+
+    // 5. Restart CAPTURE streaming
+    ioctl(dec->fd, VIDIOC_STREAMON, &type);
+}
+```
+
+### Encoder Implementation
+
+#### Data Structures
+
+```c
+typedef struct {
+    int fd;                          // V4L2 device fd
+
+    // Resolved buffer types (set at init from QUERYCAP)
+    uint32_t output_type;            // VIDEO_OUTPUT or VIDEO_OUTPUT_MPLANE
+    uint32_t capture_type;           // VIDEO_CAPTURE or VIDEO_CAPTURE_MPLANE
+    bool multiplanar;                // true for M2M_MPLANE devices
+    int num_input_planes;            // 1 (contiguous NV12) or 2 (NV12M)
+
+    // OUTPUT queue (raw frames)
+    struct {
+        int count;
+        int dmabuf_fds[MAX_OUTPUT_BUFFERS];
+    } output;
+
+    // CAPTURE queue (compressed data)
+    struct {
+        int count;
+        size_t size;
+        void *mmap[MAX_CAPTURE_BUFFERS];
+    } capture;
+
+    int width, height, fps, bitrate, gop_size;
+
+    // Crop region (for 4K tiling on VC8000E)
+    struct { int x, y, w, h; } crop;
+} VSLEncoderV4L2;
+```
+
+#### Initialization Sequence
+
+```c
+VSLEncoder* vsl_encoder_create_v4l2(uint32_t profile, uint32_t codec, int fps)
+{
+    // 1. Open device and query capabilities
+    int fd = open(dev_path, O_RDWR | O_NONBLOCK);
+    // Sets: enc->multiplanar, enc->output_type, enc->capture_type
+
+    // 2. Set OUTPUT format (raw frames — NV12)
+    struct v4l2_format fmt = { .type = enc->output_type };
+    if (enc->multiplanar) {
+        fmt.fmt.pix_mp.width       = width;
+        fmt.fmt.pix_mp.height      = height;
+        fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
+        fmt.fmt.pix_mp.num_planes  = 1;
+    } else {
+        fmt.fmt.pix.width       = width;
+        fmt.fmt.pix.height      = height;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_NV12;
+        fmt.fmt.pix.sizeimage   = width * height * 3 / 2;
+    }
+    ioctl(fd, VIDIOC_S_FMT, &fmt);
+
+    // 3. Set CAPTURE format (compressed bitstream)
+    memset(&fmt, 0, sizeof(fmt));
+    fmt.type = enc->capture_type;
+    if (enc->multiplanar) {
+        fmt.fmt.pix_mp.pixelformat            = V4L2_PIX_FMT_H264;
+        fmt.fmt.pix_mp.num_planes             = 1;
+        fmt.fmt.pix_mp.plane_fmt[0].sizeimage = 2 * 1024 * 1024;
+    } else {
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_H264;
+        fmt.fmt.pix.sizeimage   = 2 * 1024 * 1024;
+    }
+    ioctl(fd, VIDIOC_S_FMT, &fmt);
+
+    // 4. Set encoder controls (bitrate, GOP, profile, level)
+    // 5. Set crop region if needed (4K tiling on VC8000E)
+    // 6. Request buffers (DMABUF for input, MMAP for output)
+}
+```
+
+#### Encode Frame
+
+```c
+int vsl_encode_frame_v4l2(VSLEncoder *enc, const VSLFrame *input,
+                          VSLFrame *output, int *keyframe)
+{
+    // 1. Queue input frame (DMABUF)
+    struct v4l2_buffer buf = {
+        .type = enc->output_type,
+        .index = find_free_buffer(),
+        .memory = V4L2_MEMORY_DMABUF,
+    };
+    struct v4l2_plane planes[2];
+    if (enc->multiplanar) {
+        buf.length = enc->num_input_planes;
+        buf.m.planes = planes;
+        planes[0].m.fd = vsl_frame_dma_fd(input);
+        planes[0].bytesused = vsl_frame_size(input);
+    } else {
+        buf.m.fd      = vsl_frame_dma_fd(input);
+        buf.bytesused = vsl_frame_size(input);
+    }
+    ioctl(enc->fd, VIDIOC_QBUF, &buf);
+
+    // 2. Queue output buffer (MMAP) and poll for completion
+    // ...
+
+    // 3. Dequeue compressed output
+    ioctl(enc->fd, VIDIOC_DQBUF, &out_buf);
+    size_t encoded_size = enc->multiplanar
+        ? cap_planes[0].bytesused : out_buf.bytesused;
+    memcpy(vsl_frame_data(output), enc->capture.mmap[out_buf.index],
+           encoded_size);
+
+    // 4. Check keyframe flag
+    *keyframe = (out_buf.flags & V4L2_BUF_FLAG_KEYFRAME) != 0;
+
+    return encoded_size;
+}
+```
+
+### 4K Tiling (i.MX 8M Plus / VC8000E)
+
+> **Platform scope:** 4K tiling is only required on the i.MX 8M Plus where the
+> Hantro VC8000E encoder supports a maximum of 1920×1080. On the i.MX 95, the
+> Wave6 VPU handles up to 4Kp60 natively — no tiling needed.
+
+For 4K content on VC8000E, the application splits the source into tiles:
+
+```mermaid
+block-beta
+    columns 2
+    block:SRC["4K Source — 3840×2160"]:2
+        columns 2
+        T0["Tile 0 — Top-Left\n1920×1080"]
+        T1["Tile 1 — Top-Right\n1920×1080"]
+        T2["Tile 2 — Bot-Left\n1920×1080"]
+        T3["Tile 3 — Bot-Right\n1920×1080"]
+    end
+```
+
+Each tile uses the V4L2 selection API to set its crop region:
+
+```c
+struct v4l2_selection sel = {
+    .type = enc->output_type,   // Resolved at init time
+    .target = V4L2_SEL_TGT_CROP,
+    .r = { .left = crop_x, .top = crop_y,
+           .width = 1920, .height = 1080 }
+};
+ioctl(enc->fd, VIDIOC_S_SELECTION, &sel);
+```
+
+### Performance Benchmarks
+
+Measured on i.MX 8M Plus (2025-01-01), 300 frames, H.264 Main Profile.
+
+#### Decoder
+
+| Resolution | libcodec.so | V4L2 | Improvement |
+|------------|-------------|------|-------------|
+| 640×480 | 34.00 ms | 0.82 ms | **41× faster** |
+| 1280×720 | 111.00 ms | 1.97 ms | **56× faster** |
+| 1920×1080 | 151.00 ms | 4.12 ms | **37× faster** |
+
+#### Encoder
+
+| Resolution | libcodec.so | V4L2 | Notes |
+|------------|-------------|------|-------|
+| 640×480 | SIGSEGV | 5.10 ms | V4L2 stable |
+| 1280×720 | SIGSEGV | 12.70 ms | V4L2 stable |
+| 1920×1080 | SIGSEGV | 27.50 ms (H.264) | ~36 fps capability |
+| 1920×1080 | N/A | 27.77 ms (HEVC) | HEVC comparable |
+
+#### Buffer Management Strategy
+
+| Queue | Count | Content |
+|-------|-------|---------|
+| OUTPUT | 2–4 buffers | Compressed data or raw frames |
+| CAPTURE | 4–8 buffers | Decoded frames or compressed output |
+
+| Memory Type | Description |
+|-------------|-------------|
+| `V4L2_MEMORY_MMAP` | Driver-allocated, good for compressed data |
+| `V4L2_MEMORY_DMABUF` | External DMA buffers, zero-copy sharing |
+
+### V4L2 Control IDs
+
+**Decoder:**
+
+```c
+V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY
+V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE
+```
+
+**Encoder:**
+
+```c
+V4L2_CID_MPEG_VIDEO_BITRATE
+V4L2_CID_MPEG_VIDEO_GOP_SIZE
+V4L2_CID_MPEG_VIDEO_H264_PROFILE
+V4L2_CID_MPEG_VIDEO_H264_LEVEL
+V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP
+V4L2_CID_MPEG_VIDEO_H264_P_FRAME_QP
+V4L2_CID_MPEG_VIDEO_H264_B_FRAME_QP
+V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME
+V4L2_CID_MPEG_VIDEO_H264_CPB_SIZE
+V4L2_CID_MPEG_VIDEO_H264_VUI_SAR_ENABLE
+```
+
+### References
+
+1. [V4L2 Stateful Decoder Interface](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dev-decoder.html)
+2. [V4L2 Stateful Encoder Interface](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dev-encoder.html)
+3. [V4L2 DMABUF](https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dmabuf.html)
+4. [NXP i.MX 8M Plus Reference Manual](https://www.nxp.com/docs/en/reference-manual/IMX8MPRM.pdf)
 
 ---
 

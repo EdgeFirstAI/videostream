@@ -73,7 +73,11 @@ vsl_to_v4l2_input_format(uint32_t fourcc, int* num_planes)
         *num_planes = 1;
         return VSI_V4L2_PIX_FMT_AR24; // AR24 for ARGB on vsi_v4l2enc
     case VSL_FOURCC('N', 'V', '1', '2'):
-        *num_planes = 2;
+        *num_planes = 1; // Contiguous NV12 (single buffer for Y+UV), matches
+                         // decoder strategy. V4L2_PIX_FMT_NV12M is the 2-plane
+                         // variant and would require explicit multi-plane
+                         // DMA-BUF import handling with correct per-plane
+                         // offsets, rather than this single-buffer path.
         return V4L2_PIX_FMT_NV12;
     case VSL_FOURCC('Y', 'U', 'Y', 'V'):
     case VSL_FOURCC('Y', 'U', 'Y', '2'):
@@ -145,10 +149,12 @@ try_dequeue_enc_output_buffer(struct vsl_encoder_v4l2* enc)
 
     memset(&buf, 0, sizeof(buf));
     memset(planes, 0, sizeof(planes));
-    buf.type     = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-    buf.memory   = V4L2_MEMORY_DMABUF;
-    buf.length   = enc->num_input_planes;
-    buf.m.planes = planes;
+    buf.type   = enc->output_type;
+    buf.memory = V4L2_MEMORY_DMABUF;
+    if (enc->multiplanar) {
+        buf.length   = enc->num_input_planes;
+        buf.m.planes = planes;
+    }
 
     if (xioctl(enc->fd, VIDIOC_DQBUF, &buf) == 0) {
         enc->output.buffers[buf.index].queued = false;
@@ -165,12 +171,12 @@ setup_output_planes(struct vsl_encoder_v4l2* enc,
                     size_t                   frame_size)
 {
     if (enc->num_input_planes == 1) {
-        // Single-plane packed format (BGRA, YUYV, etc.)
+        // Contiguous format (NV12, BGRA, YUYV, etc.)
         planes[0].m.fd      = src_fd;
         planes[0].length    = frame_size;
         planes[0].bytesused = frame_size;
     } else {
-        // Multi-plane format (NV12: plane 0 = Y, plane 1 = UV)
+        // Multi-plane format (e.g. NV12M: plane 0 = Y, plane 1 = UV)
         size_t y_size  = enc->width * enc->height;
         size_t uv_size = enc->width * enc->height / 2;
 
@@ -207,33 +213,44 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
         return -1;
     }
 
+    // Compute per-format sizeimage for plane 0
+    size_t plane0_size;
+    size_t plane1_size = 0;
+    if (num_planes == 2) {
+        // Multi-plane format (e.g. NV12M): Y + UV as separate plane entries
+        plane0_size = (size_t) width * height;     // Y
+        plane1_size = (size_t) width * height / 2; // UV
+    } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUYV) {
+        plane0_size = (size_t) width * height * 2;
+    } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUV420 ||
+               v4l2_input_fmt == V4L2_PIX_FMT_NV12) {
+        plane0_size = (size_t) width * height * 3 / 2;
+    } else {
+        plane0_size = (size_t) width * height * 4; // Default BGRA/RGBA
+    }
+
     // Set OUTPUT format
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));
-    fmt.type                   = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-    fmt.fmt.pix_mp.width       = width;
-    fmt.fmt.pix_mp.height      = height;
-    fmt.fmt.pix_mp.pixelformat = v4l2_input_fmt;
-    fmt.fmt.pix_mp.num_planes  = num_planes;
-    fmt.fmt.pix_mp.field       = V4L2_FIELD_NONE;
-
-    // Set plane sizes based on format
-    if (num_planes == 1) {
-        // Packed format (BGRA, YUYV, etc.)
-        int bytes_per_pixel = 4; // Default for RGBA/BGRA
-        if (v4l2_input_fmt == V4L2_PIX_FMT_YUYV) {
-            bytes_per_pixel = 2;
-        } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUV420) {
-            // I420/YUV420 is 1.5 bytes per pixel (YUV 4:2:0)
-            fmt.fmt.pix_mp.plane_fmt[0].sizeimage = width * height * 3 / 2;
-        } else {
-            fmt.fmt.pix_mp.plane_fmt[0].sizeimage =
-                width * height * bytes_per_pixel;
+    fmt.type = enc->output_type;
+    if (enc->multiplanar) {
+        fmt.fmt.pix_mp.width                  = width;
+        fmt.fmt.pix_mp.height                 = height;
+        fmt.fmt.pix_mp.pixelformat            = v4l2_input_fmt;
+        fmt.fmt.pix_mp.num_planes             = num_planes;
+        fmt.fmt.pix_mp.field                  = V4L2_FIELD_NONE;
+        fmt.fmt.pix_mp.plane_fmt[0].sizeimage = plane0_size;
+        if (num_planes == 2) {
+            fmt.fmt.pix_mp.plane_fmt[1].sizeimage = plane1_size;
         }
-    } else if (num_planes == 2) {
-        // Semi-planar format (NV12)
-        fmt.fmt.pix_mp.plane_fmt[0].sizeimage = width * height;     // Y plane
-        fmt.fmt.pix_mp.plane_fmt[1].sizeimage = width * height / 2; // UV plane
+    } else {
+        // Single-plane API: always one contiguous buffer
+        fmt.fmt.pix.width       = width;
+        fmt.fmt.pix.height      = height;
+        fmt.fmt.pix.pixelformat = v4l2_input_fmt;
+        fmt.fmt.pix.field       = V4L2_FIELD_NONE;
+        fmt.fmt.pix.sizeimage =
+            (num_planes == 2) ? plane0_size + plane1_size : plane0_size;
     }
 
     if (xioctl(enc->fd, VIDIOC_S_FMT, &fmt) < 0) {
@@ -243,12 +260,19 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
         return -1;
     }
 
-    enc->width            = fmt.fmt.pix_mp.width;
-    enc->height           = fmt.fmt.pix_mp.height;
-    enc->stride           = fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
-    enc->input_fourcc     = input_fourcc;
-    enc->v4l2_input_fmt   = v4l2_input_fmt;
-    enc->num_input_planes = fmt.fmt.pix_mp.num_planes;
+    if (enc->multiplanar) {
+        enc->width            = fmt.fmt.pix_mp.width;
+        enc->height           = fmt.fmt.pix_mp.height;
+        enc->stride           = fmt.fmt.pix_mp.plane_fmt[0].bytesperline;
+        enc->num_input_planes = fmt.fmt.pix_mp.num_planes;
+    } else {
+        enc->width            = fmt.fmt.pix.width;
+        enc->height           = fmt.fmt.pix.height;
+        enc->stride           = fmt.fmt.pix.bytesperline;
+        enc->num_input_planes = 1; // single-plane API = one contiguous buffer
+    }
+    enc->input_fourcc   = input_fourcc;
+    enc->v4l2_input_fmt = v4l2_input_fmt;
 
     fprintf(stderr,
             "V4L2 encoder: configured OUTPUT format '%c%c%c%c' %dx%d, %d "
@@ -265,7 +289,7 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
     struct v4l2_requestbuffers req;
     memset(&req, 0, sizeof(req));
     req.count  = VSL_V4L2_ENC_OUTPUT_BUFFERS;
-    req.type   = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+    req.type   = enc->output_type;
     req.memory = V4L2_MEMORY_DMABUF;
 
     if (xioctl(enc->fd, VIDIOC_REQBUFS, &req) < 0) {
@@ -293,16 +317,26 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
 static int
 setup_capture_queue(struct vsl_encoder_v4l2* enc)
 {
-    // Set CAPTURE format (compressed output)
+    uint32_t v4l2_codec = vsl_to_v4l2_codec(enc->output_fourcc);
+
+    // Set CAPTURE format (compressed output is single plane in both APIs)
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));
-    fmt.type                   = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    fmt.fmt.pix_mp.width       = enc->width;
-    fmt.fmt.pix_mp.height      = enc->height;
-    fmt.fmt.pix_mp.pixelformat = vsl_to_v4l2_codec(enc->output_fourcc);
-    fmt.fmt.pix_mp.num_planes  = 1;
-    fmt.fmt.pix_mp.plane_fmt[0].sizeimage = VSL_V4L2_ENC_CAPTURE_BUF_SIZE;
-    fmt.fmt.pix_mp.field                  = V4L2_FIELD_NONE;
+    fmt.type = enc->capture_type;
+    if (enc->multiplanar) {
+        fmt.fmt.pix_mp.width                  = enc->width;
+        fmt.fmt.pix_mp.height                 = enc->height;
+        fmt.fmt.pix_mp.pixelformat            = v4l2_codec;
+        fmt.fmt.pix_mp.num_planes             = 1;
+        fmt.fmt.pix_mp.plane_fmt[0].sizeimage = VSL_V4L2_ENC_CAPTURE_BUF_SIZE;
+        fmt.fmt.pix_mp.field                  = V4L2_FIELD_NONE;
+    } else {
+        fmt.fmt.pix.width       = enc->width;
+        fmt.fmt.pix.height      = enc->height;
+        fmt.fmt.pix.pixelformat = v4l2_codec;
+        fmt.fmt.pix.sizeimage   = VSL_V4L2_ENC_CAPTURE_BUF_SIZE;
+        fmt.fmt.pix.field       = V4L2_FIELD_NONE;
+    }
 
     if (xioctl(enc->fd, VIDIOC_S_FMT, &fmt) < 0) {
         fprintf(stderr,
@@ -315,7 +349,7 @@ setup_capture_queue(struct vsl_encoder_v4l2* enc)
     struct v4l2_requestbuffers req;
     memset(&req, 0, sizeof(req));
     req.count  = VSL_V4L2_ENC_CAPTURE_BUFFERS;
-    req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    req.type   = enc->capture_type;
     req.memory = V4L2_MEMORY_MMAP;
 
     if (xioctl(enc->fd, VIDIOC_REQBUFS, &req) < 0) {
@@ -337,11 +371,13 @@ setup_capture_queue(struct vsl_encoder_v4l2* enc)
 
         memset(&buf, 0, sizeof(buf));
         memset(planes, 0, sizeof(planes));
-        buf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-        buf.memory   = V4L2_MEMORY_MMAP;
-        buf.index    = i;
-        buf.length   = 1;
-        buf.m.planes = planes;
+        buf.type   = enc->capture_type;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index  = i;
+        if (enc->multiplanar) {
+            buf.length   = 1;
+            buf.m.planes = planes;
+        }
 
         if (xioctl(enc->fd, VIDIOC_QUERYBUF, &buf) < 0) {
             fprintf(stderr,
@@ -351,13 +387,23 @@ setup_capture_queue(struct vsl_encoder_v4l2* enc)
             return -1;
         }
 
-        enc->capture.buffers[i].mmap_size = planes[0].length;
+        size_t mmap_size;
+        off_t  mmap_offset;
+        if (enc->multiplanar) {
+            mmap_size   = planes[0].length;
+            mmap_offset = planes[0].m.mem_offset;
+        } else {
+            mmap_size   = buf.length;
+            mmap_offset = buf.m.offset;
+        }
+
+        enc->capture.buffers[i].mmap_size = mmap_size;
         enc->capture.buffers[i].mmap_ptr  = mmap(NULL,
-                                                planes[0].length,
+                                                mmap_size,
                                                 PROT_READ | PROT_WRITE,
                                                 MAP_SHARED,
                                                 enc->fd,
-                                                planes[0].m.mem_offset);
+                                                mmap_offset);
 
         if (enc->capture.buffers[i].mmap_ptr == MAP_FAILED) {
             fprintf(stderr,
@@ -385,12 +431,16 @@ queue_capture_buffers(struct vsl_encoder_v4l2* enc)
 
         memset(&buf, 0, sizeof(buf));
         memset(planes, 0, sizeof(planes));
-        buf.type         = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-        buf.memory       = V4L2_MEMORY_MMAP;
-        buf.index        = i;
-        buf.length       = 1;
-        buf.m.planes     = planes;
-        planes[0].length = enc->capture.buffers[i].mmap_size;
+        buf.type   = enc->capture_type;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index  = i;
+        if (enc->multiplanar) {
+            buf.length       = 1;
+            buf.m.planes     = planes;
+            planes[0].length = enc->capture.buffers[i].mmap_size;
+        } else {
+            buf.length = enc->capture.buffers[i].mmap_size;
+        }
 
         if (xioctl(enc->fd, VIDIOC_QBUF, &buf) < 0) {
             fprintf(stderr,
@@ -416,7 +466,7 @@ start_streaming(struct vsl_encoder_v4l2* enc)
     if (queue_capture_buffers(enc) < 0) { return -1; }
 
     // Start OUTPUT streaming
-    int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+    int type = (int) enc->output_type;
     if (xioctl(enc->fd, VIDIOC_STREAMON, &type) < 0) {
         fprintf(stderr,
                 "V4L2 encoder: VIDIOC_STREAMON OUTPUT failed: %s\n",
@@ -425,7 +475,7 @@ start_streaming(struct vsl_encoder_v4l2* enc)
     }
 
     // Start CAPTURE streaming
-    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    type = (int) enc->capture_type;
     if (xioctl(enc->fd, VIDIOC_STREAMON, &type) < 0) {
         fprintf(stderr,
                 "V4L2 encoder: VIDIOC_STREAMON CAPTURE failed: %s\n",
@@ -445,10 +495,10 @@ stop_streaming(struct vsl_encoder_v4l2* enc)
 {
     if (!enc->streaming) { return; }
 
-    int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+    int type = (int) enc->output_type;
     xioctl(enc->fd, VIDIOC_STREAMOFF, &type);
 
-    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    type = (int) enc->capture_type;
     xioctl(enc->fd, VIDIOC_STREAMOFF, &type);
 
     // Mark all buffers as not queued
@@ -559,7 +609,10 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile,
         return NULL;
     }
 
-    // Check device capabilities
+    // Check device capabilities. The i.MX 95 Wave6 encoder advertises only
+    // V4L2_CAP_VIDEO_M2M_MPLANE; a hypothetical single-plane V4L2 encoder
+    // would advertise only V4L2_CAP_VIDEO_M2M. Accept either and pick the
+    // buffer type accordingly.
     struct v4l2_capability cap;
     if (xioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
         fprintf(stderr,
@@ -569,14 +622,32 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile,
         return NULL;
     }
 
-    if (!(cap.capabilities & V4L2_CAP_VIDEO_M2M_MPLANE)) {
-        fprintf(stderr,
-                "V4L2 encoder: device lacks V4L2_CAP_VIDEO_M2M_MPLANE\n");
+    uint32_t caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS)
+                        ? cap.device_caps
+                        : cap.capabilities;
+
+    bool     multiplanar;
+    uint32_t output_type;
+    uint32_t capture_type;
+    if (caps & V4L2_CAP_VIDEO_M2M_MPLANE) {
+        multiplanar  = true;
+        output_type  = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+        capture_type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    } else if (caps & V4L2_CAP_VIDEO_M2M) {
+        multiplanar  = false;
+        output_type  = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        capture_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    } else {
+        fprintf(stderr, "V4L2 encoder: device lacks M2M capability\n");
         close(fd);
         return NULL;
     }
 
-    fprintf(stderr, "V4L2 encoder: opened %s (%s)\n", dev_path, cap.card);
+    fprintf(stderr,
+            "V4L2 encoder: opened %s (%s, %s mode)\n",
+            dev_path,
+            cap.card,
+            multiplanar ? "MPLANE" : "single-plane");
 
     // Allocate encoder structure
     struct vsl_encoder_v4l2* enc = calloc(1, sizeof(struct vsl_encoder_v4l2));
@@ -587,6 +658,9 @@ vsl_encoder_create_v4l2(VSLEncoderProfile profile,
 
     enc->backend       = VSL_CODEC_BACKEND_V4L2;
     enc->fd            = fd;
+    enc->multiplanar   = multiplanar;
+    enc->output_type   = output_type;
+    enc->capture_type  = capture_type;
     enc->profile       = profile;
     enc->output_fourcc = output_fourcc;
     enc->fps           = fps;
@@ -684,14 +758,20 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
 
     memset(&buf, 0, sizeof(buf));
     memset(planes, 0, sizeof(planes));
-    buf.type     = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-    buf.memory   = V4L2_MEMORY_DMABUF;
-    buf.index    = out_idx;
-    buf.length   = enc->num_input_planes;
-    buf.m.planes = planes;
+    buf.type   = enc->output_type;
+    buf.memory = V4L2_MEMORY_DMABUF;
+    buf.index  = out_idx;
 
-    // Set up plane data based on format
-    setup_output_planes(enc, planes, src_fd, vsl_frame_size(source));
+    if (enc->multiplanar) {
+        buf.length   = enc->num_input_planes;
+        buf.m.planes = planes;
+        setup_output_planes(enc, planes, src_fd, vsl_frame_size(source));
+    } else {
+        // Single-plane API: one contiguous buffer (NV12 Y+UV, BGRA, etc.)
+        buf.m.fd      = src_fd;
+        buf.length    = vsl_frame_size(source);
+        buf.bytesused = vsl_frame_size(source);
+    }
 
     if (xioctl(enc->fd, VIDIOC_QBUF, &buf) < 0) {
         fprintf(stderr,
@@ -725,10 +805,12 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
 
     memset(&cap_buf, 0, sizeof(cap_buf));
     memset(cap_planes, 0, sizeof(cap_planes));
-    cap_buf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    cap_buf.memory   = V4L2_MEMORY_MMAP;
-    cap_buf.length   = 1;
-    cap_buf.m.planes = cap_planes;
+    cap_buf.type   = enc->capture_type;
+    cap_buf.memory = V4L2_MEMORY_MMAP;
+    if (enc->multiplanar) {
+        cap_buf.length   = 1;
+        cap_buf.m.planes = cap_planes;
+    }
 
     if (xioctl(enc->fd, VIDIOC_DQBUF, &cap_buf) < 0) {
         if (errno == EAGAIN) {
@@ -741,7 +823,8 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     }
 
     int cap_idx      = cap_buf.index;
-    int encoded_size = cap_planes[0].bytesused;
+    int encoded_size = enc->multiplanar ? (int) cap_planes[0].bytesused
+                                        : (int) cap_buf.bytesused;
 
     enc->capture.buffers[cap_idx].queued = false;
 
@@ -783,10 +866,12 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     // Also try to dequeue used OUTPUT buffer
     memset(&buf, 0, sizeof(buf));
     memset(planes, 0, sizeof(planes));
-    buf.type     = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-    buf.memory   = V4L2_MEMORY_DMABUF;
-    buf.length   = enc->num_input_planes;
-    buf.m.planes = planes;
+    buf.type   = enc->output_type;
+    buf.memory = V4L2_MEMORY_DMABUF;
+    if (enc->multiplanar) {
+        buf.length   = enc->num_input_planes;
+        buf.m.planes = planes;
+    }
 
     while (xioctl(enc->fd, VIDIOC_DQBUF, &buf) == 0) {
         enc->output.buffers[buf.index].queued = false;
