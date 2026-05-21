@@ -78,16 +78,31 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     let (encoder_opt, _output_fourcc) =
         utils::create_encoder_if_requested(args.encode, "h264", &args.bitrate, args.fps, fourcc)?;
 
-    // Open camera. 8 buffers gives one frame of headroom for the 200 ms
-    // frame_lifespan below at 30 fps — the host expire deadline must stay
-    // under (buf_count - 1) * (1 / fps) or the camera stalls waiting for a
-    // buffer to recycle.
-    log::info!("Opening camera: {}", args.device);
+    // Camera + host frame lifespan are bound by an invariant:
+    //   frame_lifespan_ns < (buf_count - 1) * (1e9 / fps)
+    // If lifespan exceeds that window the camera has no free buffer to
+    // fill on the next vsync and stalls. We size buf_count from the
+    // requested fps so FRAME_LIFESPAN_NS (tuned for 4K codec consumers)
+    // always satisfies the invariant:
+    //   buf_count = lifespan_ns * fps / 1e9 + 2  (one frame of slack)
+    const FRAME_LIFESPAN_NS: i64 = 200_000_000; // 200 ms
+    let buf_count = std::cmp::max(
+        4,
+        (FRAME_LIFESPAN_NS * i64::from(args.fps) / 1_000_000_000 + 2) as i32,
+    );
+
+    log::info!(
+        "Opening camera: {} ({} buffers for {} fps + {} ms frame lifespan)",
+        args.device,
+        buf_count,
+        args.fps,
+        FRAME_LIFESPAN_NS / 1_000_000
+    );
     let cam = camera::create_camera()
         .with_device(&args.device)
         .with_resolution(width, height)
         .with_format(FourCC(fourcc.to_le_bytes()))
-        .with_buffers(8)
+        .with_buffers(buf_count)
         .open()?;
 
     log::info!("Starting camera capture");
@@ -164,13 +179,12 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
             (&buffer).try_into()?
         };
 
-        // Get current timestamp for frame expiration
+        // Get current timestamp for frame expiration. FRAME_LIFESPAN_NS is
+        // sized for slow consumers (4K codec ops, socket-queue backlog);
+        // the buf_count above is derived from this so the host invariant
+        // (lifespan < (buf_count - 1) / fps) holds at any --fps.
         let now = videostream::timestamp()?;
-        // Frame lifespan on the host: long enough to absorb slow consumers
-        // (a few frames of socket-queue backlog + variable per-frame work
-        // like 4K codec ops) without retaining so many DMA-BUFs that
-        // memory pressure becomes an issue. 200 ms ≈ 6 frames at 30 fps.
-        let expires = now + 200_000_000;
+        let expires = now + FRAME_LIFESPAN_NS;
 
         // Post frame to host (ownership transfers)
         host.post(output_frame, expires, -1, -1, -1)?;
