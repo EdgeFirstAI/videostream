@@ -21,10 +21,11 @@
 static pthread_mutex_t vsl_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static vsl_camera* camera = NULL;
-// The frame lifespan needs to be less than (buf_count-1) * (1e9/FPS)
-// 200 ms ≈ 6 frames at 30 fps: enough for slow consumers (codec ops on
-// 4K frames, socket-queue backlog) but not so long that DMA-BUF memory
-// pressure becomes a concern.
+// The frame lifespan needs to be less than (buf_count-1) * (1e9/FPS) — once
+// it exceeds that window the camera has no free buffer to fill on the next
+// vsync and stalls. 200 ms ≈ 6 frame-times at 30 fps, so the default
+// `buf_count = 8` gives one frame of headroom. A CLI override that lowers
+// buf_count below ~7 will cause stalls at 30 fps with this lifespan.
 static int64_t frame_lifespan = 200 * 1000000; // 200 ms
 static int     cam_width      = 0;
 static int     cam_height     = 0;
@@ -352,7 +353,7 @@ main(int argc, char** argv)
         .device_name = "/dev/video0",
         .vsl_path    = "/tmp/camhost.0",
         .log         = NULL,
-        .buf_count   = 6,
+        .buf_count   = 8,
         .cam_fourcc  = 0,
         .mirror      = false,
         .mirror_v    = false,

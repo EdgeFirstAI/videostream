@@ -27,6 +27,13 @@ exported symbol set is identical to 2.5.1.
   with a clear message (NV12M plane-separation is a follow-up). Unblocks
   the 4K tile encoder pattern on platforms where the V4L2 backend is
   selected — verified on i.MX 8M Plus (`vsi_v4l2enc`).
+
+  Crop *dimensions* (`crop.width`, `crop.height`) and source geometry are
+  latched on the first `vsl_encode_frame()` call because V4L2 `S_FMT` is
+  a one-shot. Crop *position* (`crop.x`, `crop.y`) can vary per call —
+  the encoder recomputes `data_offset`/`bytesused` each frame, enabling
+  panning-ROI scenarios. Subsequent calls that change the latched
+  dimensions, source stride, or crop-presence return `EINVAL`.
 - **VSL client returns accurate `errno` values** (`lib/client.c`).
   `vsl_frame_trylock` and `vsl_frame_unlock` now return `ESTALE` for
   `VSL_FRAME_ERROR_EXPIRED` (was misleading `EEXIST` "file exists"),
@@ -42,6 +49,11 @@ exported symbol set is identical to 2.5.1.
   spurious `ESTALE` errors. 200 ms (~6 frames at 30 fps) absorbs
   socket-queue backlog and variable per-frame work without retaining
   excessive DMA-BUFs.
+- **Camera buffer count raised from 4/6 to 8** in `videostream stream`
+  and `camhost`. The host invariant `frame_lifespan < (buf_count - 1) *
+  (1e9 / FPS)` was violated by the new 200 ms lifespan at 30 fps with
+  the prior defaults — could cause periodic camera buffer starvation.
+  `buf_count = 8` gives one frame of headroom at 30 fps.
 
 ### Changed
 
@@ -51,7 +63,9 @@ exported symbol set is identical to 2.5.1.
   used). Eliminates ~50 lines of duplicated switch statements and the
   errno-mismatch class of bugs.
 - **`vsl-test-encoder-4k-tiles` test tool:** added `-f / --frames N`
-  flag to bound the run, default output codec changed from HEVC to H.264
+  flag to bound the run (validated with `strtol` + error checking;
+  rejects non-numeric, zero, negative, and overflowing values with a
+  usage message), default output codec changed from HEVC to H.264
   (`.hevc` → `.h264` file extensions) for broader player compatibility,
   and transient VSL trylock failures now skip the frame and continue
   rather than aborting the test.

@@ -78,12 +78,16 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     let (encoder_opt, _output_fourcc) =
         utils::create_encoder_if_requested(args.encode, "h264", &args.bitrate, args.fps, fourcc)?;
 
-    // Open camera
+    // Open camera. 8 buffers gives one frame of headroom for the 200 ms
+    // frame_lifespan below at 30 fps — the host expire deadline must stay
+    // under (buf_count - 1) * (1 / fps) or the camera stalls waiting for a
+    // buffer to recycle.
     log::info!("Opening camera: {}", args.device);
     let cam = camera::create_camera()
         .with_device(&args.device)
         .with_resolution(width, height)
         .with_format(FourCC(fourcc.to_le_bytes()))
+        .with_buffers(8)
         .open()?;
 
     log::info!("Starting camera capture");

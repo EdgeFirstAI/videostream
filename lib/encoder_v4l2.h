@@ -93,12 +93,20 @@ struct vsl_encoder_v4l2 {
     // Crop region (a window into a larger source frame). When set, the
     // encoder OUTPUT queue is sized to the crop dimensions but bytesperline
     // is the source's full stride, and each QBUF sets data_offset so the
-    // hardware reads only the cropped window. Captured once on the first
-    // vsl_encode_frame call; subsequent calls keep the same window.
-    bool    has_crop;
-    VSLRect crop_region;
-    int     source_stride; // Bytes per row in the source DMA-BUF
-    int     source_height; // Rows in the source DMA-BUF (for bounds checks)
+    // hardware reads only the cropped window.
+    //
+    // V4L2 S_FMT is a one-shot at init, so the *dimensions* (crop width,
+    // crop height, source stride, source width/height) are latched on the
+    // first vsl_encode_frame call. The *position* (crop.x, crop.y) can
+    // vary per call — only data_offset/bytesused are recomputed each
+    // frame. Subsequent calls that change the latched dimensions return
+    // -EINVAL.
+    bool has_crop;
+    int  crop_width;
+    int  crop_height;
+    int  source_width;  // Pixels per row of source frame (visible)
+    int  source_height; // Rows in the source DMA-BUF
+    int  source_stride; // Bytes per row in the source DMA-BUF
 
     // OUTPUT queue (raw input frames)
     struct {

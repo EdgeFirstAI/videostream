@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -173,6 +174,18 @@ encodeAndSave(void* arg)
     pthread_exit(NULL);
 }
 
+static void
+usage_and_exit(const char* prog, int status)
+{
+    fprintf(stderr,
+            "Usage: %s [--host <socket>] [--frames N]\n"
+            "  --host, -h <socket>   VSL host socket to read source frames "
+            "from\n"
+            "  --frames, -f N        Run for N frames then exit (N > 0)\n",
+            prog);
+    exit(status);
+}
+
 void
 parseArguments(int argc, char* argv[])
 {
@@ -184,7 +197,18 @@ parseArguments(int argc, char* argv[])
         } else if ((strcmp(argv[i], "--frames") == 0 ||
                     strcmp(argv[i], "-f") == 0) &&
                    i + 1 < argc) {
-            max_frames = atoi(argv[i + 1]);
+            errno     = 0;
+            char* end = NULL;
+            long  val = strtol(argv[i + 1], &end, 10);
+            if (errno != 0 || end == argv[i + 1] || *end != '\0' || val <= 0 ||
+                val > INT_MAX) {
+                fprintf(stderr,
+                        "Invalid --frames value '%s': expected positive "
+                        "integer\n",
+                        argv[i + 1]);
+                usage_and_exit(argv[0], EXIT_FAILURE);
+            }
+            max_frames = (int) val;
             i++;
         }
     }
