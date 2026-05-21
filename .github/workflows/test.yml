@@ -612,6 +612,15 @@ jobs:
           mkdir -p build/profraw
           export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
 
+          # Clean .gcda files written by the pytest run before launching the
+          # Rust test binaries. libgcov merges counters into any existing
+          # .gcda; a structural mismatch between the file on disk and the
+          # current build can corrupt the heap at thread exit
+          # (tcache_thread_shutdown: unaligned tcache chunk detected). The
+          # build artifact only carries .gcno, so removing .gcda here gives
+          # libgcov a clean slate for this job's runtime data.
+          find build -name "*.gcda" -delete 2>/dev/null || true
+
           # Verify CLI binary exists for integration tests
           if [ -f "$VIDEOSTREAM_BIN" ]; then
             echo "✓ CLI binary found at: $VIDEOSTREAM_BIN"
