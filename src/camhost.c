@@ -22,7 +22,10 @@ static pthread_mutex_t vsl_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static vsl_camera* camera = NULL;
 // The frame lifespan needs to be less than (buf_count-1) * (1e9/FPS)
-static int64_t frame_lifespan = 90 * 1000000; // 90 ms
+// 200 ms ≈ 6 frames at 30 fps: enough for slow consumers (codec ops on
+// 4K frames, socket-queue backlog) but not so long that DMA-BUF memory
+// pressure becomes a concern.
+static int64_t frame_lifespan = 200 * 1000000; // 200 ms
 static int     cam_width      = 0;
 static int     cam_height     = 0;
 static int64_t last_frame     = 0;

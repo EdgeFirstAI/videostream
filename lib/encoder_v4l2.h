@@ -90,6 +90,16 @@ struct vsl_encoder_v4l2 {
     uint32_t v4l2_input_fmt;   // V4L2 pixel format for OUTPUT queue
     int      num_input_planes; // Number of planes (1 for packed, 2 for NV12)
 
+    // Crop region (a window into a larger source frame). When set, the
+    // encoder OUTPUT queue is sized to the crop dimensions but bytesperline
+    // is the source's full stride, and each QBUF sets data_offset so the
+    // hardware reads only the cropped window. Captured once on the first
+    // vsl_encode_frame call; subsequent calls keep the same window.
+    bool    has_crop;
+    VSLRect crop_region;
+    int     source_stride; // Bytes per row in the source DMA-BUF
+    int     source_height; // Rows in the source DMA-BUF (for bounds checks)
+
     // OUTPUT queue (raw input frames)
     struct {
         int                               count;

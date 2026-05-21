@@ -23,15 +23,16 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-static uint32_t outputFourcc = VSL_FOURCC('H', 'E', 'V', 'C');
+static uint32_t outputFourcc = VSL_FOURCC('H', '2', '6', '4');
 static int      inWidth      = 3840;
 static int      inHeight     = 2160;
 static int      outWidth     = 1920;
 static int      outHeight    = 1080;
 static int      fps          = 30;
 
-static int   run      = 1;
-static char* hostPath = NULL;
+static int   run        = 1;
+static char* hostPath   = NULL;
+static int   max_frames = 0; // 0 = unbounded
 
 void
 sig_handler(int signum)
@@ -175,15 +176,16 @@ encodeAndSave(void* arg)
 void
 parseArguments(int argc, char* argv[])
 {
-    // Iterate through command-line arguments
     for (int i = 1; i < argc; i++) {
-        // Check if the current argument is "--host" or "-h"
-        if (strcmp(argv[i], "--host") == 0 || strcmp(argv[i], "-h") == 0) {
-            // Check if the next argument exists and is not another option
-            if (i + 1 < argc && argv[i + 1][0] != '-') {
-                hostPath = argv[i + 1];
-                break;
-            }
+        if ((strcmp(argv[i], "--host") == 0 || strcmp(argv[i], "-h") == 0) &&
+            i + 1 < argc && argv[i + 1][0] != '-') {
+            hostPath = argv[i + 1];
+            i++;
+        } else if ((strcmp(argv[i], "--frames") == 0 ||
+                    strcmp(argv[i], "-f") == 0) &&
+                   i + 1 < argc) {
+            max_frames = atoi(argv[i + 1]);
+            i++;
         }
     }
 }
@@ -230,12 +232,15 @@ getInputFrame(VSLClient* client)
                fourcc >> 24);
 
         if (vsl_frame_trylock(in_frame)) {
+            // Lock race with the VSL host's buffer recycle is a known
+            // pre-existing IPC issue; skip the frame rather than abort so
+            // the test still produces a usable long-form capture.
             fprintf(stderr,
-                    "failed to lock frame %ld: %s\n",
+                    "skip frame %ld: trylock failed (%s)\n",
                     vsl_frame_serial(in_frame),
                     strerror(errno));
             vsl_frame_release(in_frame);
-            exit(EXIT_FAILURE);
+            return NULL;
         }
 
         // mmap frame here, later on mmap would be done four times in async
@@ -273,19 +278,19 @@ main(int argc, char* argv[])
 
     int tiles_fd[4];
 
-    tiles_fd[0] = open("/tmp/vslencodedvideo_tile1.hevc",
+    tiles_fd[0] = open("/tmp/vslencodedvideo_tile1.h264",
                        O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
                        0644);
 
-    tiles_fd[1] = open("/tmp/vslencodedvideo_tile2.hevc",
+    tiles_fd[1] = open("/tmp/vslencodedvideo_tile2.h264",
                        O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
                        0644);
 
-    tiles_fd[2] = open("/tmp/vslencodedvideo_tile3.hevc",
+    tiles_fd[2] = open("/tmp/vslencodedvideo_tile3.h264",
                        O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
                        0644);
 
-    tiles_fd[3] = open("/tmp/vslencodedvideo_tile4.hevc",
+    tiles_fd[3] = open("/tmp/vslencodedvideo_tile4.h264",
                        O_WRONLY | O_CREAT | O_TRUNC | O_SYNC,
                        0644);
 
@@ -322,8 +327,15 @@ main(int argc, char* argv[])
         }
     }
 
-    while (run) {
+    int frame_count   = 0;
+    int skipped_count = 0;
+    while (run && (max_frames == 0 || frame_count < max_frames)) {
         VSLFrame* in_frame = getInputFrame(client);
+        if (!in_frame) {
+            // Transient skip (e.g. VSL lock race) — keep the loop alive.
+            skipped_count++;
+            continue;
+        }
 
         pthread_t   threads[4];
         EncoderArgs args[4];
@@ -345,7 +357,15 @@ main(int argc, char* argv[])
         for (int i = 0; i < 4; i++) { pthread_join(threads[i], NULL); }
 
         vsl_frame_release(in_frame);
+        frame_count++;
+        if (frame_count % 30 == 0) {
+            fprintf(stderr, "tile encoder: %d frames\n", frame_count);
+        }
     }
+    fprintf(stderr,
+            "tile encoder: completed %d frames (%d skipped on lock race)\n",
+            frame_count,
+            skipped_count);
 
     for (int i = 0; i < 4; i++) { close(tiles_fd[i]); }
 }

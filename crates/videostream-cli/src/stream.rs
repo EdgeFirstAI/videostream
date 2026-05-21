@@ -162,7 +162,11 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
 
         // Get current timestamp for frame expiration
         let now = videostream::timestamp()?;
-        let expires = now + 90_000_000; // 90ms expiration (like camhost.c)
+        // Frame lifespan on the host: long enough to absorb slow consumers
+        // (a few frames of socket-queue backlog + variable per-frame work
+        // like 4K codec ops) without retaining so many DMA-BUFs that
+        // memory pressure becomes an issue. 200 ms ≈ 6 frames at 30 fps.
+        let expires = now + 200_000_000;
 
         // Post frame to host (ownership transfers)
         host.post(output_frame, expires, -1, -1, -1)?;

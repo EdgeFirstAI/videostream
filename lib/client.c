@@ -803,36 +803,17 @@ vsl_frame_trylock(VSLFrame* frame)
 
     client->is_reconnecting = false;
 
-    switch (event.error) {
-    case VSL_FRAME_ERROR_EXPIRED:
-        pthread_mutex_unlock(&client->lock);
-#ifndef NDEBUG
-        fprintf(stderr, "%s frame %ld expired\n", __FUNCTION__, control.serial);
-#endif
-        errno = EEXIST;
-        return -1;
-    case VSL_FRAME_ERROR_INVALID_CONTROL:
+    if (event.error) {
         pthread_mutex_unlock(&client->lock);
 #ifndef NDEBUG
         fprintf(stderr,
-                "%s invalid control message %d\n",
+                "%s frame %ld: %s\n",
                 __FUNCTION__,
-                control.message);
+                control.serial,
+                vsl_frame_strerror(event.error));
 #endif
-        errno = EINVAL;
+        errno = vsl_frame_errno(event.error);
         return -1;
-
-    case VSL_FRAME_TOO_MANY_FRAMES_LOCKED:
-        pthread_mutex_unlock(&client->lock);
-#ifndef NDEBUG
-        fprintf(stderr,
-                "%s too many frames locked by this client\n",
-                __FUNCTION__);
-#endif
-        errno = EMFILE;
-        return -1;
-    case VSL_FRAME_SUCCESS:
-        break;
     }
 
     pthread_mutex_unlock(&client->lock);
@@ -967,27 +948,15 @@ vsl_frame_unlock(VSLFrame* frame)
         }
     } while (event.info.serial); // non-zero serial indicates frame event.
 
-    switch (event.error) {
-    case VSL_FRAME_ERROR_EXPIRED:
-        pthread_mutex_unlock(&client->lock);
-        fprintf(stderr, "%s frame %ld expired\n", __FUNCTION__, control.serial);
-        errno = EEXIST;
-        return -1;
-    case VSL_FRAME_ERROR_INVALID_CONTROL:
+    if (event.error) {
         pthread_mutex_unlock(&client->lock);
         fprintf(stderr,
-                "%s invalid control message %d\n",
+                "%s frame %ld: %s\n",
                 __FUNCTION__,
-                control.message);
-        errno = EINVAL;
+                control.serial,
+                vsl_frame_strerror(event.error));
+        errno = vsl_frame_errno(event.error);
         return -1;
-    case VSL_FRAME_TOO_MANY_FRAMES_LOCKED:
-        pthread_mutex_unlock(&client->lock);
-        fprintf(stderr, "%s too many frames locked\n", __FUNCTION__);
-        errno = ENOLCK;
-        return -1;
-    default:
-        break;
     }
 
     pthread_mutex_unlock(&client->lock);

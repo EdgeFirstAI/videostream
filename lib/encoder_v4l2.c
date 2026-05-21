@@ -92,6 +92,25 @@ vsl_to_v4l2_input_format(uint32_t fourcc, int* num_planes)
     }
 }
 
+// Bytes-per-pixel for crop offset math. Returns -1 for formats whose
+// per-plane offset can't be expressed with a single (y*stride + x*bpp);
+// planar/sub-sampled formats (NV12, I420) would require switching to a
+// per-plane MPLANE layout (NV12M) so Y and UV get separate data_offsets.
+static int
+crop_bpp_for_format(uint32_t v4l2_input_fmt)
+{
+    switch (v4l2_input_fmt) {
+    case VSI_V4L2_PIX_FMT_BGR4:
+    case VSI_V4L2_PIX_FMT_AB24:
+    case VSI_V4L2_PIX_FMT_AR24:
+        return 4;
+    case V4L2_PIX_FMT_YUYV:
+        return 2;
+    default:
+        return -1;
+    }
+}
+
 // Convert profile to bitrate in bps
 static uint32_t
 profile_to_bitrate(VSLEncoderProfile profile)
@@ -213,40 +232,103 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
         return -1;
     }
 
+    // Resolve effective dimensions: when has_crop, the OUTPUT queue is sized
+    // to the crop window but bytesperline still spans the source row so the
+    // driver indexes correctly into the larger DMA-BUF.
+    int    eff_width  = width;
+    int    eff_height = height;
+    size_t row_stride = 0; // 0 = let driver compute (no crop)
+    if (enc->has_crop) {
+        if (!enc->multiplanar) {
+            fprintf(stderr,
+                    "V4L2 encoder: crop_region requires an MPLANE driver "
+                    "(single-plane v4l2_buffer.m.fd has no per-plane "
+                    "data_offset)\n");
+            errno = EINVAL;
+            return -1;
+        }
+        int bpp = crop_bpp_for_format(v4l2_input_fmt);
+        if (bpp < 0) {
+            fprintf(stderr,
+                    "V4L2 encoder: crop_region not supported for fourcc "
+                    "'%c%c%c%c' (only BGRA-family and YUYV; planar formats "
+                    "need separate Y/UV plane offsets)\n",
+                    (char) (input_fourcc & 0xFF),
+                    (char) ((input_fourcc >> 8) & 0xFF),
+                    (char) ((input_fourcc >> 16) & 0xFF),
+                    (char) ((input_fourcc >> 24) & 0xFF));
+            errno = EINVAL;
+            return -1;
+        }
+        if (v4l2_input_fmt == V4L2_PIX_FMT_YUYV && (enc->crop_region.x & 1)) {
+            fprintf(stderr,
+                    "V4L2 encoder: YUYV crop x=%d must be even (2-pixel "
+                    "macroblocks)\n",
+                    enc->crop_region.x);
+            errno = EINVAL;
+            return -1;
+        }
+        if (enc->crop_region.width <= 0 || enc->crop_region.height <= 0 ||
+            enc->crop_region.x < 0 || enc->crop_region.y < 0 ||
+            enc->crop_region.x + enc->crop_region.width > width ||
+            enc->crop_region.y + enc->crop_region.height > height) {
+            fprintf(stderr,
+                    "V4L2 encoder: crop region (%d,%d %dx%d) out of bounds "
+                    "for %dx%d source\n",
+                    enc->crop_region.x,
+                    enc->crop_region.y,
+                    enc->crop_region.width,
+                    enc->crop_region.height,
+                    width,
+                    height);
+            errno = EINVAL;
+            return -1;
+        }
+        eff_width  = enc->crop_region.width;
+        eff_height = enc->crop_region.height;
+        row_stride = (size_t) enc->source_stride;
+    }
+
     // Compute per-format sizeimage for plane 0
     size_t plane0_size;
     size_t plane1_size = 0;
     if (num_planes == 2) {
         // Multi-plane format (e.g. NV12M): Y + UV as separate plane entries
-        plane0_size = (size_t) width * height;     // Y
-        plane1_size = (size_t) width * height / 2; // UV
+        plane0_size = (size_t) eff_width * eff_height;     // Y
+        plane1_size = (size_t) eff_width * eff_height / 2; // UV
     } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUYV) {
-        plane0_size = (size_t) width * height * 2;
+        plane0_size = (size_t) eff_width * eff_height * 2;
     } else if (v4l2_input_fmt == V4L2_PIX_FMT_YUV420 ||
                v4l2_input_fmt == V4L2_PIX_FMT_NV12) {
-        plane0_size = (size_t) width * height * 3 / 2;
+        plane0_size = (size_t) eff_width * eff_height * 3 / 2;
     } else {
-        plane0_size = (size_t) width * height * 4; // Default BGRA/RGBA
+        plane0_size = (size_t) eff_width * eff_height * 4; // BGRA/RGBA
     }
+    // With strided crop, plane 0 covers eff_height rows of source_stride
+    // bytes (the driver walks rows by bytesperline, so sizeimage must match).
+    if (row_stride > 0) { plane0_size = row_stride * (size_t) eff_height; }
 
     // Set OUTPUT format
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));
     fmt.type = enc->output_type;
     if (enc->multiplanar) {
-        fmt.fmt.pix_mp.width                  = width;
-        fmt.fmt.pix_mp.height                 = height;
+        fmt.fmt.pix_mp.width                  = eff_width;
+        fmt.fmt.pix_mp.height                 = eff_height;
         fmt.fmt.pix_mp.pixelformat            = v4l2_input_fmt;
         fmt.fmt.pix_mp.num_planes             = num_planes;
         fmt.fmt.pix_mp.field                  = V4L2_FIELD_NONE;
         fmt.fmt.pix_mp.plane_fmt[0].sizeimage = plane0_size;
+        if (row_stride > 0) {
+            fmt.fmt.pix_mp.plane_fmt[0].bytesperline = row_stride;
+        }
         if (num_planes == 2) {
             fmt.fmt.pix_mp.plane_fmt[1].sizeimage = plane1_size;
         }
     } else {
         // Single-plane API: always one contiguous buffer
-        fmt.fmt.pix.width       = width;
-        fmt.fmt.pix.height      = height;
+        fmt.fmt.pix.width       = eff_width;
+        fmt.fmt.pix.height      = eff_height;
         fmt.fmt.pix.pixelformat = v4l2_input_fmt;
         fmt.fmt.pix.field       = V4L2_FIELD_NONE;
         fmt.fmt.pix.sizeimage =
@@ -710,11 +792,19 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
     uint64_t                 start_time = vsl_timestamp_us();
 
     // Initialize encoder on first frame (need dimensions and format from
-    // source)
+    // source). Crop region (if any) is captured here and locked for the life
+    // of this encoder instance — the OUTPUT queue's S_FMT happens only once.
     if (!enc->initialized) {
         int      width        = vsl_frame_width(source);
         int      height       = vsl_frame_height(source);
         uint32_t input_fourcc = vsl_frame_fourcc(source);
+
+        if (crop_region) {
+            enc->has_crop      = true;
+            enc->crop_region   = *crop_region;
+            enc->source_stride = vsl_frame_stride(source);
+            enc->source_height = height;
+        }
 
         if (setup_output_queue(enc, width, height, input_fourcc) < 0) {
             return -1;
@@ -766,6 +856,27 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
         buf.length   = enc->num_input_planes;
         buf.m.planes = planes;
         setup_output_planes(enc, planes, src_fd, vsl_frame_size(source));
+        if (enc->has_crop) {
+            // Point the encoder at the cropped window within the source
+            // DMA-BUF. bytesperline (set in S_FMT) spans a full source row,
+            // so each row step lands on the next cropped row's start; the
+            // driver reads `width` bytes from each row and skips the rest.
+            //
+            // bytesused must (a) exceed data_offset (vb2 drivers reject
+            // bytesused <= data_offset) and (b) not exceed plane length.
+            // Computing it as "position of the byte right after the last
+            // valid pixel of the crop" satisfies both — the last row only
+            // contributes `width` bytes, not a full stride, which matters
+            // when the crop hits the right/bottom edge of the source.
+            int bpp     = crop_bpp_for_format(enc->v4l2_input_fmt);
+            int cx_end  = enc->crop_region.x + enc->crop_region.width;
+            int cy_last = enc->crop_region.y + enc->crop_region.height - 1;
+            planes[0].data_offset =
+                (size_t) enc->crop_region.y * enc->source_stride +
+                (size_t) enc->crop_region.x * bpp;
+            planes[0].bytesused =
+                (size_t) cy_last * enc->source_stride + (size_t) cx_end * bpp;
+        }
     } else {
         // Single-plane API: one contiguous buffer (NV12 Y+UV, BGRA, etc.)
         buf.m.fd      = src_fd;

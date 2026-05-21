@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-05-21
+
+Patch release with V4L2 encoder + VSL IPC bug fixes. No public API or ABI
+changes — `SOVERSION` stays at `2`, no headers in `include/` change,
+exported symbol set is identical to 2.5.1.
+
+### Fixed
+
+- **V4L2 encoder honors `crop_region`** (`lib/encoder_v4l2.c`). The
+  `crop_region` parameter to `vsl_encode_frame()` was silently ignored on
+  the V4L2 backend (Hantro userspace backend was already wiring it).
+  Implemented via `v4l2_buffer.m.planes[0].data_offset` plus
+  source-stride `bytesperline`, so the encoder reads only the cropped
+  window from a larger source DMA-BUF. Supports BGRA-family (4 bpp) and
+  YUYV (2 bpp, even-x required); NV12/I420 with crop returns `EINVAL`
+  with a clear message (NV12M plane-separation is a follow-up). Unblocks
+  the 4K tile encoder pattern on platforms where the V4L2 backend is
+  selected — verified on i.MX 8M Plus (`vsi_v4l2enc`).
+- **VSL client returns accurate `errno` values** (`lib/client.c`).
+  `vsl_frame_trylock` and `vsl_frame_unlock` now return `ESTALE` for
+  `VSL_FRAME_ERROR_EXPIRED` (was misleading `EEXIST` "file exists"),
+  `EBADMSG` for `VSL_FRAME_ERROR_INVALID_CONTROL` (was `EINVAL`), and
+  `ENOLCK` for `VSL_FRAME_TOO_MANY_FRAMES_LOCKED` (was `EMFILE` in
+  trylock; unlock was already correct). The values now match the
+  existing `vsl_frame_errno()` helper already used by `vsl_frame_wait`.
+- **VSL frame lifespan bumped from 90 ms to 200 ms** in
+  `videostream stream` (`crates/videostream-cli/src/stream.rs`) and the
+  `camhost` example (`src/camhost.c`). The 90 ms (~3 frames at 30 fps)
+  window expired frames before slow consumers — anything doing real
+  per-frame codec work on 4K — could call `vsl_frame_trylock`, producing
+  spurious `ESTALE` errors. 200 ms (~6 frames at 30 fps) absorbs
+  socket-queue backlog and variable per-frame work without retaining
+  excessive DMA-BUFs.
+
+### Changed
+
+- **Internal:** `vsl_frame_trylock` / `vsl_frame_unlock` error handling
+  refactored to use the existing `vsl_frame_strerror()` /
+  `vsl_frame_errno()` helpers (same pattern `vsl_frame_wait` already
+  used). Eliminates ~50 lines of duplicated switch statements and the
+  errno-mismatch class of bugs.
+- **`vsl-test-encoder-4k-tiles` test tool:** added `-f / --frames N`
+  flag to bound the run, default output codec changed from HEVC to H.264
+  (`.hevc` → `.h264` file extensions) for broader player compatibility,
+  and transient VSL trylock failures now skip the frame and continue
+  rather than aborting the test.
+
 ## [2.5.1] - 2026-04-25
 
 ### Added
