@@ -634,6 +634,17 @@ jobs:
           # Track overall test status
           TEST_FAILED=0
 
+          # Heap-corruption diagnostics for the EDGEAI-XXXX investigation
+          # into the test_client_host_frame_pipeline tcache_thread_shutdown
+          # failure. MALLOC_CHECK_=3 aborts immediately on heap consistency
+          # violations (use-after-free, double-free, write-past-end) with a
+          # backtrace, instead of letting the corruption fester until tcache
+          # detects it at unrelated thread exit. MALLOC_PERTURB_=42 fills
+          # freed memory with 0xD5, making use-after-free reads return a
+          # recognisable pattern. Remove once the underlying bug is fixed.
+          export MALLOC_CHECK_=3
+          export MALLOC_PERTURB_=42
+
           # Run each test binary and collect results
           echo "Running pre-built Rust test binaries..."
           for test_bin in rust-tests/*; do
