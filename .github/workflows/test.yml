@@ -612,6 +612,15 @@ jobs:
           mkdir -p build/profraw
           export LLVM_PROFILE_FILE="${{ github.workspace }}/build/profraw/imx8mp-%p-%m.profraw"
 
+          # Clean .gcda files written by the pytest run before launching the
+          # Rust test binaries. libgcov merges counters into any existing
+          # .gcda; a structural mismatch between the file on disk and the
+          # current build can corrupt the heap at thread exit
+          # (tcache_thread_shutdown: unaligned tcache chunk detected). The
+          # build artifact only carries .gcno, so removing .gcda here gives
+          # libgcov a clean slate for this job's runtime data.
+          find build -name "*.gcda" -delete 2>/dev/null || true
+
           # Verify CLI binary exists for integration tests
           if [ -f "$VIDEOSTREAM_BIN" ]; then
             echo "✓ CLI binary found at: $VIDEOSTREAM_BIN"
@@ -624,6 +633,17 @@ jobs:
 
           # Track overall test status
           TEST_FAILED=0
+
+          # Heap-corruption diagnostics for the EDGEAI-XXXX investigation
+          # into the test_client_host_frame_pipeline tcache_thread_shutdown
+          # failure. MALLOC_CHECK_=3 aborts immediately on heap consistency
+          # violations (use-after-free, double-free, write-past-end) with a
+          # backtrace, instead of letting the corruption fester until tcache
+          # detects it at unrelated thread exit. MALLOC_PERTURB_=42 fills
+          # freed memory with 0xD5, making use-after-free reads return a
+          # recognisable pattern. Remove once the underlying bug is fixed.
+          export MALLOC_CHECK_=3
+          export MALLOC_PERTURB_=42
 
           # Run each test binary and collect results
           echo "Running pre-built Rust test binaries..."

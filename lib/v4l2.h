@@ -21,10 +21,10 @@ struct vsl_camera {
     /* Colorimetry cached at VIDIOC_S_FMT time. Raw V4L2 UAPI enum values
      * (V4L2_COLORSPACE_*, V4L2_XFER_FUNC_*, V4L2_YCBCR_ENC_*,
      * V4L2_QUANTIZATION_*); 0 == _DEFAULT (driver did not resolve). */
-    u_int32_t                 color_space;
-    u_int32_t                 color_transfer;
-    u_int32_t                 color_encoding;
-    u_int32_t                 color_range;
+    u_int32_t color_space;
+    u_int32_t color_transfer;
+    u_int32_t color_encoding;
+    u_int32_t color_range;
 };
 
 struct vsl_camera_buffer {

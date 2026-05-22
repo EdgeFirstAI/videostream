@@ -375,4 +375,157 @@ mod tests {
         );
         assert!(encoder.is_ok());
     }
+
+    /// Helper for crop tests: allocate a DMA-BUF backed source frame of the
+    /// requested format and an encoder destination frame, returning both.
+    fn make_crop_test_frames(
+        encoder: &Encoder,
+        width: i32,
+        height: i32,
+        fourcc: &str,
+    ) -> Result<(crate::frame::Frame, crate::frame::Frame), Error> {
+        let source = crate::frame::Frame::new(width as u32, height as u32, 0, fourcc)?;
+        source.alloc(None)?;
+        let dest = encoder.new_output_frame(width, height, -1, -1, -1)?;
+        Ok((source, dest))
+    }
+
+    /// Crop region exceeding source dimensions must be rejected by
+    /// `latch_init_crop`'s bounds check (`lib/encoder_v4l2.c`).
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_crop_out_of_bounds_rejected() {
+        let encoder = Encoder::create_ex(
+            VSLEncoderProfileEnum::Kbps5000 as u32,
+            u32::from_le_bytes(*b"H264"),
+            30,
+            CodecBackend::V4L2,
+        )
+        .unwrap();
+
+        let (source, dest) = make_crop_test_frames(&encoder, 640, 480, "BGRA").unwrap();
+
+        // Crop region exceeds source — 700x500 doesn't fit in 640x480.
+        let bad_crop = VSLRect::new(0, 0, 700, 500);
+        let mut keyframe: c_int = 0;
+        let result = unsafe {
+            encoder
+                .frame(&source, &dest, &bad_crop, &mut keyframe)
+                .unwrap()
+        };
+        assert_eq!(result, -1, "encoder must reject out-of-bounds crop region");
+    }
+
+    /// YUYV input with an odd `crop.x` is invalid (YUYV pixels come in
+    /// 2-pixel macroblocks). `latch_init_crop` must reject it before
+    /// configuring `S_FMT`.
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_crop_yuyv_odd_x_rejected() {
+        let encoder = Encoder::create_ex(
+            VSLEncoderProfileEnum::Kbps5000 as u32,
+            u32::from_le_bytes(*b"H264"),
+            30,
+            CodecBackend::V4L2,
+        )
+        .unwrap();
+
+        let (source, dest) = make_crop_test_frames(&encoder, 640, 480, "YUYV").unwrap();
+
+        // Crop.x = 1 is odd — must be rejected for YUYV.
+        let bad_crop = VSLRect::new(1, 0, 320, 240);
+        let mut keyframe: c_int = 0;
+        let result = unsafe {
+            encoder
+                .frame(&source, &dest, &bad_crop, &mut keyframe)
+                .unwrap()
+        };
+        assert_eq!(result, -1, "encoder must reject odd crop.x for YUYV input");
+    }
+
+    /// NV12 (and other planar formats) require per-plane `data_offset`
+    /// handling that this code path doesn't yet implement; `latch_init_crop`
+    /// must return `EINVAL` rather than silently misaddress the Y/UV planes.
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_crop_nv12_rejected() {
+        let encoder = Encoder::create_ex(
+            VSLEncoderProfileEnum::Kbps5000 as u32,
+            u32::from_le_bytes(*b"H264"),
+            30,
+            CodecBackend::V4L2,
+        )
+        .unwrap();
+
+        let (source, dest) = make_crop_test_frames(&encoder, 640, 480, "NV12").unwrap();
+
+        let crop = VSLRect::new(0, 0, 320, 240);
+        let mut keyframe: c_int = 0;
+        let result = unsafe { encoder.frame(&source, &dest, &crop, &mut keyframe).unwrap() };
+        assert_eq!(
+            result, -1,
+            "encoder must reject crop_region on NV12 input until \
+             per-plane offsets are implemented"
+        );
+    }
+
+    /// After the encoder has latched its crop dimensions on the first
+    /// frame (V4L2 `S_FMT` is one-shot), a subsequent frame with
+    /// different crop width/height must be rejected by
+    /// `validate_crop_for_frame`. The position (`x`, `y`) can vary —
+    /// only the dimensions are locked — so we additionally verify that
+    /// changing position alone is accepted.
+    #[ignore = "test requires VPU hardware"]
+    #[test]
+    fn test_encoder_crop_dim_mismatch_after_init() {
+        let encoder = Encoder::create_ex(
+            VSLEncoderProfileEnum::Kbps5000 as u32,
+            u32::from_le_bytes(*b"H264"),
+            30,
+            CodecBackend::V4L2,
+        )
+        .unwrap();
+
+        let (source, dest) = make_crop_test_frames(&encoder, 640, 480, "BGRA").unwrap();
+
+        // First frame at 320x240 establishes the locked dims.
+        let crop_a = VSLRect::new(0, 0, 320, 240);
+        let mut keyframe: c_int = 0;
+        let first = unsafe {
+            encoder
+                .frame(&source, &dest, &crop_a, &mut keyframe)
+                .unwrap()
+        };
+        assert!(
+            first >= 0,
+            "first frame with valid crop must succeed (got {})",
+            first
+        );
+
+        // Same dims, different position — must be accepted.
+        let crop_a_shifted = VSLRect::new(320, 240, 320, 240);
+        let shifted = unsafe {
+            encoder
+                .frame(&source, &dest, &crop_a_shifted, &mut keyframe)
+                .unwrap()
+        };
+        assert!(
+            shifted >= 0,
+            "per-call position change with same dims must succeed (got {})",
+            shifted
+        );
+
+        // Now change the dimensions — must be rejected.
+        let crop_b = VSLRect::new(0, 0, 400, 240);
+        let mismatched = unsafe {
+            encoder
+                .frame(&source, &dest, &crop_b, &mut keyframe)
+                .unwrap()
+        };
+        assert_eq!(
+            mismatched, -1,
+            "subsequent frame with different crop dimensions must be \
+             rejected (V4L2 S_FMT is one-shot)"
+        );
+    }
 }

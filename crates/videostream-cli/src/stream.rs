@@ -62,6 +62,15 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     let fourcc = utils::fourcc_from_str(&args.format)?;
     log::debug!("Input format: {} (0x{:08x})", args.format, fourcc);
 
+    // fps must be positive — the buf_count derivation below divides by it
+    // and the host frame-lifespan invariant is meaningless at fps <= 0.
+    if args.fps <= 0 {
+        return Err(CliError::InvalidArgs(format!(
+            "fps must be a positive integer, got {}",
+            args.fps
+        )));
+    }
+
     // Install signal handler for graceful shutdown
     let term = utils::install_signal_handler()?;
 
@@ -78,12 +87,31 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     let (encoder_opt, _output_fourcc) =
         utils::create_encoder_if_requested(args.encode, "h264", &args.bitrate, args.fps, fourcc)?;
 
-    // Open camera
-    log::info!("Opening camera: {}", args.device);
+    // Camera + host frame lifespan are bound by an invariant:
+    //   frame_lifespan_ns < (buf_count - 1) * (1e9 / fps)
+    // If lifespan exceeds that window the camera has no free buffer to
+    // fill on the next vsync and stalls. We size buf_count from the
+    // requested fps so FRAME_LIFESPAN_NS (tuned for 4K codec consumers)
+    // always satisfies the invariant:
+    //   buf_count = lifespan_ns * fps / 1e9 + 2  (one frame of slack)
+    const FRAME_LIFESPAN_NS: i64 = 200_000_000; // 200 ms
+    let buf_count = std::cmp::max(
+        4,
+        (FRAME_LIFESPAN_NS * i64::from(args.fps) / 1_000_000_000 + 2) as i32,
+    );
+
+    log::info!(
+        "Opening camera: {} ({} buffers for {} fps + {} ms frame lifespan)",
+        args.device,
+        buf_count,
+        args.fps,
+        FRAME_LIFESPAN_NS / 1_000_000
+    );
     let cam = camera::create_camera()
         .with_device(&args.device)
         .with_resolution(width, height)
         .with_format(FourCC(fourcc.to_le_bytes()))
+        .with_buffers(buf_count)
         .open()?;
 
     log::info!("Starting camera capture");
@@ -160,9 +188,12 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
             (&buffer).try_into()?
         };
 
-        // Get current timestamp for frame expiration
+        // Get current timestamp for frame expiration. FRAME_LIFESPAN_NS is
+        // sized for slow consumers (4K codec ops, socket-queue backlog);
+        // the buf_count above is derived from this so the host invariant
+        // (lifespan < (buf_count - 1) / fps) holds at any --fps.
         let now = videostream::timestamp()?;
-        let expires = now + 90_000_000; // 90ms expiration (like camhost.c)
+        let expires = now + FRAME_LIFESPAN_NS;
 
         // Post frame to host (ownership transfers)
         host.post(output_frame, expires, -1, -1, -1)?;

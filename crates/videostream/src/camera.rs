@@ -696,6 +696,33 @@ mod tests {
         Ok(())
     }
 
+    /// Exercises the four camera-level colorimetry accessors against a
+    /// real camera so the underlying FFI thunks
+    /// (`vsl_camera_color_*`) are loaded and invoked. The values are
+    /// driver-defined; we just verify the calls succeed and return
+    /// something representable (either `Some(enum)` for a resolved
+    /// V4L2 enum or `None` for `_DEFAULT`).
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
+    #[test]
+    #[serial]
+    fn test_colorimetry_accessors() -> Result<(), Error> {
+        let device = get_camera_device();
+        let cam = create_camera()
+            .with_device(&device)
+            .with_format(FourCC(*b"YUYV"))
+            .open()?;
+
+        let cs = cam.color_space()?;
+        let ct = cam.color_transfer()?;
+        let ce = cam.color_encoding()?;
+        let cr = cam.color_range()?;
+        println!(
+            "colorimetry: space={:?} transfer={:?} encoding={:?} range={:?}",
+            cs, ct, ce, cr
+        );
+        Ok(())
+    }
+
     #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
