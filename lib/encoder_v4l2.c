@@ -421,6 +421,21 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
     // bytes (the driver walks rows by bytesperline, so sizeimage must match).
     if (row_stride > 0) { plane0_size = row_stride * (size_t) eff_height; }
 
+    // V4L2's plane_fmt.sizeimage is a __u32. Reject frames whose computed
+    // plane size would overflow it rather than silently truncating and
+    // configuring the driver with a bogus (tiny) buffer size.
+    if (plane0_size > UINT32_MAX || plane1_size > UINT32_MAX ||
+        plane0_size + plane1_size > UINT32_MAX) {
+        fprintf(stderr,
+                "V4L2 encoder: plane size %zu exceeds V4L2 u32 sizeimage "
+                "limit (%dx%d too large)\n",
+                plane0_size + plane1_size,
+                eff_width,
+                eff_height);
+        errno = EINVAL;
+        return -1;
+    }
+
     // Set OUTPUT format
     struct v4l2_format fmt;
     memset(&fmt, 0, sizeof(fmt));

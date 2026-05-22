@@ -62,6 +62,15 @@ pub fn execute(args: Args, json: bool) -> Result<(), CliError> {
     let fourcc = utils::fourcc_from_str(&args.format)?;
     log::debug!("Input format: {} (0x{:08x})", args.format, fourcc);
 
+    // fps must be positive — the buf_count derivation below divides by it
+    // and the host frame-lifespan invariant is meaningless at fps <= 0.
+    if args.fps <= 0 {
+        return Err(CliError::InvalidArgs(format!(
+            "fps must be a positive integer, got {}",
+            args.fps
+        )));
+    }
+
     // Install signal handler for graceful shutdown
     let term = utils::install_signal_handler()?;
 

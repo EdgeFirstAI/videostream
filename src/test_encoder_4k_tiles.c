@@ -194,9 +194,12 @@ parseArguments(int argc, char* argv[])
             i + 1 < argc && argv[i + 1][0] != '-') {
             hostPath = argv[i + 1];
             i++;
-        } else if ((strcmp(argv[i], "--frames") == 0 ||
-                    strcmp(argv[i], "-f") == 0) &&
-                   i + 1 < argc) {
+        } else if (strcmp(argv[i], "--frames") == 0 ||
+                   strcmp(argv[i], "-f") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "%s: missing value for %s\n", argv[0], argv[i]);
+                usage_and_exit(argv[0], EXIT_FAILURE);
+            }
             errno     = 0;
             char* end = NULL;
             long  val = strtol(argv[i + 1], &end, 10);
@@ -356,8 +359,11 @@ main(int argc, char* argv[])
     while (run && (max_frames == 0 || frame_count < max_frames)) {
         VSLFrame* in_frame = getInputFrame(client);
         if (!in_frame) {
-            // Transient skip (e.g. VSL lock race) — keep the loop alive.
+            // Transient skip (e.g. VSL lock race) — keep the loop alive, but
+            // back off briefly so a sustained run of failures doesn't spin
+            // the CPU at 100% and flood stderr.
             skipped_count++;
+            usleep(2000); // 2 ms
             continue;
         }
 
