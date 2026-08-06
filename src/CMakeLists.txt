@@ -10,6 +10,9 @@ target_link_libraries(vsl-test-host PRIVATE videostream)
 add_executable(vsl-test-client test_client.c)
 target_link_libraries(vsl-test-client PRIVATE videostream)
 
+add_executable(vsl-test-framelock test_framelock.c)
+target_link_libraries(vsl-test-framelock PRIVATE videostream)
+
 add_executable(vsl-camhost camhost.c)
 target_link_libraries(vsl-camhost PRIVATE videostream)
 

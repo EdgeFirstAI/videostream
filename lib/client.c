@@ -263,19 +263,22 @@ create_timer(VSLClient* client)
     int   integer_part = (int) client->sock_timeout_secs;
     float decimal_part = client->sock_timeout_secs - integer_part;
 
-    // converting to nanosecs
-    decimal_part *= 10e9;
+    // converting to nanosecs (1e9, not 10e9: tv_nsec must stay under a second
+    // or timer_settime rejects it with EINVAL and the watchdog never arms)
+    decimal_part *= 1e9;
 
     trigger.it_value.tv_nsec = (uint64_t) decimal_part;
-
-    client->timerid = timerid;
-    client->trigger = trigger;
 
     if (trigger.it_value.tv_nsec == 0 && trigger.it_value.tv_sec == 0) {
         trigger.it_value.tv_sec = DEFAULT_SOCK_TO_SECS;
     }
 
-    timer_settime(timerid, 0, &trigger, NULL);
+    client->timerid = timerid;
+    client->trigger = trigger;
+
+    // Left disarmed: this watchdog bounds a receive, so it is armed on entry
+    // to vsl_frame_wait() and disarmed again on the way out.  Arming it here
+    // would let it fire while the caller is off holding a locked frame.
 }
 
 static void
@@ -283,6 +286,20 @@ restart_timer(VSLClient* client)
 {
     if (client->timerid) {
         timer_settime(client->timerid, 0, &client->trigger, NULL);
+    }
+}
+
+// Disarm the watchdog. A caller which has returned from vsl_frame_wait() may
+// legitimately sit on a locked frame for as long as it likes — waiting on a
+// detection, a disk write — and must not have its socket torn out from under
+// it, because the host treats that close as a disconnect and drops the lock.
+static void
+stop_timer(VSLClient* client)
+{
+    if (client->timerid) {
+        struct itimerspec disarm;
+        memset(&disarm, 0, sizeof(disarm));
+        timer_settime(client->timerid, 0, &disarm, NULL);
     }
 }
 
@@ -545,12 +562,14 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 
             if (ret == -1) {
                 if (!handle_recv_error(client)) {
+                    stop_timer(client);
                     pthread_mutex_unlock(&client->lock);
                     return NULL;
                 }
                 // Continue loop to retry
             } else if (ret == 0) {
                 if (!handle_connection_closed(client, &current_wait_stage)) {
+                    stop_timer(client);
                     pthread_mutex_unlock(&client->lock);
                     return NULL;
                 }
@@ -584,6 +603,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
                     "%s event error: %s\n",
                     __FUNCTION__,
                     vsl_frame_strerror(event.error));
+            stop_timer(client);
             pthread_mutex_unlock(&client->lock);
             errno = vsl_frame_errno(event.error);
             return NULL;
@@ -658,6 +678,7 @@ vsl_frame_wait(VSLClient* client, int64_t until)
         fprintf(stderr,
                 "%s: ERROR: received fd 0 - stdin was closed somewhere!\n",
                 __FUNCTION__);
+        stop_timer(client);
         pthread_mutex_unlock(&client->lock);
         errno = EBADF;
         return NULL;
@@ -665,16 +686,20 @@ vsl_frame_wait(VSLClient* client, int64_t until)
 
     VSLFrame* frame = calloc(1, sizeof(VSLFrame));
     if (!frame) {
+        stop_timer(client);
         pthread_mutex_unlock(&client->lock);
         close_aux_handle_if_valid(aux.handle);
         return NULL;
     }
 
-    frame->client    = client;
-    frame->handle    = aux.handle;
-    frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    frame->client      = client;
+    frame->handle      = aux.handle;
+    frame->allocator   = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    // Received over SCM_RIGHTS, so this fd is ours to close.
+    frame->owns_handle = true;
     memcpy(&frame->info, &event.info, sizeof(struct vsl_frame_info));
 
+    stop_timer(client);
     pthread_mutex_unlock(&client->lock);
 
 #ifndef NDEBUG

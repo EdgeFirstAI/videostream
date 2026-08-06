@@ -9,6 +9,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] - 2026-08-06
+
+Patch release fixing a file-descriptor leak that made `vsl-camhost` stop
+serving new clients, and a client-side watchdog that silently revoked frame
+locks. No public API or ABI changes — `SOVERSION` stays at `2`, no headers in
+`include/` change, exported symbol set is identical to 2.5.2.
+
+### Fixed
+
+- **`vsl_frame_attach` no longer leaks its duplicated descriptor**
+  (`lib/frame.c`, `lib/frame.h`, `lib/client.c`). `vsl_frame_attach` stores
+  `dup(fd)`, so the frame owns a private duplicate of the caller's
+  descriptor, but `vsl_frame_unalloc` inferred ownership from whether the
+  frame had a cleanup callback and skipped the `close()` when one was set.
+  The buffer is externally owned; the descriptor is not. Frames built
+  directly from a decoder's buffer pool (`lib/decoder_v4l2.c`,
+  `lib/decoder_hantro.c`) genuinely borrow the pool's fd, so the heuristic
+  was right for them and wrong for `vsl-camhost`, the one caller that both
+  attaches and sets a cleanup — leaking one dmabuf fd per captured frame.
+
+  Ownership is now explicit via an `owns_handle` flag set by
+  `vsl_frame_attach` and by `vsl_frame_wait` (which receives its fd over
+  `SCM_RIGHTS`); borrowed pool descriptors are left untouched.
+
+  At 30 fps the leak reached `RLIMIT_NOFILE` (1024) in roughly 34 s, after
+  which `accept()` returned `EMFILE` permanently: clients connected before
+  exhaustion kept streaming, but every later client was silently never
+  registered and received no frames until a restart. Verified on i.MX 8M
+  Plus at 3840x2160 — descriptor count now flat at 18 over 60 s where it
+  previously hit 1024, and a client joining 60 s after start receives frames
+  at full rate instead of none. ([EDGEAI-1366])
+- **Client watchdog no longer revokes frame locks** (`lib/client.c`). The
+  1-second socket watchdog was armed at `vsl_client_init` and re-armed only
+  inside `vsl_frame_wait`, but never disarmed. A consumer that locked a
+  frame and then stopped calling `vsl_frame_wait` — the intended pattern for
+  holding a source frame while waiting on a slow event — had its own socket
+  closed about a second later. The host reads that close as a disconnect,
+  drops the client's locks, expires the frame, and the producer recycles the
+  buffer while the consumer is still reading it. `vsl_frame_trylock` had
+  already returned success, so the corruption was silent; the only signal
+  was a later `vsl_frame_unlock` failure.
+
+  The watchdog bounds a receive, so it is now created disarmed and stopped
+  on every exit path of `vsl_frame_wait`. The receive timeout itself is
+  unaffected — it is enforced by `poll()` in `wait_for_socket_data`, and the
+  socket is non-blocking. Verified at 4K: a locked frame is byte-identical
+  after 8 s, an unlocked frame is still recycled as designed, and a client
+  survives a host restart mid-stream. ([EDGEAI-1366])
+- **Fractional client timeouts now arm the watchdog** (`lib/client.c`).
+  `create_timer` scaled the fractional part by `10e9` instead of `1e9`,
+  producing `tv_nsec` values of a second or more. `timer_settime` rejects
+  those with `EINVAL`, and the result was unchecked, so any non-integer
+  `vsl_client_set_timeout` value silently disabled the watchdog entirely.
+  ([EDGEAI-1366])
+- **`vsl-camhost` no longer double-unlocks its mutex** (`src/camhost.c`).
+  `host_process_wrapper` unlocked `vsl_mutex` on the `vsl_host_process`
+  error path and then fell through to the unlock at the end of the loop.
+  Unlocking an already-unlocked default `pthread_mutex_t` is undefined
+  behaviour and would let the capture thread into the accept path
+  concurrently. It also unlocked a mutex it had never acquired when
+  `pthread_mutex_lock` itself failed. ([EDGEAI-1366])
+
+### Changed
+
+- **`vsl-camhost --help` reports the actual defaults** (`src/camhost.c`).
+  Lifespan is 200 ms (documented as 100 ms) and buffer count is 8
+  (documented as 6). The lifespan entry now also notes that it bounds the
+  window to *receive and lock* a frame rather than to consume it, and that
+  capture throttles to roughly `bufcount / lifespan` frames per second — at
+  3840x2160 with `-b 7`, raising lifespan to 1000 ms measured 6.96 FPS
+  against 30.01 FPS at the 200 ms default.
+
+### Added
+
+- **`vsl-test-framelock`** (`src/test_framelock.c`), a regression harness for
+  frame-lock lifetime. It receives a frame, optionally locks it, holds it
+  without pumping the client, and compares checksums across the hold: a
+  locked frame must be unchanged and an unlocked one must be recycled.
+
+[EDGEAI-1366]: https://au-zone.atlassian.net/browse/EDGEAI-1366
+
 ## [2.5.2] - 2026-05-21
 
 Patch release with V4L2 encoder + VSL IPC bug fixes. No public API or ABI
