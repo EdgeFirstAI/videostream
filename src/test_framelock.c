@@ -19,6 +19,7 @@
 //   vsl-test-framelock <socket_path> <hold_seconds> <lock|nolock> [timeout_s]
 
 #include <errno.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,7 +81,7 @@ main(int argc, char* argv[])
         return 1;
     }
 
-    printf("frame serial=%ld %dx%d size=%d\n",
+    printf("frame serial=%" PRId64 " %dx%d size=%d\n",
            vsl_frame_serial(frame),
            vsl_frame_width(frame),
            vsl_frame_height(frame),
@@ -101,14 +102,14 @@ main(int argc, char* argv[])
     }
 
     uint64_t before = checksum(map, size);
-    printf("checksum before = %016lx\n", before);
+    printf("checksum before = %016" PRIx64 "\n", before);
 
     // Deliberately do NOT call vsl_frame_wait() while holding the frame; that
     // is what a consumer blocked on a slow event looks like.
     sleep(hold_secs);
 
     uint64_t after = checksum(map, size);
-    printf("checksum after  = %016lx\n", after);
+    printf("checksum after  = %016" PRIx64 "\n", after);
     printf("RESULT: frame contents %s after %ds\n",
            (before == after) ? "INTACT" : "OVERWRITTEN",
            hold_secs);

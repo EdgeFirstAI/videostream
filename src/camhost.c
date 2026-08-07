@@ -140,10 +140,13 @@ host_process_wrapper(void* temp)
     while (keep_running) {
         struct timespec retry = {0, 200000};
 
-        if (pthread_mutex_lock(&vsl_mutex)) {
+        // pthread_mutex_lock returns the error number and leaves errno alone,
+        // so report the return value rather than a stale errno.
+        int err = pthread_mutex_lock(&vsl_mutex);
+        if (err) {
             fprintf(stderr,
                     "failed to acquire videostream mutex: %s\n",
-                    strerror(errno));
+                    strerror(err));
             nanosleep(&retry, NULL);
             continue;
         }
