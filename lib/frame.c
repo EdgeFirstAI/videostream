@@ -607,22 +607,19 @@ vsl_frame_unalloc(VSLFrame* frame)
         frame_unalloc_dma(frame);
         break;
     case VSL_FRAME_ALLOCATOR_EXTERNAL:
-        /* Owned externally.
-           NOTE: When using vslsink externally allocated frame is provided with
-           duplicated fd which must be closed to avoid leak.
-           However, if there's a cleanup callback, the owner (e.g., VPU decoder)
-           manages the fd and we should NOT close it here. The cleanup callback
-           can access the handle before we clear it. */
-        if (frame->cleanup) {
-            // Owner has cleanup callback - they manage the fd
-            // Don't close, don't clear - cleanup callback may need the handle
-            return;
-        }
-        // No cleanup callback - this is a dup'd fd that we should close
+        /* The buffer is owned externally, but the descriptor may not be.
+           vsl_frame_attach() dup()s the caller's fd and vsl_frame_wait()
+           receives one over SCM_RIGHTS; both belong to this frame and leak if
+           we don't close them.  Frames built straight from a decoder's buffer
+           pool borrow the pool's fd instead — that one stays open, and stays
+           readable by the cleanup callback which runs after us. */
+        if (!frame->owns_handle) { return; }
+
         if (frame->handle >= 0) {
             close(frame->handle);
             frame->handle = -1;
         }
+        frame->owns_handle = false;
         return;
     }
 
@@ -692,9 +689,15 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
     frame->info.offset = offset;
     frame->info.size   = size;
 
-    frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    frame->allocator   = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    // The dup is ours, not the caller's, so this frame closes it on release
+    // even when a cleanup callback is set to return the buffer to its owner.
+    frame->owns_handle = true;
 
-    if (frame->handle == -1) { return -1; }
+    if (frame->handle == -1) {
+        frame->owns_handle = false;
+        return -1;
+    }
 
     // Detect if dup returned a stdio fd (shouldn't happen unless stdio was
     // closed)
@@ -706,8 +709,9 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
                 fd,
                 frame->handle);
         close(frame->handle);
-        frame->handle = -1;
-        errno         = EBADF;
+        frame->handle      = -1;
+        frame->owns_handle = false;
+        errno              = EBADF;
         return -1;
     }
     return 0;

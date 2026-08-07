@@ -138,17 +138,27 @@ host_process_wrapper(void* temp)
     int      prev_buffer_count       = vsl_camera_get_queued_buf_count(camera);
     int64_t  buffer_starvation_start = 0;
     while (keep_running) {
-        if (pthread_mutex_lock(&vsl_mutex)) {
+        struct timespec retry = {0, 200000};
+
+        // pthread_mutex_lock returns the error number and leaves errno alone,
+        // so report the return value rather than a stale errno.
+        int err = pthread_mutex_lock(&vsl_mutex);
+        if (err) {
             fprintf(stderr,
                     "failed to acquire videostream mutex: %s\n",
-                    strerror(errno));
+                    strerror(err));
+            nanosleep(&retry, NULL);
+            continue;
         }
 
+        // Log and carry on: the single unlock below covers both paths.
+        // Unlocking here as well would leave the mutex unheld while we still
+        // believe we own it, letting the capture thread into the accept path
+        // concurrently.
         if (vsl_host_process(host)) {
             fprintf(stderr,
                     "failed to process host events: %s\n",
                     strerror(errno));
-            pthread_mutex_unlock(&vsl_mutex);
         }
         int queued_bufs = vsl_camera_get_queued_buf_count(camera);
         if (queued_bufs < 1 && !(prev_buffer_count < 1)) {
@@ -192,9 +202,12 @@ static const char* const USAGE =
     "-p PATH, --path PATH\n"
     "    The VSL camera stream host path (default: /tmp/camhost.0)\n"
     "-l LIFESPAN, --lifespan LIFESPAN\n"
-    "    Sets the lifespan of the VSL frames in milliseconds (default 100ms)\n"
+    "    Sets the lifespan of the VSL frames in milliseconds (default 200ms).\n"
+    "    This bounds the window to receive and lock a frame, not to consume\n"
+    "    it: a client which locks a frame keeps it until it unlocks. Capture\n"
+    "    throttles to roughly bufcount/lifespan frames per second.\n"
     "-b COUNT, --bufcount COUNT\n"
-    "    Sets how many buffers to request from the device driver (default 6)\n"
+    "    Sets how many buffers to request from the device driver (default 8)\n"
     "-f FOURCC, --fourcc FOURCC\n"
     "    Sets the fourcc video format. (default based on camera driver)\n";
 
