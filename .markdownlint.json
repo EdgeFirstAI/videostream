@@ -12,7 +12,8 @@
       "br",
       "sub",
       "sup",
-      "mark"
+      "mark",
+      "img"
     ]
   },
   "MD034": false,
