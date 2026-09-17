@@ -124,4 +124,4 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](https://github.com
 
 Copyright © 2025 Au-Zone Technologies
 
-<img referrerpolicy="no-referrer-when-downgrade" src="https://px.edgefirst.ai/a.png?x-pxid=5bef1f3d-773e-435e-9978-ebf910586737" alt="" width="1" height="1" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;" />
+<img referrerpolicy="no-referrer" src="https://px.edgefirst.ai/a.png?x-pxid=5bef1f3d-773e-435e-9978-ebf910586737" alt="" width="1" height="1" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;" />
