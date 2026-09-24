@@ -352,8 +352,13 @@ jobs:
           components: llvm-tools-preview
           cache-key: board-coverage
 
-      - name: Install gcovr
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcovr
+      # gcov reads every source the build compiled, headers included; gcovr
+      # fails the report when one is missing.
+      - name: gcovr and the headers the build compiled against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcovr libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       - name: Merge board coverage
         run: |
