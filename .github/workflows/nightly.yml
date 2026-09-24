@@ -48,7 +48,7 @@ jobs:
   sbom:
     needs: changed
     if: needs.changed.outputs.run == 'true'
-    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@2398c645a24aede06fecb4f02e97ef7fb7411780  # EdgeFirstAI/.github#54, until tagged
     with:
       mode: full
       source-dirs: include lib gst src crates videostream tests
