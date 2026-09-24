@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`vsl_camera_enum_fmts()` returned no formats on single-plane capture devices** when called before `vsl_camera_init_device()`, which is how `CameraBuilder::formats()` uses it (`lib/v4l2.c`). The buffer type was only detected during device initialisation, so a freshly opened device was always queried as multi-planar. `vsl_camera_open_device()` now detects it. Seen on the i.MX 8M Plus VeriSilicon ISP (`viv_v4l2`); the ISI and i.MX 95 capture nodes are multi-planar and were unaffected. ([EDGEAI-1556])
+
+[EDGEAI-1556]: https://au-zone.atlassian.net/browse/EDGEAI-1556
+
 ## [2.5.3] - 2026-08-06
 
 Patch release fixing a file-descriptor leak that made `vsl-camhost` stop

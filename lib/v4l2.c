@@ -920,5 +920,13 @@ vsl_camera_open_device(const char* filename)
         return NULL;
     }
 
+    // Queries made before vsl_camera_init_device(), such as
+    // vsl_camera_enum_fmts(), need the buffer type the device supports.
+    struct v4l2_capability cap;
+    CLEAR(cap);
+    if (0 == xioctl(ctx->fd, VIDIOC_QUERYCAP, &cap)) {
+        ctx->not_plane = (cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) ? 1 : 0;
+    }
+
     return ctx;
 }
