@@ -96,7 +96,9 @@ jobs:
             texlive-latex-base texlive-latex-extra \
             texlive-fonts-recommended texlive-fonts-extra \
             texlive-xetex latexmk tex-gyre
-          python3 -m pip install -r doc/requirements.txt
+          python3 -m venv venv
+          venv/bin/pip install -r doc/requirements.txt
+          echo "$PWD/venv/bin" >> "$GITHUB_PATH"
           sudo npm install -g @mermaid-js/mermaid-cli
           npx puppeteer browsers install chrome-headless-shell
 
@@ -160,7 +162,7 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
-          (cd build && cpack)
+          cpack --config build/CPackConfig.cmake -B build
           mkdir -p dist
           cp build/videostream-linux-${{ matrix.arch }}.zip \
             "dist/videostream-${REF_NAME#release/}-linux-${{ matrix.arch }}.zip"
