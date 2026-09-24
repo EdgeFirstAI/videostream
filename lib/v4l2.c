@@ -86,6 +86,14 @@ vsl_camera_buffer_sequence(const vsl_camera_buffer* buffer)
 
 VSL_API
 u_int32_t
+vsl_camera_buffer_flags(const vsl_camera_buffer* buffer)
+{
+    if (!buffer) { return 0; }
+    return buffer->flags;
+}
+
+VSL_API
+u_int32_t
 vsl_camera_color_space(const vsl_camera* ctx)
 {
     if (!ctx) { return 0; }
@@ -181,6 +189,7 @@ read_frame(vsl_camera* ctx)
     vsl_camera_buffer* vslbuf = &ctx->buffers[buf.index];
     memcpy(&vslbuf->timestamp, &buf.timestamp, sizeof(struct timeval));
     vslbuf->sequence = buf.sequence;
+    vslbuf->flags    = buf.flags;
 
     return vslbuf;
 }

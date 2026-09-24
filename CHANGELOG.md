@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-24
+
+Minor release adding V4L2 buffer flags to camera buffers so callers can tell which clock and which instant within the frame a capture timestamp refers to, and fixing format enumeration on single-plane capture devices. Adds one exported symbol (`vsl_camera_buffer_flags`); `SOVERSION` stays at `2` and existing symbols are unchanged.
+
+### Added
+
+- **`vsl_camera_buffer_flags()` / `CameraBuffer::flags()`** — raw `struct v4l2_buffer::flags` for each dequeued buffer, so callers can tell which clock and which instant within the frame `vsl_camera_buffer_timestamp()` reports. Tagged `VSL_AVAILABLE_SINCE_2_6`. ([EDGEAI-1938])
+- **`CameraBuffer::timestamp_clock()` / `CameraBuffer::timestamp_source()`** — Rust decoders for the timestamp bits of the flags, returning `TimestampClock` (`Monotonic`, `Copy`, `Unknown`) and `TimestampSource` (`EndOfFrame`, `StartOfExposure`, `Unknown`). ([EDGEAI-1938])
+
 ### Fixed
 
 - **`vsl_camera_enum_fmts()` returned no formats on single-plane capture devices** when called before `vsl_camera_init_device()`, which is how `CameraBuilder::formats()` uses it (`lib/v4l2.c`). The buffer type was only detected during device initialisation, so a freshly opened device was always queried as multi-planar. `vsl_camera_open_device()` now detects it. Seen on the i.MX 8M Plus VeriSilicon ISP (`viv_v4l2`); the ISI and i.MX 95 capture nodes are multi-planar and were unaffected. ([EDGEAI-1556])
 
+[EDGEAI-1938]: https://au-zone.atlassian.net/browse/EDGEAI-1938
 [EDGEAI-1556]: https://au-zone.atlassian.net/browse/EDGEAI-1556
 
 ## [2.5.3] - 2026-08-06

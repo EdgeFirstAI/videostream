@@ -689,7 +689,7 @@ vsl_frame_attach(VSLFrame* frame, int fd, size_t size, size_t offset)
     frame->info.offset = offset;
     frame->info.size   = size;
 
-    frame->allocator   = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
     // The dup is ours, not the caller's, so this frame closes it on release
     // even when a cleanup callback is set to return the buffer to its owner.
     frame->owns_handle = true;

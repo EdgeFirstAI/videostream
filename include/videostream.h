@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "2.5.3"
+#define VSL_VERSION "2.6.0"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -163,6 +163,7 @@
 #define VSL_VERSION_2_2 VSL_VERSION_ENCODE(2, 2, 0)
 #define VSL_VERSION_2_4 VSL_VERSION_ENCODE(2, 4, 0)
 #define VSL_VERSION_2_5 VSL_VERSION_ENCODE(2, 5, 0)
+#define VSL_VERSION_2_6 VSL_VERSION_ENCODE(2, 6, 0)
 
 #ifndef VSL_TARGET_VERSION
 #define VSL_TARGET_VERSION VSL_VERSION_2_2
@@ -276,6 +277,17 @@
 #define VSL_DEPRECATED_SINCE_2_5 VSL_DEPRECATED(2.5)
 #define VSL_DEPRECATED_SINCE_2_5_FOR(replacement) \
     VSL_DEPRECATED_FOR(2.5, replacement)
+#endif
+
+#if VSL_TARGET_VERSION < VSL_VERSION_ENCODE(2, 6, 0)
+#define VSL_AVAILABLE_SINCE_2_6 VSL_UNAVAILABLE(2.6)
+#define VSL_DEPRECATED_SINCE_2_6
+#define VSL_DEPRECATED_SINCE_2_6_FOR(replacement)
+#else
+#define VSL_AVAILABLE_SINCE_2_6
+#define VSL_DEPRECATED_SINCE_2_6 VSL_DEPRECATED(2.6)
+#define VSL_DEPRECATED_SINCE_2_6_FOR(replacement) \
+    VSL_DEPRECATED_FOR(2.6, replacement)
 #endif
 
 #define VSL_FOURCC(a, b, c, d)                                         \
@@ -1879,6 +1891,35 @@ VSL_AVAILABLE_SINCE_2_5
 VSL_API
 uint32_t
 vsl_camera_buffer_sequence(const vsl_camera_buffer* buffer);
+
+/**
+ * Returns the V4L2 buffer flags for this camera buffer.
+ *
+ * Mirrors `struct v4l2_buffer::flags` as populated by VIDIOC_DQBUF. The
+ * timestamp bits describe the value returned by
+ * vsl_camera_buffer_timestamp():
+ *
+ * - `V4L2_BUF_FLAG_TIMESTAMP_MASK` selects the clock:
+ *   `V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC` (CLOCK_MONOTONIC),
+ *   `V4L2_BUF_FLAG_TIMESTAMP_COPY` (copied from an output buffer, as on
+ *   mem2mem devices) or `V4L2_BUF_FLAG_TIMESTAMP_UNKNOWN`.
+ * - `V4L2_BUF_FLAG_TSTAMP_SRC_MASK` selects the instant within the frame:
+ *   `V4L2_BUF_FLAG_TSTAMP_SRC_EOF` (last pixel received, the default) or
+ *   `V4L2_BUF_FLAG_TSTAMP_SRC_SOE` (start of exposure).
+ *
+ * Other bits (for example `V4L2_BUF_FLAG_ERROR` or
+ * `V4L2_BUF_FLAG_KEYFRAME`) are passed through unchanged. Use the
+ * constants from `<linux/videodev2.h>` to decode the value.
+ *
+ * @param buffer Camera buffer from vsl_camera_get_data()
+ * @return V4L2 buffer flags. Returns 0 if buffer is NULL.
+ * @since 2.6
+ * @memberof VSLCamera
+ */
+VSL_AVAILABLE_SINCE_2_6
+VSL_API
+uint32_t
+vsl_camera_buffer_flags(const vsl_camera_buffer* buffer);
 
 /**
  * Reads the timestamp of the camera buffer.
