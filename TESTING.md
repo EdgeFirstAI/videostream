@@ -222,76 +222,46 @@ Call 4: decode_frame(frame_4) → Return frame_3, buffer frame_4 (0-4ms)
 
 ## GitHub Actions CI
 
+CI is tiered so that the expensive runs happen once per PR rather than once per push. Branch protection requires the single `ci-gate` check.
+
 ```mermaid
 flowchart LR
-    subgraph CI["GitHub Actions"]
-        PR[Pull Request] --> BUILD[Build]
-        BUILD --> TEST[Test]
-        TEST --> COV[Coverage]
-    end
-
-    subgraph Platforms["Test Platforms"]
-        X86[ubuntu-latest x86_64]
-        ARM[aarch64 cross-compile]
-    end
-
-    subgraph Manual["Manual Testing"]
-        HW[i.MX 8M Plus Hardware]
-    end
-
-    TEST --> X86
-    BUILD --> ARM
-    X86 -.->|artifacts| HW
-    ARM -.->|artifacts| HW
+    PR[PR push] --> QUICK[Quick]
+    LABEL["ci:full label"] --> FULL[Full]
+    HWLABEL["ci:hardware label"] --> ARM
+    NIGHTLY["Nightly, if main moved"] --> FULL
+    FULL --> X86[x86_64 build and tests]
+    FULL --> ARM[aarch64 build and tests]
+    ARM -->|instrumented binaries| BOARD["On-target: camera-v4l2 board"]
+    BOARD -->|gcda, profraw| MERGE[Coverage merge]
+    X86 --> SONAR[SonarCloud]
+    ARM --> SONAR
+    MERGE --> SONAR
 ```
 
-### Workflows
+### Quick (every push to a non-draft PR)
 
-#### 1. Test Workflow (`.github/workflows/test.yml`)
+- **`quick`**: the shared `rust-quick` workflow from `EdgeFirstAI/.github`. `.github/scripts/ci-setup.sh` builds the C library first, because the Rust crates load `libvideostream.so` at runtime. Runs `cargo fmt`, clippy on the host and check-only for aarch64, nextest, actionlint, and the dependency license and NOTICE policy.
+- **`quick-c`**: pytest against the built library, plus the host/client IPC round trip over POSIX shared memory (`.github/scripts/ipc-test.sh`).
 
-**Platforms**: ubuntu-latest (x86_64)
+### Full (`ci:full`, or `ci:hardware` for the on-target lane only)
 
-**Jobs**:
-- **C Build & Test**:
-  ```bash
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVER=ON
-  cmake --build build
-  ctest --test-dir build --output-on-failure
-  ```
-- **Rust Unit Tests**:
-  ```bash
-  cargo test --workspace
-  ```
-- **Coverage Report**:
-  ```bash
-  lcov --capture --directory build --output-file coverage.info
-  lcov --remove coverage.info '/usr/*' 'ext/*' --output-file coverage.info
-  genhtml coverage.info --output-directory coverage
-  ```
+`videostream-full.yml` compiles the C library once per architecture with coverage and runs every suite against it:
 
-**Limitations**:
-- No hardware tests (camera, VPU)
-- POSIX shared memory tests only
-- Code coverage available
+- **x86_64 and aarch64 hosted runners**: pytest with coverage, `cargo llvm-cov nextest`, doctests, the IPC test and gcovr. The x86_64 build is wrapped for SonarCloud's C analysis.
+- **On-target** (a board labelled `camera-v4l2`): the aarch64 job stages instrumented Rust test binaries and the C build, and the board runs them without building anything. It runs pytest, every Rust test binary including the `#[ignore]` hardware tests, the IPC test over the DMA heap, and `vsl-camhost` capture at 640x480, 1280x720 and 1920x1080.
+- **Board coverage**: the board's `.gcda` and `.profraw` files are merged into reports on an aarch64 runner.
+- **SonarCloud**: one analysis over the C, Rust and Python coverage from every lane.
 
-#### 2. Build Workflow (`.github/workflows/build.yml`)
+The on-target lane runs only for triggers that can be trusted: pushes, dispatches, the nightly, the merge queue and pull requests from this repository. Pull requests from forks run Quick on hosted runners only.
 
-**Platforms**: ubuntu-latest with manylinux2014 (via zig toolchain)
+### Nightly
 
-**Jobs**:
-- Cross-compile for aarch64 using zig
-- Build Python wheels for multiple architectures
-- Package relocatable archives (ZIP)
+Runs the Full tier on `main` only when `main` has moved since the last nightly, and `cargo audit` every night regardless. Its SonarCloud upload is the `main` baseline.
 
-**Manylinux2014 Limitations**:
-- **Purpose**: Release builds for maximum glibc compatibility (glibc 2.17+)
-- **Not suitable for testing**: Older glibc lacks features used in test code
-- **Test builds**: Use native toolchains (ubuntu-latest) instead
-- **Release builds**: Use manylinux2014 for distribution
+### Release
 
-**Why separate test/build workflows**:
-- **test.yml**: Uses ubuntu-latest with modern glibc for feature-rich test execution
-- **build.yml**: Uses manylinux2014 for maximum runtime compatibility
+`release.yml` builds the distribution artifacts on `ubuntu-22.04` images, so the shipped library keeps a glibc 2.35 floor. See CONTRIBUTING.md for the release chain.
 
 ---
 
@@ -623,9 +593,9 @@ target_link_libraries(vsl-test-feature videostream)
 - **Cause**: Frame consumption too slow
 - **Fix**: Reduce frame count, increase timeout, or check hardware load
 
-**Issue**: Manylinux2014 test failures
-- **Cause**: Using manylinux for test builds
-- **Fix**: Use test.yml workflow with ubuntu-latest, not build.yml
+**Issue**: Test failures against a release build
+- **Cause**: Release artifacts build on older ubuntu-22.04 images for glibc compatibility
+- **Fix**: Test with the CI build (`.github/scripts/ci-setup.sh`) rather than a release archive
 
 ---
 

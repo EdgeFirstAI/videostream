@@ -1,6 +1,6 @@
 # EdgeFirst VideoStream Library
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/test.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/EdgeFirstAI/videostream/ci.yml?branch=main)](https://github.com/EdgeFirstAI/videostream/actions)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=coverage)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=EdgeFirstAI_videostream&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=EdgeFirstAI_videostream)
