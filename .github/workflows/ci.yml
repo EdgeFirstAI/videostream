@@ -91,7 +91,7 @@ jobs:
   quick:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    uses: EdgeFirstAI/.github/.github/workflows/rust-quick.yml@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+    uses: EdgeFirstAI/.github/.github/workflows/rust-quick.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       # ruff is not adopted yet: the package predates it and fails both
       # `ruff check` and `ruff format --check`.
@@ -148,7 +148,7 @@ jobs:
   sbom:
     needs: changes
     if: needs.changes.outputs.full == 'true'
-    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@19484eac4147ff0b31d38659621ff7baa6491127  # EdgeFirstAI/.github#54, until tagged
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       mode: full
       source-dirs: include lib gst src crates videostream tests

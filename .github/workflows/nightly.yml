@@ -17,7 +17,7 @@ on:
 
 jobs:
   changed:
-    uses: EdgeFirstAI/.github/.github/workflows/nightly-gate.yml@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+    uses: EdgeFirstAI/.github/.github/workflows/nightly-gate.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       # `inputs` is null on a schedule trigger, so the fallback is required.
       force: ${{ inputs.force || false }}
@@ -28,7 +28,7 @@ jobs:
   # Deliberately not `needs: changed`: cargo audit asks about the RustSec
   # database, which changes whether or not main does.
   advisories:
-    uses: EdgeFirstAI/.github/.github/workflows/advisories.yml@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+    uses: EdgeFirstAI/.github/.github/workflows/advisories.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     permissions:
       contents: read
 
@@ -48,7 +48,7 @@ jobs:
   sbom:
     needs: changed
     if: needs.changed.outputs.run == 'true'
-    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@19484eac4147ff0b31d38659621ff7baa6491127  # EdgeFirstAI/.github#54, until tagged
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       mode: full
       source-dirs: include lib gst src crates videostream tests

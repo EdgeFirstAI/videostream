@@ -27,7 +27,7 @@ jobs:
   # Branch name against Cargo.toml, pyproject.toml and the workspace's
   # internal dependency versions; the CHANGELOG section; `cargo package`.
   verify:
-    uses: EdgeFirstAI/.github/.github/workflows/release-rust.yml@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+    uses: EdgeFirstAI/.github/.github/workflows/release-rust.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       # The shared release SBOM scans only src, tests and crates; the full
       # scan of the C sources is the sbom job below.
@@ -69,7 +69,7 @@ jobs:
           exit "$fail"
 
   sbom:
-    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@19484eac4147ff0b31d38659621ff7baa6491127  # EdgeFirstAI/.github#54, until tagged
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
     with:
       mode: full
       source-dirs: include lib gst src crates videostream tests
@@ -147,7 +147,7 @@ jobs:
             ${{ matrix.cmake-flags }}
         run: bash .github/scripts/ci-setup.sh
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
         with:
           components: ""
           cache-key: release-${{ matrix.arch }}
@@ -202,7 +202,7 @@ jobs:
             build-essential debhelper devscripts cmake pkg-config \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev python3-dev
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9f698bee471b68d231c39586af7b610f4080df09  # v2.0.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
         with:
           components: ""
           cache-key: release-deb-${{ matrix.arch }}
