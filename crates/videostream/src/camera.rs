@@ -893,20 +893,12 @@ mod tests {
 
             let now = Instant::now();
             let dma = buf.dmabuf()?;
-            let mem = dma.memory_map().map_err(|e| {
-                Error::Io(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("DMA map error: {}", e),
-                ))
-            })?;
+            let mem = dma
+                .memory_map()
+                .map_err(|e| Error::Io(io::Error::other(format!("DMA map error: {}", e))))?;
             let stats = mem
                 .read(pixel_metrics_boxed, Some((buf.width(), buf.height())))
-                .map_err(|e| {
-                    Error::Io(io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("DMA read error: {}", e),
-                    ))
-                })?;
+                .map_err(|e| Error::Io(io::Error::other(format!("DMA read error: {}", e))))?;
             let elapsed = now.elapsed();
 
             println!(
