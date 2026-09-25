@@ -21,6 +21,9 @@ BUILD_DIR="${VSL_BUILD_DIR:-build}"
 
 if [[ "${SKIP_PACKAGES:-0}" != 1 ]]; then
     sudo apt-get update
+    # The trailing `-` removes libunwind-14-dev, which the hosted 22.04 image
+    # ships with LLVM 14 and which Breaks the libunwind-dev that
+    # libgstreamer1.0-dev depends on. It is a no-op where not installed.
     sudo apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build pkg-config \
         libgstreamer1.0-dev \
@@ -29,7 +32,8 @@ if [[ "${SKIP_PACKAGES:-0}" != 1 ]]; then
         gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad \
         python3-dev python3-venv \
-        lcov gcovr
+        lcov gcovr \
+        libunwind-14-dev-
 fi
 
 # shellcheck disable=SC2086  # VSL_CMAKE_ARGS is a list of arguments

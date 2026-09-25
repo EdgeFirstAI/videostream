@@ -51,10 +51,10 @@ struct vsl_frame_info {
 };
 
 struct vsl_frame {
-    void*                    _parent; // deprecated for host/client.
-    void*                    userptr;
-    vsl_frame_cleanup        cleanup;
-    int                      handle;
+    void*             _parent; // deprecated for host/client.
+    void*             userptr;
+    vsl_frame_cleanup cleanup;
+    int               handle;
     // True when handle is a descriptor the frame created for itself (the dup()
     // in vsl_frame_attach, or an fd received over SCM_RIGHTS) and must close.
     // False when handle is borrowed from a buffer pool the owner still manages.

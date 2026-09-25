@@ -38,6 +38,87 @@ impl fmt::Display for Mirror {
     }
 }
 
+/// Clock that a camera buffer timestamp was taken from.
+///
+/// Decoded from the `V4L2_BUF_FLAG_TIMESTAMP_*` bits of
+/// [`CameraBuffer::flags`].
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TimestampClock {
+    /// `CLOCK_MONOTONIC`, sampled by the capture driver.
+    Monotonic,
+    /// Copied from the matching output buffer (mem2mem devices).
+    Copy,
+    /// The driver did not report a clock, or reported a reserved value.
+    Unknown,
+}
+
+impl TimestampClock {
+    const MASK: u32 = 0x0000_e000;
+    const MONOTONIC: u32 = 0x0000_2000;
+    const COPY: u32 = 0x0000_4000;
+
+    /// Decodes the clock from raw V4L2 buffer flags.
+    pub fn from_flags(flags: u32) -> Self {
+        match flags & Self::MASK {
+            Self::MONOTONIC => TimestampClock::Monotonic,
+            Self::COPY => TimestampClock::Copy,
+            _ => TimestampClock::Unknown,
+        }
+    }
+}
+
+impl fmt::Display for TimestampClock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TimestampClock::Monotonic => write!(f, "monotonic"),
+            TimestampClock::Copy => write!(f, "copy"),
+            TimestampClock::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+/// Instant within the frame that a camera buffer timestamp marks.
+///
+/// Decoded from the `V4L2_BUF_FLAG_TSTAMP_SRC_*` bits of
+/// [`CameraBuffer::flags`].
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TimestampSource {
+    /// End of frame: the last pixel was received. This is the V4L2 default
+    /// and is reported by drivers that do not set a source.
+    EndOfFrame,
+    /// Start of exposure of the first line.
+    StartOfExposure,
+    /// A value reserved by V4L2 and not defined by this crate.
+    Unknown,
+}
+
+impl TimestampSource {
+    const MASK: u32 = 0x0007_0000;
+    const EOF: u32 = 0x0000_0000;
+    const SOE: u32 = 0x0001_0000;
+
+    /// Decodes the timestamp source from raw V4L2 buffer flags.
+    pub fn from_flags(flags: u32) -> Self {
+        match flags & Self::MASK {
+            Self::EOF => TimestampSource::EndOfFrame,
+            Self::SOE => TimestampSource::StartOfExposure,
+            _ => TimestampSource::Unknown,
+        }
+    }
+}
+
+impl fmt::Display for TimestampSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TimestampSource::EndOfFrame => write!(f, "end-of-frame"),
+            TimestampSource::StartOfExposure => write!(f, "start-of-exposure"),
+            TimestampSource::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Camera {
     /// video device file for the camera
@@ -547,6 +628,44 @@ impl CameraBuffer<'_> {
         Ok(unsafe { lib.vsl_camera_buffer_sequence(self.ptr) })
     }
 
+    /// Returns the raw V4L2 buffer flags for this buffer.
+    ///
+    /// Mirrors `struct v4l2_buffer::flags` as populated by `VIDIOC_DQBUF`.
+    /// Use [`timestamp_clock`](Self::timestamp_clock) and
+    /// [`timestamp_source`](Self::timestamp_source) to interpret
+    /// [`timestamp`](Self::timestamp) without decoding the bits by hand.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.6 and does not export `vsl_camera_buffer_flags`.
+    pub fn flags(&self) -> Result<u32, Error> {
+        let lib = ffi::init()?;
+        if lib.vsl_camera_buffer_flags.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_buffer_flags"));
+        }
+        Ok(unsafe { lib.vsl_camera_buffer_flags(self.ptr) })
+    }
+
+    /// Returns the clock that [`timestamp`](Self::timestamp) was taken from.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`flags`](Self::flags).
+    pub fn timestamp_clock(&self) -> Result<TimestampClock, Error> {
+        self.flags().map(TimestampClock::from_flags)
+    }
+
+    /// Returns the instant within the frame that
+    /// [`timestamp`](Self::timestamp) marks.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`flags`](Self::flags).
+    pub fn timestamp_source(&self) -> Result<TimestampSource, Error> {
+        self.flags().map(TimestampSource::from_flags)
+    }
+
     pub fn width(&self) -> i32 {
         self.parent.width()
     }
@@ -723,6 +842,31 @@ mod tests {
         Ok(())
     }
 
+    /// V4L2 capture devices must report CLOCK_MONOTONIC timestamps; the
+    /// source (end of frame or start of exposure) is driver-specific.
+    #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
+    #[test]
+    #[serial]
+    fn test_timestamp_flags() -> Result<(), Error> {
+        let device = get_camera_device();
+        let cam = create_camera()
+            .with_device(&device)
+            .with_format(FourCC(*b"YUYV"))
+            .open()?;
+        cam.start()?;
+
+        let buf = cam.read()?;
+        let flags = buf.flags()?;
+        println!(
+            "flags={:#010x} clock={} source={}",
+            flags,
+            buf.timestamp_clock()?,
+            buf.timestamp_source()?
+        );
+        assert_eq!(buf.timestamp_clock()?, TimestampClock::Monotonic);
+        Ok(())
+    }
+
     #[ignore = "test requires camera hardware (run with --include-ignored to enable)"]
     #[test]
     #[serial]
@@ -883,7 +1027,55 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Verifies the `Error::SymbolNotFound` variant for each new 2.5
+    /// Constants mirror `<linux/videodev2.h>`; the literals here are the
+    /// UAPI values so a typo in either place fails the test.
+    #[test]
+    fn test_timestamp_clock_from_flags() {
+        assert_eq!(TimestampClock::from_flags(0), TimestampClock::Unknown);
+        assert_eq!(
+            TimestampClock::from_flags(0x2000),
+            TimestampClock::Monotonic
+        );
+        assert_eq!(TimestampClock::from_flags(0x4000), TimestampClock::Copy);
+        assert_eq!(TimestampClock::from_flags(0x6000), TimestampClock::Unknown);
+        // V4L2_BUF_FLAG_DONE | TIMESTAMP_MONOTONIC | TSTAMP_SRC_SOE
+        assert_eq!(
+            TimestampClock::from_flags(0x0001_2004),
+            TimestampClock::Monotonic
+        );
+    }
+
+    #[test]
+    fn test_timestamp_source_from_flags() {
+        assert_eq!(TimestampSource::from_flags(0), TimestampSource::EndOfFrame);
+        assert_eq!(
+            TimestampSource::from_flags(0x0001_0000),
+            TimestampSource::StartOfExposure
+        );
+        assert_eq!(
+            TimestampSource::from_flags(0x0002_0000),
+            TimestampSource::Unknown
+        );
+        assert_eq!(
+            TimestampSource::from_flags(0x0000_2001),
+            TimestampSource::EndOfFrame
+        );
+        assert_eq!(
+            TimestampSource::from_flags(0x0001_2004),
+            TimestampSource::StartOfExposure
+        );
+    }
+
+    #[test]
+    fn test_timestamp_flag_display() {
+        assert_eq!(TimestampClock::Monotonic.to_string(), "monotonic");
+        assert_eq!(
+            TimestampSource::StartOfExposure.to_string(),
+            "start-of-exposure"
+        );
+    }
+
+    /// Verifies the `Error::SymbolNotFound` variant for each versioned
     /// accessor carries the exact C symbol name string. A typo in the
     /// string literal in `camera.rs` would be invisible at runtime
     /// unless an actual older-ABI `libvideostream.so` is loaded — this
@@ -896,6 +1088,10 @@ mod tests {
             (
                 Error::SymbolNotFound("vsl_camera_buffer_sequence"),
                 "vsl_camera_buffer_sequence",
+            ),
+            (
+                Error::SymbolNotFound("vsl_camera_buffer_flags"),
+                "vsl_camera_buffer_flags",
             ),
             (
                 Error::SymbolNotFound("vsl_camera_color_space"),

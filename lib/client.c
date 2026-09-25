@@ -692,9 +692,9 @@ vsl_frame_wait(VSLClient* client, int64_t until)
         return NULL;
     }
 
-    frame->client      = client;
-    frame->handle      = aux.handle;
-    frame->allocator   = VSL_FRAME_ALLOCATOR_EXTERNAL;
+    frame->client    = client;
+    frame->handle    = aux.handle;
+    frame->allocator = VSL_FRAME_ALLOCATOR_EXTERNAL;
     // Received over SCM_RIGHTS, so this fd is ours to close.
     frame->owns_handle = true;
     memcpy(&frame->info, &event.info, sizeof(struct vsl_frame_info));
