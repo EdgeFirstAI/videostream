@@ -18,7 +18,7 @@ libloading = "0.9.0"
 unix-ts = "1.0.0"
 
 # Build dependencies
-bindgen = "0.72.1"
+bindgen = "0.73.2"
 
 # Dev dependencies
 rand = "0.9.0"
