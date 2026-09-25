@@ -1,0 +1,56 @@
+# Nightly: the Full tier on main, only when main moved since the last nightly
+# that reached a verdict, plus the ungated advisory scan. The SonarCloud upload
+# from this run is the main-branch baseline.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run even if main has not moved since the last nightly.
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  changed:
+    uses: EdgeFirstAI/.github/.github/workflows/nightly-gate.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    with:
+      # `inputs` is null on a schedule trigger, so the fallback is required.
+      force: ${{ inputs.force || false }}
+    permissions:
+      contents: read
+      actions: read
+
+  # Deliberately not `needs: changed`: cargo audit asks about the RustSec
+  # database, which changes whether or not main does.
+  advisories:
+    uses: EdgeFirstAI/.github/.github/workflows/advisories.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    permissions:
+      contents: read
+
+  full:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    uses: ./.github/workflows/videostream-full.yml
+    with:
+      lanes: all
+      boards: camera-v4l2
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+    secrets: inherit
+
+  sbom:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    with:
+      mode: full
+      source-dirs: include lib gst src crates videostream tests
+    permissions:
+      contents: read

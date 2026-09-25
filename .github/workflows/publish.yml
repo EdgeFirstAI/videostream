@@ -1,0 +1,77 @@
+# Release chain, step 3 of 3: PUBLISH. Builds nothing.
+#
+# The shared workflow finds the release.yml run that built this tag, proves
+# its tree is the tag's tree, downloads the artifacts, publishes the crates
+# and creates the GitHub Release from the CHANGELOG section. The PyPI upload
+# stays in this file because PyPI Trusted Publishing matches the publishing
+# repository's own workflow.
+#
+# Before the first tag: re-point the crates.io and PyPI Trusted Publishers
+# from release.yml to publish.yml, then rehearse with workflow_dispatch
+# against a release branch with a green build. A rehearsal publishes nothing.
+
+name: Publish
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to rehearse, e.g. v2.6.0 (publishes nothing)'
+        required: true
+        type: string
+
+concurrency:
+  group: publish-${{ github.ref }}
+  # A half-finished publish cannot be recovered by cancelling it.
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    uses: EdgeFirstAI/.github/.github/workflows/publish-rust.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    with:
+      tag: ${{ inputs.tag }}
+      build-workflow: release.yml
+      publish-crates: true
+      # Dependency order; must match release.yml.
+      crate-packages: videostream-sys videostream videostream-cli
+      release-files: |
+        dist/*.zip
+        dist/*.deb
+        dist/*.pdf
+        dist/*.whl
+        dist/sbom.json
+    permissions:
+      contents: write   # create the GitHub Release
+      actions: read     # read the release.yml run and its artifacts
+      id-token: write   # crates.io trusted publishing
+    secrets: inherit
+
+  publish-pypi:
+    needs: publish
+    # Runs on a rehearsal too; only the upload step is gated.
+    if: ${{ always() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/videostream/
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - id: stage
+        uses: EdgeFirstAI/.github/.github/actions/stage-pypi@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+        with:
+          distribution: videostream
+          version: ${{ needs.publish.outputs.version }}
+
+      # Directly in the job: the action resolves its container image from the
+      # repository it is called from.
+      - name: Upload to PyPI
+        if: ${{ needs.publish.outputs.publish-registries == 'true' }}
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e  # v1.13.0
+        with:
+          packages-dir: ${{ steps.stage.outputs.packages-dir }}
+          skip-existing: true

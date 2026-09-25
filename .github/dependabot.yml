@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Includes the EdgeFirstAI/.github `uses:` pins. The shared workflows resolve
+  # their own commit, so the bump is complete on its own.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

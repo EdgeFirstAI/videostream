@@ -1,400 +1,248 @@
-# GitHub Actions workflow for publishing releases
+# Release chain, step 1 of 3: BUILD.
 #
-# This workflow publishes release artifacts when a version tag is pushed.
-# It does NOT rebuild artifacts — instead it waits for the build.yml and
-# sbom.yml workflows (triggered by the same commit on main) to complete,
-# then downloads their artifacts for the GitHub Release.
+#   release.yml      push to release/*.*.*  -> build every artifact  (this file)
+#   tag-release.yml  release PR merged      -> annotated vX.Y.Z tag
+#   publish.yml      push of a v*.*.* tag   -> publish what was built
 #
-# Release Process:
-# 1. Prepare version (update all 6 version files, CHANGELOG.md)
-# 2. Commit and push to main
-# 3. Tag: git tag -a -m "Version X.Y.Z" vX.Y.Z && git push origin vX.Y.Z
+# Every artifact the release ships is built here, on the release branch head,
+# so a build failure is a red release PR rather than a failed tag. Artifacts
+# are kept 30 days: publish.yml downloads them after the human-paced review
+# and fails on an expired one rather than rebuilding.
 #
-# This workflow then:
-# - Waits for build.yml and sbom.yml to complete
-# - Downloads pre-built artifacts (ZIP, DEB, docs, SBOM)
-# - Publishes Python wheel to PyPI
-# - Publishes Rust crates to crates.io
-# - Creates GitHub Release with all artifacts
-#
-# Publishing Configuration:
-# - PyPI: Uses Trusted Publishing (OIDC) - no API token needed
-#   Configure at: https://pypi.org/manage/account/publishing/
-# - crates.io: Uses Trusted Publishing (OIDC) - no API token needed
-#   Configure at: https://crates.io/settings/tokens
-#
-# Action Versions (hash-pinned per SPS v2.1):
-# - actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (v4.2.2)
-# - actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b (v5.3.0)
-# - softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 (v2.0.8)
-# - lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc (v1.3.4)
-# - dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 (v6)
-# - pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e (release/v1)
-# - rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec (v1)
+# Distribution binaries build on ubuntu-22.04 images so the shipped library
+# keeps a glibc 2.35 floor for older Yocto root filesystems.
 
-name: Release
+name: Release Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: ['release/*.*.*']   # release/X.Y.Z and release/X.Y.Z-rcN
+  workflow_dispatch:
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # ==========================================================================
-  # Prepare Release Information
-  # ==========================================================================
-  prepare-release:
-    name: Prepare Release Information
-    runs-on: ubuntu-22.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-
-          CHANGELOG=$(awk -v ver="$VERSION" '
-            /^## \['"$VERSION"'\]/ { found=1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md)
-
-          if [ -z "$CHANGELOG" ]; then
-            echo "ERROR: No changelog entry found for version $VERSION"
-            exit 1
-          fi
-
-          echo "$CHANGELOG" > /tmp/changelog.txt
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "Extracted changelog:"
-          cat /tmp/changelog.txt
-
-  # ==========================================================================
-  # Wait for CI Workflows to Complete
-  # ==========================================================================
-  wait-for-ci:
-    name: Wait for CI Workflows
-    needs: [prepare-release]
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Wait for Build workflow
-        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc  # v1.3.4
-        with:
-          ref: ${{ github.sha }}
-          check-name: 'Verify Builds'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
-
-      - name: Wait for SBOM workflow
-        uses: lewagon/wait-on-check-action@ccfb013c15c8afb7bf2b7c028fb74dc5a068cccc  # v1.3.4
-        with:
-          ref: ${{ github.sha }}
-          check-name: 'Generate Software Bill of Materials'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
-
-  # ==========================================================================
-  # Publish Python wheel to PyPI
-  # ==========================================================================
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-22.04
-    needs: [prepare-release]
-    environment:
-      name: pypi
-      url: https://pypi.org/project/videostream/
+  # Branch name against Cargo.toml, pyproject.toml and the workspace's
+  # internal dependency versions; the CHANGELOG section; `cargo package`.
+  verify:
+    uses: EdgeFirstAI/.github/.github/workflows/release-rust.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    with:
+      # The shared release SBOM scans only src, tests and crates; the full
+      # scan of the C sources is the sbom job below.
+      sbom: false
+      crate-packages: videostream-sys videostream videostream-cli
+      # Three small crates; the free class packages them in about a minute.
+      package-runner: ubuntu-24.04
     permissions:
-      id-token: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
-        with:
-          python-version: '3.10'
-
-      - name: Install build dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install build twine
-
-      - name: Verify version matches tag
-        run: |
-          TAG_VERSION="${{ needs.prepare-release.outputs.version }}"
-          PKG_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
-
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "ERROR: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
-            exit 1
-          fi
-
-          echo "Version verified: $TAG_VERSION"
-
-      - name: Build Python wheel and sdist
-        run: python3 -m build
-
-      - name: Check distribution
-        run: python3 -m twine check dist/*
-
-      - name: Publish to PyPI (Trusted Publishing)
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e  # release/v1
-        with:
-          verbose: true
-
-  # ==========================================================================
-  # Publish Rust crates to crates.io
-  # ==========================================================================
-  publish-crates:
-    name: Publish to crates.io
-    runs-on: ubuntu-22.04
-    needs: [prepare-release]
-    environment:
-      name: crates-io
-      url: https://crates.io/crates/videostream
-    permissions:
-      id-token: write
       contents: read
 
+  # The version surfaces release-rust.yml does not know about.
+  versions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b  # stable
-
-      - name: Verify version matches tag
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: C header, Sphinx, NOTICE and generated bindings
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          TAG_VERSION="${{ needs.prepare-release.outputs.version }}"
-          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
+          version="${REF_NAME#release/}"
+          version="${version%-rc*}"
+          fail=0
+          check() {
+            if grep -qE "$2" "$1"; then
+              echo "ok  $1"
+            else
+              echo "::error file=$1::$1 does not carry version $version"
+              fail=1
+            fi
+          }
+          v="${version//./\\.}"
+          check include/videostream.h "^#define VSL_VERSION \"${v}\""
+          check doc/conf.py "^version = '${v}'"
+          check NOTICE "videostream-sys ${v}"
+          check crates/videostream-sys/src/ffi.rs "b\"${v}\\\\0\""
+          exit "$fail"
 
-          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "ERROR: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
-            exit 1
-          fi
+  sbom:
+    uses: EdgeFirstAI/.github/.github/workflows/sbom.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    with:
+      mode: full
+      source-dirs: include lib gst src crates videostream tests
+      upload-name: sbom
+      retention-days: "30"
+    permissions:
+      contents: read
 
-          echo "Version verified: $TAG_VERSION"
+  documentation:
+    # mermaid-cli's headless Chrome needs the unprivileged user namespaces
+    # that ubuntu-24.04's AppArmor profile blocks.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Install C library build dependencies
+      - name: Documentation toolchain
         run: |
           sudo apt-get update
-          sudo apt-get remove libunwind-* || true
           sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            pkg-config \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            doxygen graphviz \
+            texlive-latex-base texlive-latex-extra \
+            texlive-fonts-recommended texlive-fonts-extra \
+            texlive-xetex latexmk tex-gyre
+          python3 -m venv venv
+          venv/bin/pip install -r doc/requirements.txt
+          echo "$PWD/venv/bin" >> "$GITHUB_PATH"
+          sudo npm install -g @mermaid-js/mermaid-cli
+          npx puppeteer browsers install chrome-headless-shell
 
-      - name: Build and install C library
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-          cmake --build build -j$(nproc)
-          sudo cmake --install build
-
-      - name: Authenticate to crates.io (Trusted Publishing)
-        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec  # v1
-        id: auth
-
-      - name: Publish all crates to crates.io (workspace publishing)
-        run: cargo publish --workspace
+      - name: Build PDF
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-
-  # ==========================================================================
-  # Create GitHub Release with pre-built artifacts
-  # ==========================================================================
-  create-github-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-22.04
-    needs:
-      - prepare-release
-      - wait-for-ci
-      - publish-pypi
-      - publish-crates
-    permissions:
-      contents: write
-      actions: read
-
-    steps:
-      - name: Download documentation artifact
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: build.yml
-          commit: ${{ github.sha }}
-          name: documentation
-          path: artifacts/documentation
-
-      - name: Download x86_64 ZIP package
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: build.yml
-          commit: ${{ github.sha }}
-          name: zip-package-x86_64
-          path: artifacts/zip-package-x86_64
-
-      - name: Download aarch64 ZIP package
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: build.yml
-          commit: ${{ github.sha }}
-          name: zip-package-aarch64
-          path: artifacts/zip-package-aarch64
-
-      - name: Download x86_64 Debian packages
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: build.yml
-          commit: ${{ github.sha }}
-          name: debian-packages-x86_64
-          path: artifacts/debian-packages-x86_64
-
-      - name: Download aarch64 Debian packages
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: build.yml
-          commit: ${{ github.sha }}
-          name: debian-packages-aarch64
-          path: artifacts/debian-packages-aarch64
-
-      - name: Download SBOM
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
-        with:
-          workflow: sbom.yml
-          commit: ${{ github.sha }}
-          name: sbom
-          path: artifacts/sbom
-
-      - name: Organize release assets
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          mkdir -p release-assets
-          VERSION="${{ needs.prepare-release.outputs.version }}"
+          make -C doc latexpdf
+          mkdir -p dist
+          cp doc/_build/latex/VideoStream.pdf "dist/videostream-${REF_NAME#release/}-documentation.pdf"
 
-          # Documentation PDF
-          PDF_PATH=$(find artifacts/documentation -name "VideoStream.pdf" -type f 2>/dev/null | head -1)
-          if [ -n "$PDF_PATH" ] && [ -f "$PDF_PATH" ]; then
-            cp "$PDF_PATH" "release-assets/videostream-${VERSION}-documentation.pdf"
-            echo "✓ Documentation PDF"
-          else
-            echo "ERROR: Documentation PDF not found"
-            exit 1
-          fi
-
-          # ZIP packages
-          ZIP_X86=$(find artifacts/zip-package-x86_64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
-          if [ -n "$ZIP_X86" ] && [ -f "$ZIP_X86" ]; then
-            cp "$ZIP_X86" "release-assets/videostream-${VERSION}-linux-x86_64.zip"
-            echo "✓ x86_64 ZIP package"
-          fi
-
-          ZIP_ARM=$(find artifacts/zip-package-aarch64 -name "videostream-*.zip" -type f 2>/dev/null | head -1)
-          if [ -n "$ZIP_ARM" ] && [ -f "$ZIP_ARM" ]; then
-            cp "$ZIP_ARM" "release-assets/videostream-${VERSION}-linux-aarch64.zip"
-            echo "✓ aarch64 ZIP package"
-          fi
-
-          # Debian packages (x86_64)
-          if [ -d artifacts/debian-packages-x86_64 ]; then
-            for deb in artifacts/debian-packages-x86_64/*.deb; do
-              [ -f "$deb" ] || continue
-              BASENAME=$(basename "$deb")
-              cp "$deb" "release-assets/${BASENAME%.deb}-x86_64.deb"
-              echo "✓ x86_64 DEB: $BASENAME"
-            done
-          fi
-
-          # Debian packages (aarch64)
-          if [ -d artifacts/debian-packages-aarch64 ]; then
-            for deb in artifacts/debian-packages-aarch64/*.deb; do
-              [ -f "$deb" ] || continue
-              BASENAME=$(basename "$deb")
-              cp "$deb" "release-assets/${BASENAME%.deb}-aarch64.deb"
-              echo "✓ aarch64 DEB: $BASENAME"
-            done
-          fi
-
-          # SBOM
-          if [ -f artifacts/sbom/sbom.json ]; then
-            cp artifacts/sbom/sbom.json "release-assets/videostream-${VERSION}-sbom.json"
-            echo "✓ SBOM"
-          fi
-
-          echo ""
-          echo "Release assets prepared:"
-          ls -lh release-assets/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191  # v2.0.8
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: VideoStream v${{ needs.prepare-release.outputs.version }}
-          body: |
-            # VideoStream v${{ needs.prepare-release.outputs.version }}
+          name: documentation
+          path: dist/*.pdf
+          if-no-files-found: error
+          retention-days: 30
 
-            ## Installation
+  # ZIP archive: C library, tools, headers and the CLI.
+  archive:
+    name: Archive (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            cmake-flags: -DENABLE_VPU=OFF -DENABLE_G2D=OFF
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            # VPU and G2D are loaded with dlopen; no target libraries needed.
+            cmake-flags: -DENABLE_VPU=ON -DENABLE_G2D=ON -DENABLE_HANTRO_CODEC=ON
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-            ### Python (PyPI)
-            ```bash
-            pip install videostream==${{ needs.prepare-release.outputs.version }}
-            ```
+      - name: Build the C library
+        env:
+          VSL_CMAKE_ARGS: >-
+            -DCMAKE_INSTALL_PREFIX=/usr
+            -DENABLE_COVER=OFF
+            -DPORTABLE_ARCHIVE=ON
+            ${{ matrix.cmake-flags }}
+        run: bash .github/scripts/ci-setup.sh
 
-            ### Rust (crates.io)
-            ```toml
-            [dependencies]
-            videostream = "${{ needs.prepare-release.outputs.version }}"
-            ```
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+        with:
+          components: ""
+          cache-key: release-${{ matrix.arch }}
+          save-cache: "false"
 
-            ### Debian Package
-            Download the appropriate `.deb` file for your architecture (x86_64 or aarch64) and install:
-            ```bash
-            sudo dpkg -i videostream-*.deb
-            sudo apt-get install -f  # Install dependencies
-            ```
+      - name: Build the CLI
+        run: |
+          cargo build --release --locked -p videostream-cli
+          install -D -m 0755 target/release/videostream build/usr/bin/videostream
 
-            ### Binary Release (ZIP)
-            Download the ZIP archive for your architecture and extract to desired location.
+      - name: Package
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          cpack --config build/CPackConfig.cmake -B build
+          mkdir -p dist
+          cp build/videostream-linux-${{ matrix.arch }}.zip \
+            "dist/videostream-${REF_NAME#release/}-linux-${{ matrix.arch }}.zip"
+          unzip -l dist/*.zip
 
-            ---
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: archive-${{ matrix.arch }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
 
-            ## What's Changed
+  debian:
+    name: Debian packages (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    env:
+      DEB_CFLAGS_APPEND: -D_GLIBCXX_USE_CXX11_ABI=0
+      DEB_BUILD_OPTIONS: nocheck
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-            ${{ needs.prepare-release.outputs.changelog }}
+      - name: Packaging toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper devscripts cmake pkg-config \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev python3-dev
 
-            ---
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+        with:
+          components: ""
+          cache-key: release-deb-${{ matrix.arch }}
+          save-cache: "false"
 
-            ## Assets
+      - name: Build
+        run: |
+          python3 debian/gen-changelog.py
+          dpkg-buildpackage --no-sign -b -j"$(nproc)"
+          mkdir -p dist
+          mv ../*.deb dist/
+          for deb in dist/*.deb; do
+            echo "--- $(basename "$deb")"
+            dpkg -c "$deb"
+          done
 
-            - **Documentation**: `videostream-${{ needs.prepare-release.outputs.version }}-documentation.pdf`
-            - **SBOM**: `videostream-${{ needs.prepare-release.outputs.version }}-sbom.json` (CycloneDX format)
-            - **Linux x86_64**: ZIP and DEB packages
-            - **Linux ARM64**: ZIP and DEB packages
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: debian-${{ matrix.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 30
 
-            ## Links
-
-            - [PyPI Package](https://pypi.org/project/videostream/${{ needs.prepare-release.outputs.version }}/)
-            - [crates.io](https://crates.io/crates/videostream/${{ needs.prepare-release.outputs.version }})
-            - [Documentation](https://github.com/EdgeFirstAI/videostream#readme)
-            - [Changelog](https://github.com/EdgeFirstAI/videostream/blob/main/CHANGELOG.md)
-          files: |
-            release-assets/*
-          draft: false
-          prerelease: ${{ contains(needs.prepare-release.outputs.version, '-') }}
-          fail_on_unmatched_files: false
+  # Pure-Python ctypes package; publish.yml uploads it to PyPI.
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Wheel and sdist
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip build twine
+          .venv/bin/python -m build --outdir dist
+          .venv/bin/twine check dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: python
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

@@ -2,13 +2,15 @@
 
 EdgeFirst VideoStream Library provides video I/O for embedded Linux: V4L2 camera capture, hardware codec integration (H.264/H.265), and inter-process frame sharing via DmaBuf.
 
+Organisation-wide process, CI tiers, runner policy and the release chain live in the canonical guide: [EdgeFirstAI/.github copilot-instructions.md](https://github.com/EdgeFirstAI/.github/blob/main/.github/copilot-instructions.md). This file keeps the VideoStream-specific parts.
+
 ## Quick Reference
 
 | Item | Value |
 |------|-------|
 | **Branch** | `feature/EDGEAI-###-description` or `bugfix/EDGEAI-###-description` |
 | **Commit** | `EDGEAI-###: Brief description` (50-72 chars) |
-| **PR** | main=2 approvals, develop=1. Link JIRA ticket, ensure CI passes |
+| **PR** | Into `main`, opened as draft until ready. Link the JIRA ticket; `ci-gate` must pass |
 | **License** | ✅ MIT/Apache/BSD | ⚠️ LGPL (dynamic only) | ❌ GPL/AGPL |
 | **Coverage** | 70% minimum, 80%+ for core modules |
 | **Output** | ❌ NEVER filter build/test/sbom with head/tail/grep. ✅ Use `tee` |
@@ -284,34 +286,43 @@ See [TESTING.md](../TESTING.md) for the full testing strategy including on-targe
 
 **Coverage:** 70% minimum project-wide, 80%+ for core modules (`lib/host.c`, `lib/client.c`, `lib/frame.c`).
 
+## CI
+
+| Tier | Trigger | What runs |
+|------|---------|-----------|
+| **Quick** | every push to a non-draft PR | fmt, clippy (x86_64 and aarch64 check-only), nextest, workflow lint and dependency license policy (shared `rust-quick`); pytest and the host/client IPC test (`quick-c`) |
+| **Full** | `ci:full` label | `videostream-full.yml`: coverage builds on x86_64 and aarch64, on-target lane on a `camera-v4l2` board, SonarCloud; full scancode SBOM |
+| **Hardware only** | `ci:hardware` label | the aarch64 build and the on-target lane |
+| **Nightly** | schedule, only when `main` moved | Full plus `cargo audit` |
+
+Add `ci:full` before approving a PR that touches the C API, DMA/V4L2/codec code, FFI, workflows or dependencies. The on-target lane runs only for same-repository PRs, pushes, dispatches and the nightly; fork PRs never reach a board.
+
+The board lane runs the C, Python and Rust suites with coverage, the DMA-heap IPC test and `vsl-camhost` capture on `/dev/video3`. Its helpers are in `.github/scripts/`.
+
 ## Release Process
 
-**CRITICAL:** VideoStream requires version sync across 6 locations.
+A tag deploys; it never builds. See the canonical guide for the full chain.
+
+1. Branch `release/X.Y.Z` from `main`, update the version locations below and move the CHANGELOG `[Unreleased]` entries under `[X.Y.Z] - YYYY-MM-DD`. Run `make pre-release` locally.
+2. Push the branch and open a PR to `main` labelled `ci:full`. Every push to the branch runs `release.yml`, which verifies the versions and changelog and builds every artifact: crates, wheel and sdist, ZIP archives, Debian packages, the PDF manual and the SBOM.
+3. Merge the PR. `tag-release.yml` creates the annotated `vX.Y.Z` tag once `release.yml` is green for the merged head.
+4. The tag runs `publish.yml`, which publishes the already-built artifacts to crates.io, PyPI and the GitHub Release.
+
+Never create `v*` tags by hand.
 
 ### Version Locations
 
 | File | Format | Notes |
 |------|--------|-------|
 | `include/videostream.h` | `#define VSL_VERSION "X.Y.Z"` | Source of truth (CMakeLists.txt parses this) |
-| `Cargo.toml` | `version = "X.Y.Z"` | Also update `videostream-sys` dependency version |
+| `Cargo.toml` | `version = "X.Y.Z"` | Also the `videostream-sys` and `videostream` workspace dependency versions |
 | `pyproject.toml` | `version = "X.Y.Z"` | |
 | `doc/conf.py` | `version = 'X.Y.Z'` | Single quotes |
+| `crates/videostream-sys/src/ffi.rs` | `VSL_VERSION` constant | Regenerate with `crates/videostream-sys/update.sh` |
 | `CHANGELOG.md` | `## [X.Y.Z] - YYYY-MM-DD` | Move items from `[Unreleased]` |
 | `NOTICE` | `videostream-sys X.Y.Z` | videostream-sys version line |
 
-`debian/changelog` is auto-generated from `CHANGELOG.md` by `debian/gen-changelog.py` — do **not** edit manually.
-
-### Workflow
-
-1. `make pre-release` — runs format, lint, verify-version, test, sbom
-2. Update all 6 version locations
-3. Update CHANGELOG.md (move Unreleased → new version)
-4. `make verify-version` — confirm consistency
-5. Commit: `git commit -a -m "Prepare Version X.Y.Z"`
-6. Push and wait for CI (all green)
-7. Tag: `git tag -a -m "Version X.Y.Z" vX.Y.Z && git push origin vX.Y.Z`
-
-The `v` prefix on the tag is **required** to trigger the release workflow.
+`debian/changelog` is auto-generated from `CHANGELOG.md` by `debian/gen-changelog.py` — do **not** edit manually. `release.yml` fails the release PR if any of these disagree with the branch name.
 
 ## Architecture Overview
 
