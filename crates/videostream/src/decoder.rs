@@ -372,10 +372,7 @@ impl Decoder {
         // `from_raw` returns `None` if the decoder did not produce a frame.
         let output_frame = unsafe { Frame::from_raw(output_frame) };
         if ret_code & VSLDecoderRetCode_VSL_DEC_ERR > 0 {
-            return Err(Error::Io(io::Error::new(
-                io::ErrorKind::Other,
-                "Decoder Error",
-            )));
+            return Err(Error::Io(io::Error::other("Decoder Error")));
         }
         let mut return_msg = DecodeReturnCode::Success;
         if ret_code & VSLDecoderRetCode_VSL_DEC_FRAME_DEC > 0 {

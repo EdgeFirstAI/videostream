@@ -9,7 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 repository = "https://github.com/EdgeFirstAI/videostream"
 homepage = "https://edgefirst.ai"
-rust-version = "1.70"  # MSRV
+rust-version = "1.88"  # MSRV
 
 [workspace.dependencies]
 # Runtime dependencies
@@ -21,14 +21,14 @@ unix-ts = "1.0.0"
 bindgen = "0.73.2"
 
 # Dev dependencies
-rand = "0.9.0"
-serial_test = "3.2.0"
+rand = "0.10"
+serial_test = "4.0"
 
 # CLI-specific dependencies
 clap = { version = "4.5", features = ["derive", "cargo", "wrap_help"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-signal-hook = "0.3"
+signal-hook = "0.4"
 mp4 = "0.14"
 env_logger = "0.11"
 log = "0.4"

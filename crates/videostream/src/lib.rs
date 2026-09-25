@@ -465,7 +465,7 @@ mod tests {
         assert!(null_err.source().is_none());
 
         // Io error should have a source
-        let io_err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let io_err = Error::Io(std::io::Error::other("test"));
         assert!(io_err.source().is_some());
     }
 
