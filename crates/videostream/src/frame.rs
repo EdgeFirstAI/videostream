@@ -915,7 +915,7 @@ impl Drop for Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, Rng};
+    use rand::{self, RngExt};
     use std::{
         fs::{self, File},
         io::Write,
