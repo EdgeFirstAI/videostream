@@ -155,9 +155,39 @@ jobs:
     permissions:
       contents: read
 
+  # release.yml builds the branch head and tag-release.yml tags the merge
+  # commit, refusing when their trees differ. That refusal comes after the
+  # merge, so a release branch behind its base has to be caught here.
+  release-behind:
+    name: Release branch is not behind its base
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.draft != true
+      && startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          behind="$(gh api "repos/${REPO}/compare/${BASE_REF}...${HEAD_SHA}" --jq '.behind_by')"
+          if [[ "$behind" -gt 0 ]]; then
+            echo "::error::This branch is $behind commit(s) behind ${BASE_REF}."
+            echo "::error::Merging would tag a tree the release build never built."
+            echo "::error::Update this branch from ${BASE_REF} and let it rebuild."
+            exit 1
+          fi
+          echo "ok  up to date with ${BASE_REF}"
+
   ci-gate:
     if: always()
-    needs: [changes, quick, quick-c, full, sbom]
+    needs: [changes, quick, quick-c, full, sbom, release-behind]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
