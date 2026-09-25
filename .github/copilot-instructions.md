@@ -71,7 +71,7 @@ cmake --build build 2>&1 | tee build-output.log
 ## Technology Stack
 
 - **C11** with `-Wall -Wextra -Werror`, clang-format, negative errno error handling
-- **Rust** stable (1.70+), `cargo fmt`, `cargo clippy -- -D warnings`
+- **Rust** stable (1.88+), `cargo fmt`, `cargo clippy -- -D warnings`
 - **Python** 3.8+, autopep8, always in venv
 - **Build:** CMake 3.10+
 - **Dependencies:** GStreamer 1.4+ (LGPL-2.1), GLib 2.0+, pthread

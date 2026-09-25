@@ -9,7 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 repository = "https://github.com/EdgeFirstAI/videostream"
 homepage = "https://edgefirst.ai"
-rust-version = "1.70"  # MSRV
+rust-version = "1.88"  # MSRV
 
 [workspace.dependencies]
 # Runtime dependencies
