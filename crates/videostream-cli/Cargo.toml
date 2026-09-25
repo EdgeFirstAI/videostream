@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.0"
-serial_test = "3.0"
+serial_test = "4.0"
 serde_json.workspace = true
 
 [dependencies]
