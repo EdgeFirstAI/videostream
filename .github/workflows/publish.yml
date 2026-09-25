@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   publish:
-    uses: EdgeFirstAI/.github/.github/workflows/publish-rust.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    uses: EdgeFirstAI/.github/.github/workflows/publish-rust.yml@903ae949fd40508b7b5cdaccbd3f7b7aa7df5f61  # main after EdgeFirstAI/.github#55, until tagged
     with:
       tag: ${{ inputs.tag }}
       build-workflow: release.yml
@@ -62,7 +62,7 @@ jobs:
       contents: read
     steps:
       - id: stage
-        uses: EdgeFirstAI/.github/.github/actions/stage-pypi@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+        uses: EdgeFirstAI/.github/.github/actions/stage-pypi@903ae949fd40508b7b5cdaccbd3f7b7aa7df5f61  # main after EdgeFirstAI/.github#55, until tagged
         with:
           distribution: videostream
           version: ${{ needs.publish.outputs.version }}
