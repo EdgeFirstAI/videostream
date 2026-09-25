@@ -11,7 +11,7 @@ on:
 jobs:
   tag:
     if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
-    uses: EdgeFirstAI/.github/.github/workflows/tag-release.yml@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
+    uses: EdgeFirstAI/.github/.github/workflows/tag-release.yml@903ae949fd40508b7b5cdaccbd3f7b7aa7df5f61  # main after EdgeFirstAI/.github#54, until tagged
     with:
       # No tag unless release.yml is green for the release-branch head being
       # merged: the one place "the artifacts exist before the tag" is enforced.
