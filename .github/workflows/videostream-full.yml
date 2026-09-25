@@ -115,7 +115,7 @@ jobs:
 
       - name: Install build-wrapper
         if: env.SONAR_WRAP == 'true'
-        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@22918119ff8e1ca75a623e15c8296b6ea4fbe28f  # v8.2.1
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
 
       - name: Build the C library with coverage
         env:
@@ -206,7 +206,7 @@ jobs:
 
       - name: Publish test results
         if: always() && needs.plan.outputs.trusted == 'true'
-        uses: EnricoMi/publish-unit-test-result-action@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3  # v2.24.0
         with:
           files: |
             build/pytest_results.xml
@@ -313,7 +313,7 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: EnricoMi/publish-unit-test-result-action/linux@170bf24d20d201b842d7a52403b73ed297e6645b  # v2.18.0
+        uses: EnricoMi/publish-unit-test-result-action/linux@d0a4676d0e0b938bc201470d88276b7c74c712b3  # v2.24.0
         with:
           files: |
             build/pytest_results.xml
@@ -429,7 +429,7 @@ jobs:
             echo "C_COVERAGE_PATHS=$(join 'coverage_c*_sonar.xml')"
           } | tee -a "$GITHUB_ENV"
 
-      - uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f  # v8.2.1
+      - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
