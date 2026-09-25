@@ -198,9 +198,12 @@ jobs:
       - name: Packaging toolchain
         run: |
           sudo apt-get update
+          # libunwind-14-dev- removes the image's LLVM 14 libunwind, which
+          # Breaks the libunwind-dev that libgstreamer1.0-dev depends on.
           sudo apt-get install -y --no-install-recommends \
             build-essential debhelper devscripts cmake pkg-config \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev python3-dev
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev python3-dev \
+            libunwind-14-dev-
 
       - uses: EdgeFirstAI/.github/.github/actions/setup-rust@6695677231afbfbdfc0aab22bc6a20a489ef3d0e  # main after EdgeFirstAI/.github#54, until tagged
         with:
