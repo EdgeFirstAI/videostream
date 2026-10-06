@@ -13,7 +13,7 @@
  * Format: "MAJOR.MINOR.PATCH"
  * This is the single source of truth - updated by cargo-release
  */
-#define VSL_VERSION "2.6.0"
+#define VSL_VERSION "2.6.1"
 
 #define VSL_VERSION_ENCODE(major, minor, revision) \
     (((major) * 1000000) + ((minor) * 1000) + (revision))
@@ -368,11 +368,12 @@ typedef struct vsl_rect {
  */
 typedef enum vsl_encode_profile {
     /**
-     * Automatic bitrate selection (encoder default).
+     * Automatic bitrate selection.
      *
-     * Platform and version dependent. Testing shows approximately 10000 kbps
-     * on i.MX8M Plus. Use this for general-purpose encoding when specific
-     * bitrate control is not required.
+     * The V4L2 backend scales the bitrate with resolution and frame rate,
+     * about 10000 kbps at 1080p30. The Hantro backend uses the encoder
+     * default, also about 10000 kbps on i.MX8M Plus. Use this for
+     * general-purpose encoding when specific bitrate control is not required.
      */
     VSL_ENCODE_PROFILE_AUTO,
 
