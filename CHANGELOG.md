@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-10-06
+
+Patch release fixing H.264/HEVC encoder configuration on the V4L2 backend with the i.MX 8M Plus Hantro driver (`vsi_v4l2enc`). No API or ABI changes.
+
+### Fixed
+
+- **V4L2 encoder controls had no effect** (`lib/encoder_v4l2.c`). Bitrate, GOP, profile and level were set after buffer allocation, which the `vsi_v4l2` driver accepts but does not apply, so streams were Baseline profile with the driver's default rate control regardless of the requested bitrate. They are now set before `VIDIOC_REQBUFS`. ([EDGEAI-2013])
+- **Encoder frame rate was never set.** `VIDIOC_S_PARM` now sets the OUTPUT frame interval, so rate control budgets each frame. At 1080p30 the measured bitrate now tracks each profile (5, 25, 50 and 100 Mbps), where it was previously 88 to 105 Mbps for every profile. ([EDGEAI-2013])
+- **IDR frames were coded 15 to 20 QP coarser than the surrounding P-frames**, producing a visible drop in quality once per GOP. The V4L2 backend now uses constant bitrate with macroblock-level rate control. ([EDGEAI-2013])
+
+### Changed
+
+- `VSL_ENCODE_PROFILE_AUTO` on the V4L2 backend scales the bitrate with resolution and frame rate, about 10 Mbps at 1080p30, instead of a fixed 5 Mbps. ([EDGEAI-2013])
+- The V4L2 backend selects the H.264 level from resolution, frame rate and bitrate instead of always using 4.0. ([EDGEAI-2013])
+
+[EDGEAI-2013]: https://au-zone.atlassian.net/browse/EDGEAI-2013
+
 ## [2.6.0] - 2026-09-24
 
 Minor release adding V4L2 buffer flags to camera buffers so callers can tell which clock and which instant within the frame a capture timestamp refers to, and fixing format enumeration on single-plane capture devices. Adds one exported symbol (`vsl_camera_buffer_flags`); `SOVERSION` stays at `2` and existing symbols are unchanged.

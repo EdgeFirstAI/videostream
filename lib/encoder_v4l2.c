@@ -261,9 +261,13 @@ validate_crop_for_frame(const struct vsl_encoder_v4l2* enc,
     return 0;
 }
 
+// Bits per pixel for VSL_ENCODE_PROFILE_AUTO: about 10 Mbps at 1080p30,
+// matching the Hantro backend's encoder default.
+#define VSL_V4L2_ENC_AUTO_BPP 0.16
+
 // Convert profile to bitrate in bps
 static uint32_t
-profile_to_bitrate(VSLEncoderProfile profile)
+profile_to_bitrate(VSLEncoderProfile profile, int width, int height, int fps)
 {
     switch (profile) {
     case VSL_ENCODE_PROFILE_5000_KBPS:
@@ -275,9 +279,44 @@ profile_to_bitrate(VSLEncoderProfile profile)
     case VSL_ENCODE_PROFILE_100000_KBPS:
         return 100000000;
     case VSL_ENCODE_PROFILE_AUTO:
-    default:
-        return 5000000; // Default 5 Mbps
+    default: {
+        double bps = (double) width * height * fps * VSL_V4L2_ENC_AUTO_BPP;
+        if (bps < 1000000.0) { bps = 1000000.0; }
+        if (bps > 100000000.0) { bps = 100000000.0; }
+        return (uint32_t) bps;
     }
+    }
+}
+
+// Lowest H.264 level (Table A-1) whose frame size, macroblock rate and High
+// profile bitrate limits cover the stream.
+static int32_t
+h264_level_for(int width, int height, int fps, uint32_t bitrate)
+{
+    static const struct {
+        int32_t  level;
+        uint32_t max_fs;
+        uint32_t max_mbps;
+        uint32_t max_kbps;
+    } levels[] = {
+        {V4L2_MPEG_VIDEO_H264_LEVEL_3_1, 3600, 108000, 17500},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_3_2, 5120, 216000, 25000},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_4_0, 8192, 245760, 25000},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_4_1, 8192, 245760, 62500},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_4_2, 8704, 522240, 62500},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_5_0, 22080, 589824, 168750},
+        {V4L2_MPEG_VIDEO_H264_LEVEL_5_1, 36864, 983040, 300000},
+    };
+    uint32_t mbs  = (uint32_t) ((width + 15) / 16) * ((height + 15) / 16);
+    uint32_t mbps = mbs * (uint32_t) fps;
+    uint32_t kbps = bitrate / 1000;
+    for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
+        if (mbs <= levels[i].max_fs && mbps <= levels[i].max_mbps &&
+            kbps <= levels[i].max_kbps) {
+            return levels[i].level;
+        }
+    }
+    return V4L2_MPEG_VIDEO_H264_LEVEL_5_1;
 }
 
 // Set encoder control value
@@ -359,6 +398,9 @@ setup_output_planes(struct vsl_encoder_v4l2* enc,
         planes[1].data_offset = y_size; // UV plane starts after Y
     }
 }
+
+static int
+configure_encoder(struct vsl_encoder_v4l2* enc);
 
 // Set up OUTPUT queue (raw input frames) with DMABUF import.
 // When crop_region is non-NULL, the OUTPUT queue is sized to the crop window
@@ -513,6 +555,8 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
             enc->width,
             enc->height,
             enc->num_input_planes);
+
+    configure_encoder(enc);
 
     // Request DMABUF import buffers
     struct v4l2_requestbuffers req;
@@ -741,17 +785,44 @@ stop_streaming(struct vsl_encoder_v4l2* enc)
     enc->streaming = false;
 }
 
-// Configure encoder controls (bitrate, GOP, etc.)
+// Configure frame rate and encoder controls. The Hantro vsi_v4l2 driver
+// accepts control changes after REQBUFS but encodes with the values it held
+// at buffer allocation, so this must run before either queue's REQBUFS.
 static int
 configure_encoder(struct vsl_encoder_v4l2* enc)
 {
-    uint32_t bitrate = profile_to_bitrate(enc->profile);
+    uint32_t bitrate =
+        profile_to_bitrate(enc->profile, enc->width, enc->height, enc->fps);
+
+    // Rate control budgets bits per frame from the OUTPUT frame interval.
+    if (enc->fps > 0) {
+        struct v4l2_streamparm parm;
+        memset(&parm, 0, sizeof(parm));
+        parm.type                                 = enc->output_type;
+        parm.parm.output.timeperframe.numerator   = 1;
+        parm.parm.output.timeperframe.denominator = (uint32_t) enc->fps;
+        if (xioctl(enc->fd, VIDIOC_S_PARM, &parm) < 0) {
+            fprintf(stderr,
+                    "V4L2 encoder: VIDIOC_S_PARM %d fps failed: %s\n",
+                    enc->fps,
+                    strerror(errno));
+        }
+    }
 
     // Set bitrate
     if (set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_BITRATE, bitrate) < 0) {
         fprintf(stderr, "V4L2 encoder: failed to set bitrate %u\n", bitrate);
         // Continue anyway, driver may use default
     }
+
+    // Constant bitrate with macroblock-level rate control. With the driver
+    // defaults (VBR, frame-level only) the Hantro encoder codes each IDR
+    // 15-20 QP coarser than the surrounding P-frames.
+    set_ctrl(enc->fd,
+             V4L2_CID_MPEG_VIDEO_BITRATE_MODE,
+             V4L2_MPEG_VIDEO_BITRATE_MODE_CBR);
+    set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_FRAME_RC_ENABLE, 1);
+    set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_MB_RC_ENABLE, 1);
 
     // Set GOP size (keyframe interval)
     int gop_size = enc->fps; // One keyframe per second
@@ -766,10 +837,9 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
                  V4L2_CID_MPEG_VIDEO_H264_PROFILE,
                  V4L2_MPEG_VIDEO_H264_PROFILE_HIGH);
 
-        // H.264 level: 4.0 (suitable for 1080p30)
         set_ctrl(enc->fd,
                  V4L2_CID_MPEG_VIDEO_H264_LEVEL,
-                 V4L2_MPEG_VIDEO_H264_LEVEL_4_0);
+                 h264_level_for(enc->width, enc->height, enc->fps, bitrate));
     } else if (enc->output_fourcc == VSL_FOURCC('H', 'E', 'V', 'C')) {
         // HEVC profile: Main
         set_ctrl(enc->fd,
@@ -783,7 +853,8 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
     }
 
     fprintf(stderr,
-            "V4L2 encoder: configured bitrate=%u bps, GOP=%d\n",
+            "V4L2 encoder: configured %d fps, bitrate=%u bps, GOP=%d\n",
+            enc->fps,
             bitrate,
             gop_size);
 
@@ -955,8 +1026,6 @@ vsl_encode_frame_v4l2(VSLEncoder*    encoder,
         }
 
         if (setup_capture_queue(enc) < 0) { return -1; }
-
-        configure_encoder(enc);
 
         if (start_streaming(enc) < 0) { return -1; }
 
