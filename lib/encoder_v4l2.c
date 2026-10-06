@@ -288,35 +288,56 @@ profile_to_bitrate(VSLEncoderProfile profile, int width, int height, int fps)
     }
 }
 
-// Lowest H.264 level (Table A-1) whose frame size, macroblock rate and High
-// profile bitrate limits cover the stream.
+struct codec_level {
+    int32_t  level;
+    uint64_t max_frame; // H.264: macroblocks; HEVC: luma samples
+    uint64_t max_rate;  // per second, same unit as max_frame
+    uint32_t max_kbps;
+};
+
+// H.264 Table A-1 limits, High profile bitrate (1.25x), up to Level 5.1,
+// the highest the vsi_v4l2 driver accepts.
+static const struct codec_level h264_levels[] = {
+    {V4L2_MPEG_VIDEO_H264_LEVEL_3_1, 3600, 108000, 17500},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_3_2, 5120, 216000, 25000},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_4_0, 8192, 245760, 25000},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_4_1, 8192, 245760, 62500},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_4_2, 8704, 522240, 62500},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_5_0, 22080, 589824, 168750},
+    {V4L2_MPEG_VIDEO_H264_LEVEL_5_1, 36864, 983040, 300000},
+};
+
+// HEVC Table A.8 Main tier limits up to Level 5.1. The driver has no tier
+// control, so streams are always Main tier.
+static const struct codec_level hevc_levels[] = {
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_3, 552960, 16588800, 6000},
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_3_1, 983040, 33177600, 10000},
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_4, 2228224, 66846720, 12000},
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_4_1, 2228224, 133693440, 20000},
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_5, 8912896, 267386880, 25000},
+    {V4L2_MPEG_VIDEO_HEVC_LEVEL_5_1, 8912896, 534773760, 40000},
+};
+
+// Lowest level whose frame size, rate and bitrate limits cover the stream.
+// When only the bitrate exceeds the highest level, *bitrate is clamped to
+// that level's limit. Returns -1 when the frame size or rate exceed it.
 static int32_t
-h264_level_for(int width, int height, int fps, uint32_t bitrate)
+select_level(const struct codec_level* levels,
+             size_t                    count,
+             uint64_t                  frame,
+             uint64_t                  rate,
+             uint32_t*                 bitrate)
 {
-    static const struct {
-        int32_t  level;
-        uint32_t max_fs;
-        uint32_t max_mbps;
-        uint32_t max_kbps;
-    } levels[] = {
-        {V4L2_MPEG_VIDEO_H264_LEVEL_3_1, 3600, 108000, 17500},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_3_2, 5120, 216000, 25000},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_4_0, 8192, 245760, 25000},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_4_1, 8192, 245760, 62500},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_4_2, 8704, 522240, 62500},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_5_0, 22080, 589824, 168750},
-        {V4L2_MPEG_VIDEO_H264_LEVEL_5_1, 36864, 983040, 300000},
-    };
-    uint32_t mbs  = (uint32_t) ((width + 15) / 16) * ((height + 15) / 16);
-    uint32_t mbps = mbs * (uint32_t) fps;
-    uint32_t kbps = bitrate / 1000;
-    for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
-        if (mbs <= levels[i].max_fs && mbps <= levels[i].max_mbps &&
-            kbps <= levels[i].max_kbps) {
+    for (size_t i = 0; i < count; i++) {
+        if (frame <= levels[i].max_frame && rate <= levels[i].max_rate &&
+            *bitrate / 1000 <= levels[i].max_kbps) {
             return levels[i].level;
         }
     }
-    return V4L2_MPEG_VIDEO_H264_LEVEL_5_1;
+    const struct codec_level* top = &levels[count - 1];
+    if (frame > top->max_frame || rate > top->max_rate) { return -1; }
+    *bitrate = top->max_kbps * 1000;
+    return top->level;
 }
 
 // Set encoder control value
@@ -556,7 +577,7 @@ setup_output_queue(struct vsl_encoder_v4l2* enc,
             enc->height,
             enc->num_input_planes);
 
-    configure_encoder(enc);
+    if (configure_encoder(enc) < 0) { return -1; }
 
     // Request DMABUF import buffers
     struct v4l2_requestbuffers req;
@@ -793,6 +814,43 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
 {
     uint32_t bitrate =
         profile_to_bitrate(enc->profile, enc->width, enc->height, enc->fps);
+    uint32_t requested = bitrate;
+    int      fps       = enc->fps > 0 ? enc->fps : 1;
+    int32_t  level     = -1;
+
+    if (enc->output_fourcc == VSL_FOURCC('H', '2', '6', '4')) {
+        uint64_t mbs = (uint64_t) ((enc->width + 15) / 16) *
+                       (uint64_t) ((enc->height + 15) / 16);
+        level        = select_level(h264_levels,
+                             sizeof(h264_levels) / sizeof(h264_levels[0]),
+                             mbs,
+                             mbs * (uint64_t) fps,
+                             &bitrate);
+    } else if (enc->output_fourcc == VSL_FOURCC('H', 'E', 'V', 'C')) {
+        uint64_t luma = (uint64_t) ((enc->width + 7) & ~7) *
+                        (uint64_t) ((enc->height + 7) & ~7);
+        level         = select_level(hevc_levels,
+                             sizeof(hevc_levels) / sizeof(hevc_levels[0]),
+                             luma,
+                             luma * (uint64_t) fps,
+                             &bitrate);
+    }
+    if (level < 0) {
+        fprintf(stderr,
+                "V4L2 encoder: %dx%d at %d fps exceeds the highest supported "
+                "codec level (5.1)\n",
+                enc->width,
+                enc->height,
+                enc->fps);
+        errno = EINVAL;
+        return -1;
+    }
+    if (bitrate != requested) {
+        fprintf(stderr,
+                "V4L2 encoder: bitrate %u bps exceeds level 5.1, using %u bps\n",
+                requested,
+                bitrate);
+    }
 
     // Rate control budgets bits per frame from the OUTPUT frame interval.
     if (enc->fps > 0) {
@@ -837,19 +895,14 @@ configure_encoder(struct vsl_encoder_v4l2* enc)
                  V4L2_CID_MPEG_VIDEO_H264_PROFILE,
                  V4L2_MPEG_VIDEO_H264_PROFILE_HIGH);
 
-        set_ctrl(enc->fd,
-                 V4L2_CID_MPEG_VIDEO_H264_LEVEL,
-                 h264_level_for(enc->width, enc->height, enc->fps, bitrate));
+        set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_H264_LEVEL, level);
     } else if (enc->output_fourcc == VSL_FOURCC('H', 'E', 'V', 'C')) {
         // HEVC profile: Main
         set_ctrl(enc->fd,
                  V4L2_CID_MPEG_VIDEO_HEVC_PROFILE,
                  V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN);
 
-        // HEVC level: 4.0
-        set_ctrl(enc->fd,
-                 V4L2_CID_MPEG_VIDEO_HEVC_LEVEL,
-                 V4L2_MPEG_VIDEO_HEVC_LEVEL_4);
+        set_ctrl(enc->fd, V4L2_CID_MPEG_VIDEO_HEVC_LEVEL, level);
     }
 
     fprintf(stderr,

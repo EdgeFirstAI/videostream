@@ -22,7 +22,7 @@ Patch release fixing H.264/HEVC encoder configuration on the V4L2 backend with t
 ### Changed
 
 - `VSL_ENCODE_PROFILE_AUTO` on the V4L2 backend scales the bitrate with resolution and frame rate, about 10 Mbps at 1080p30, instead of a fixed 5 Mbps. ([EDGEAI-2013])
-- The V4L2 backend selects the H.264 level from resolution, frame rate and bitrate instead of always using 4.0. ([EDGEAI-2013])
+- The V4L2 backend selects the H.264 and HEVC levels from resolution, frame rate and bitrate instead of always using 4.0 and 4. Encoder setup fails when the resolution or frame rate exceeds level 5.1, the highest the driver accepts. A bitrate above the level 5.1 limit is reduced to that limit; for HEVC, which the driver encodes in Main tier only, this caps the 50 and 100 Mbps profiles at 40 Mbps. ([EDGEAI-2013])
 
 [EDGEAI-2013]: https://au-zone.atlassian.net/browse/EDGEAI-2013
 
