@@ -469,8 +469,9 @@ impl CameraReader {
     /// V4L2 format at `init` time.
     ///
     /// When the driver reports `V4L2_QUANTIZATION_DEFAULT`, the range is
-    /// the one implied by the colorspace (see [`Colorimetry::from_v4l2`]),
-    /// matching the EdgeFirst HAL. Returns `Ok(None)` when the colorspace
+    /// the one the kernel implies (see [`Colorimetry::from_v4l2`]): full
+    /// for an RGB or HSV pixel format, otherwise derived from the
+    /// colorspace. Returns `Ok(None)` when a YUV format's colorspace
     /// implies no range, or the driver-reported value does not map to a
     /// surfaced [`ColorRange`] variant.
     ///
@@ -485,7 +486,8 @@ impl CameraReader {
     }
 
     /// Returns all four colorimetry axes of the negotiated format, as
-    /// [`Colorimetry::from_v4l2`] derives them from the V4L2 fields.
+    /// [`Colorimetry::from_v4l2`] derives them from the V4L2 fields and
+    /// the negotiated pixel format.
     ///
     /// # Errors
     ///
@@ -515,7 +517,13 @@ impl CameraReader {
                 lib.vsl_camera_color_range(self.ptr),
             )
         };
-        Ok(Colorimetry::from_v4l2(space, xfer, enc, quant))
+        Ok(Colorimetry::from_v4l2(
+            space,
+            xfer,
+            enc,
+            quant,
+            self.format.is_rgb_or_hsv(),
+        ))
     }
 
     pub fn read(&self) -> Result<CameraBuffer<'_>, Error> {

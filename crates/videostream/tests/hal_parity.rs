@@ -5,6 +5,12 @@
 //! test compares the schema strings both produce for every combination of
 //! V4L2 colorspace, xfer_func, ycbcr_enc and quantization, including values
 //! past the end of each kernel enum.
+//!
+//! The pinned edgefirst-tensor 0.34.1 derives a `DEFAULT` quantization from
+//! the colorspace only, which is the kernel rule for YUV formats, so parity
+//! is checked for YUV formats. RGB and HSV formats are checked against the
+//! kernel rule directly; RGB parity resumes once a HAL release with a
+//! format-aware `from_v4l2` is pinned.
 
 use edgefirst_tensor::Colorimetry as HalColorimetry;
 use videostream::colorimetry::Colorimetry;
@@ -34,14 +40,14 @@ fn hal_strings(c: HalColorimetry) -> [Option<&'static str>; 4] {
 }
 
 #[test]
-fn colorimetry_matches_hal_for_every_v4l2_combination() {
+fn yuv_colorimetry_matches_hal_for_every_v4l2_combination() {
     let mut checked = 0u32;
     for cs in (0..COLORSPACES).chain([u32::MAX]) {
         for xfer in (0..XFER_FUNCS).chain([u32::MAX]) {
             for enc in (0..YCBCR_ENCS).chain([u32::MAX]) {
                 for quant in (0..QUANTIZATIONS).chain([u32::MAX]) {
                     assert_eq!(
-                        vsl_strings(Colorimetry::from_v4l2(cs, xfer, enc, quant)),
+                        vsl_strings(Colorimetry::from_v4l2(cs, xfer, enc, quant, false)),
                         hal_strings(HalColorimetry::from_v4l2(cs, xfer, enc, quant)),
                         "colorspace={cs} xfer_func={xfer} ycbcr_enc={enc} quantization={quant}",
                     );
@@ -54,6 +60,30 @@ fn colorimetry_matches_hal_for_every_v4l2_combination() {
         checked,
         (COLORSPACES + 1) * (XFER_FUNCS + 1) * (YCBCR_ENCS + 1) * (QUANTIZATIONS + 1)
     );
+}
+
+/// `V4L2_MAP_QUANTIZATION_DEFAULT(is_rgb_or_hsv, ...)` is full range for
+/// every RGB or HSV format; every other axis is independent of the format,
+/// so it matches the HAL's YUV result.
+#[test]
+fn rgb_colorimetry_follows_kernel_rule_for_every_v4l2_combination() {
+    for cs in (0..COLORSPACES).chain([u32::MAX]) {
+        for xfer in (0..XFER_FUNCS).chain([u32::MAX]) {
+            for enc in (0..YCBCR_ENCS).chain([u32::MAX]) {
+                for quant in (0..QUANTIZATIONS).chain([u32::MAX]) {
+                    let mut expected = hal_strings(HalColorimetry::from_v4l2(cs, xfer, enc, quant));
+                    if quant == 0 {
+                        expected[3] = Some("full");
+                    }
+                    assert_eq!(
+                        vsl_strings(Colorimetry::from_v4l2(cs, xfer, enc, quant, true)),
+                        expected,
+                        "colorspace={cs} xfer_func={xfer} ycbcr_enc={enc} quantization={quant}",
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]

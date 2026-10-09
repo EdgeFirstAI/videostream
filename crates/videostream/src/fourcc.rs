@@ -37,6 +37,83 @@ impl FourCC {
     pub fn from_u32(val: u32) -> Self {
         FourCC::from(val)
     }
+
+    /// Returns `true` if this is a V4L2 RGB or HSV pixel format.
+    ///
+    /// This is the `is_rgb_or_hsv` input of the kernel's
+    /// `V4L2_MAP_QUANTIZATION_DEFAULT()` macro, which
+    /// [`Colorimetry::from_v4l2`](crate::colorimetry::Colorimetry::from_v4l2)
+    /// takes to resolve a `DEFAULT` quantization: RGB and HSV formats
+    /// default to full range.
+    ///
+    /// Covers the packed RGB formats of `<linux/videodev2.h>` (`RGB332`
+    /// through `ABGR64_12`, including the alpha / padding variants and the
+    /// big-endian `RGB555X`, `ARGB555X`, `XRGB555X` and `RGB565X`) and the
+    /// HSV formats (`HSV24`, `HSV32`). YUV, greyscale, Bayer and
+    /// compressed formats return `false`.
+    ///
+    /// ```
+    /// use videostream::fourcc::FourCC;
+    ///
+    /// assert!(FourCC(*b"RGB3").is_rgb_or_hsv());
+    /// assert!(FourCC(*b"HSV4").is_rgb_or_hsv());
+    /// assert!(!FourCC(*b"YUYV").is_rgb_or_hsv());
+    /// assert!(!FourCC(*b"MJPG").is_rgb_or_hsv());
+    /// ```
+    pub fn is_rgb_or_hsv(self) -> bool {
+        // `v4l2_fourcc_be()` sets bit 31, the high bit of the last character.
+        const BE_5: u8 = b'5' | 0x80;
+        let code = self.0;
+        matches!(
+            &code,
+            b"RGB1"
+                | b"R444"
+                | b"AR12"
+                | b"XR12"
+                | b"RA12"
+                | b"RX12"
+                | b"AB12"
+                | b"XB12"
+                | b"GA12"
+                | b"BX12"
+                | b"RGBO"
+                | b"AR15"
+                | b"XR15"
+                | b"RA15"
+                | b"RX15"
+                | b"AB15"
+                | b"XB15"
+                | b"BA15"
+                | b"BX15"
+                | b"RGBP"
+                | b"RGBQ"
+                | [b'A', b'R', b'1', BE_5]
+                | [b'X', b'R', b'1', BE_5]
+                | b"RGBR"
+                | b"BGRH"
+                | b"BGR3"
+                | b"RGB3"
+                | b"BGR4"
+                | b"AR24"
+                | b"XR24"
+                | b"RA24"
+                | b"RX24"
+                | b"RGB4"
+                | b"AB24"
+                | b"XB24"
+                | b"BA24"
+                | b"BX24"
+                | b"RX30"
+                | b"RA30"
+                | b"AR30"
+                | b"B312"
+                | b"BGR6"
+                | b"RGB6"
+                | b"B412"
+                | b"HSV3"
+                | b"HSV4"
+        )
+    }
 }
 
 impl From<&[u8; 4]> for FourCC {
@@ -116,6 +193,30 @@ impl fmt::Debug for FourCC {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fourcc_is_rgb_or_hsv() {
+        for code in [
+            *b"RGB1", *b"R444", *b"AR12", *b"XR12", *b"RA12", *b"RX12", *b"AB12", *b"XB12",
+            *b"GA12", *b"BX12", *b"RGBO", *b"AR15", *b"XR15", *b"RA15", *b"RX15", *b"AB15",
+            *b"XB15", *b"BA15", *b"BX15", *b"RGBP", *b"RGBQ", *b"RGBR", *b"BGRH", *b"BGR3",
+            *b"RGB3", *b"BGR4", *b"AR24", *b"XR24", *b"RA24", *b"RX24", *b"RGB4", *b"AB24",
+            *b"XB24", *b"BA24", *b"BX24", *b"RX30", *b"RA30", *b"AR30", *b"B312", *b"BGR6",
+            *b"RGB6", *b"B412", *b"HSV3", *b"HSV4",
+        ] {
+            assert!(FourCC(code).is_rgb_or_hsv(), "{}", FourCC(code));
+        }
+        // ARGB555X / XRGB555X: v4l2_fourcc_be() sets bit 31.
+        let be = 1u32 << 31;
+        assert!(FourCC::from(FourCC(*b"AR15").as_u32() | be).is_rgb_or_hsv());
+        assert!(FourCC::from(FourCC(*b"XR15").as_u32() | be).is_rgb_or_hsv());
+        for code in [
+            *b"YUYV", *b"UYVY", *b"NV12", *b"NV21", *b"YU12", *b"GREY", *b"Y16 ", *b"BA81",
+            *b"RGGB", *b"MJPG", *b"JPEG", *b"H264", *b"HEVC", *b"AYUV", *b"Y444",
+        ] {
+            assert!(!FourCC(code).is_rgb_or_hsv(), "{}", FourCC(code));
+        }
+    }
 
     #[test]
     fn test_fourcc_from_bytes() {

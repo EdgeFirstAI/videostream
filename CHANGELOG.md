@@ -11,12 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`colorimetry::Colorimetry` and `CameraReader::colorimetry()`** (Rust) — all four colorimetry axes of the negotiated format, derived from the V4L2 fields by `Colorimetry::from_v4l2()`. ([EDGEAI-2199])
+- **`colorimetry::Colorimetry` and `CameraReader::colorimetry()`** (Rust) — all four colorimetry axes of the negotiated format, derived from the V4L2 fields and the pixel format by `Colorimetry::from_v4l2(colorspace, xfer_func, ycbcr_enc, quantization, is_rgb_or_hsv)`. ([EDGEAI-2199])
+- **`FourCC::is_rgb_or_hsv()`** (Rust) — whether a V4L2 pixel format is RGB or HSV, the format input of the kernel's `V4L2_MAP_QUANTIZATION_DEFAULT()`. ([EDGEAI-2199])
 
 ### Changed
 
-- **`CameraReader::color_encoding()` and `CameraReader::color_range()` resolve V4L2 `DEFAULT` from the colorspace** (Rust), following the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT` / `V4L2_MAP_QUANTIZATION_DEFAULT` rules as the EdgeFirst HAL does. A `V4L2_COLORSPACE_JPEG` stream now reports `bt601` / `full` instead of `None`, so VideoStream and the HAL publish the same `color_*` strings for the same driver. The C accessors still return the raw V4L2 values. ([EDGEAI-2199])
-- The Rust colorimetry enums are documented as a mirror of `edgefirst_tensor::colorimetry`, and a test compares both for every V4L2 colorspace, xfer_func, ycbcr_enc and quantization combination. ([EDGEAI-2199])
+- **`CameraReader::color_encoding()` and `CameraReader::color_range()` resolve V4L2 `DEFAULT`** (Rust), following the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT` / `V4L2_MAP_QUANTIZATION_DEFAULT` rules as the EdgeFirst HAL does. The encoding follows the colorspace. The range is `full` for RGB and HSV pixel formats whatever the colorspace, and follows the colorspace for YUV formats (`full` for `V4L2_COLORSPACE_JPEG`, `limited` for the other recognised colorspaces). A YUV `V4L2_COLORSPACE_JPEG` stream now reports `bt601` / `full` and an RGB stream reports `full` instead of `None`. The C accessors still return the raw V4L2 values. ([EDGEAI-2199])
+- The Rust colorimetry enums are documented as a mirror of `edgefirst_tensor::colorimetry`, and a test compares both for every V4L2 colorspace, xfer_func, ycbcr_enc and quantization combination of a YUV format, and checks RGB formats against the kernel rule. ([EDGEAI-2199])
 
 [EDGEAI-2199]: https://au-zone.atlassian.net/browse/EDGEAI-2199
 
