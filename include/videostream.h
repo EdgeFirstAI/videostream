@@ -1693,8 +1693,8 @@ vsl_camera_get_queued_buf_count(const vsl_camera* ctx);
  * did not resolve the field to a concrete value. For the YCbCr encoding
  * and quantization, `_DEFAULT` means the value implied by the format, as
  * the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT()` (from the colorspace) and
- * `V4L2_MAP_QUANTIZATION_DEFAULT()` (full range for RGB and HSV pixel
- * formats, otherwise from the colorspace) define it; the Rust binding's
+ * `V4L2_MAP_QUANTIZATION_DEFAULT()` (full range for RGB, Bayer and HSV
+ * pixel formats, otherwise from the colorspace) define it; the Rust binding's
  * `Colorimetry::from_v4l2()` applies that mapping. Values are constant
  * between `vsl_camera_init_device()` and `vsl_camera_uninit_device()`.
  */

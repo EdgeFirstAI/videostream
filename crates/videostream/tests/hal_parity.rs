@@ -8,7 +8,7 @@
 //!
 //! The pinned edgefirst-tensor 0.34.1 derives a `DEFAULT` quantization from
 //! the colorspace only, which is the kernel rule for YUV formats, so parity
-//! is checked for YUV formats. RGB and HSV formats are checked against the
+//! is checked for YUV formats. RGB, Bayer and HSV formats are checked against the
 //! kernel rule directly; RGB parity resumes once a HAL release with a
 //! format-aware `from_v4l2` is pinned.
 
@@ -63,7 +63,7 @@ fn yuv_colorimetry_matches_hal_for_every_v4l2_combination() {
 }
 
 /// `V4L2_MAP_QUANTIZATION_DEFAULT(is_rgb_or_hsv, ...)` is full range for
-/// every RGB or HSV format; every other axis is independent of the format,
+/// every RGB, Bayer or HSV format; every other axis is independent of the format,
 /// so it matches the HAL's YUV result.
 #[test]
 fn rgb_colorimetry_follows_kernel_rule_for_every_v4l2_combination() {

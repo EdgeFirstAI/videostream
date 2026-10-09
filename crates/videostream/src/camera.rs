@@ -470,7 +470,7 @@ impl CameraReader {
     ///
     /// When the driver reports `V4L2_QUANTIZATION_DEFAULT`, the range is
     /// the one the kernel implies (see [`Colorimetry::from_v4l2`]): full
-    /// for an RGB or HSV pixel format, otherwise derived from the
+    /// for an RGB, Bayer or HSV pixel format, otherwise derived from the
     /// colorspace. Returns `Ok(None)` when a YUV format's colorspace
     /// implies no range, or the driver-reported value does not map to a
     /// surfaced [`ColorRange`] variant.

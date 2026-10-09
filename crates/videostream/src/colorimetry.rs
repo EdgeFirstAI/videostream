@@ -311,10 +311,11 @@ impl Colorimetry {
     /// the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT()` and
     /// `V4L2_MAP_QUANTIZATION_DEFAULT()` do.
     ///
-    /// `is_rgb_or_hsv` is whether the negotiated pixel format is RGB or
-    /// HSV (see [`FourCC::is_rgb_or_hsv`](crate::fourcc::FourCC::is_rgb_or_hsv)).
-    /// A `DEFAULT` quantization is full range for RGB and HSV formats
-    /// whatever the colorspace; for YUV formats it follows the colorspace.
+    /// `is_rgb_or_hsv` is whether the negotiated pixel format is RGB
+    /// (including Bayer) or HSV (see
+    /// [`FourCC::is_rgb_or_hsv`](crate::fourcc::FourCC::is_rgb_or_hsv)).
+    /// A `DEFAULT` quantization is full range for those formats whatever
+    /// the colorspace; for YUV formats it follows the colorspace.
     /// A `DEFAULT` encoding follows the colorspace:
     ///
     /// | colorspace | encoding | range (YUV) |
@@ -365,8 +366,8 @@ fn default_encoding(colorspace: u32) -> Option<ColorEncoding> {
     }
 }
 
-/// Range implied when `quantization` is `DEFAULT`: full for RGB and HSV
-/// formats and for the JPEG colorspace, limited for every other recognised
+/// Range implied when `quantization` is `DEFAULT`: full for RGB, Bayer and
+/// HSV formats and for the JPEG colorspace, limited for every other recognised
 /// colorspace.
 fn default_range(colorspace: u32, is_rgb_or_hsv: bool) -> Option<ColorRange> {
     if is_rgb_or_hsv {
