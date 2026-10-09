@@ -25,6 +25,7 @@ log.workspace = true
 rand.workspace = true
 serial_test.workspace = true
 env_logger.workspace = true
+edgefirst-tensor.workspace = true
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -314,7 +314,8 @@ pub mod fourcc;
 /// [`ColorTransfer`](colorimetry::ColorTransfer),
 /// [`ColorEncoding`](colorimetry::ColorEncoding), and
 /// [`ColorRange`](colorimetry::ColorRange) — the four colorimetry fields
-/// returned by [`CameraReader`](camera::CameraReader) accessors. Naming
+/// returned by [`CameraReader`](camera::CameraReader) accessors — and
+/// [`Colorimetry`](colorimetry::Colorimetry), which groups them. Naming
 /// follows the EdgeFirst `CameraFrame.msg` schema.
 pub mod colorimetry;
 
