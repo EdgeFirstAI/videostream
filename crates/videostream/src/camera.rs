@@ -2,7 +2,7 @@
 // Copyright 2025 Au-Zone Technologies
 
 use crate::{
-    colorimetry::{ColorEncoding, ColorRange, ColorSpace, ColorTransfer},
+    colorimetry::{ColorEncoding, ColorRange, ColorSpace, ColorTransfer, Colorimetry},
     fourcc::FourCC,
     Error,
 };
@@ -447,50 +447,75 @@ impl CameraReader {
     /// in the EdgeFirst [`CameraFrame.msg`][msg] schema), captured from
     /// the V4L2 format at `init` time.
     ///
-    /// Not applicable to RGB formats — drivers typically return
-    /// `V4L2_YCBCR_ENC_DEFAULT` in that case, which this accessor
-    /// surfaces as `Ok(None)`. Also returns `Ok(None)` for V4L2 values
-    /// that do not map to a surfaced [`ColorEncoding`] variant
-    /// (`XV601`, `XV709`, `SYCC`, `BT2020_CONST_LUM`, `SMPTE240M`).
+    /// When the driver reports `V4L2_YCBCR_ENC_DEFAULT`, the encoding is
+    /// the one implied by the colorspace (see [`Colorimetry::from_v4l2`]),
+    /// matching the EdgeFirst HAL. Returns `Ok(None)` when the colorspace
+    /// implies no encoding the schema names, and for V4L2 values that do
+    /// not map to a surfaced [`ColorEncoding`] variant (`XV601`, `XV709`,
+    /// `SYCC`, `BT2020_CONST_LUM`, `SMPTE240M`).
     ///
     /// # Errors
     ///
     /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
-    /// predates 2.5 and does not export `vsl_camera_color_encoding`.
+    /// predates 2.5 and does not export the colorimetry accessors.
     ///
     /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
     pub fn color_encoding(&self) -> Result<Option<ColorEncoding>, Error> {
-        let lib = ffi::init()?;
-        if lib.vsl_camera_color_encoding.is_err() {
-            return Err(Error::SymbolNotFound("vsl_camera_color_encoding"));
-        }
-        Ok(ColorEncoding::from_v4l2(unsafe {
-            lib.vsl_camera_color_encoding(self.ptr)
-        }))
+        Ok(self.colorimetry()?.encoding)
     }
 
     /// Returns the negotiated quantization range (`color_range` in the
     /// EdgeFirst [`CameraFrame.msg`][msg] schema), captured from the
     /// V4L2 format at `init` time.
     ///
-    /// Returns `Ok(None)` if the driver left the field as
-    /// `V4L2_QUANTIZATION_DEFAULT`, or if the driver-reported value
-    /// does not map to a surfaced [`ColorRange`] variant.
+    /// When the driver reports `V4L2_QUANTIZATION_DEFAULT`, the range is
+    /// the one implied by the colorspace (see [`Colorimetry::from_v4l2`]),
+    /// matching the EdgeFirst HAL. Returns `Ok(None)` when the colorspace
+    /// implies no range, or the driver-reported value does not map to a
+    /// surfaced [`ColorRange`] variant.
     ///
     /// # Errors
     ///
     /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
-    /// predates 2.5 and does not export `vsl_camera_color_range`.
+    /// predates 2.5 and does not export the colorimetry accessors.
     ///
     /// [msg]: https://github.com/EdgeFirstAI/schemas/blob/main/edgefirst_msgs/msg/CameraFrame.msg
     pub fn color_range(&self) -> Result<Option<ColorRange>, Error> {
+        Ok(self.colorimetry()?.range)
+    }
+
+    /// Returns all four colorimetry axes of the negotiated format, as
+    /// [`Colorimetry::from_v4l2`] derives them from the V4L2 fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SymbolNotFound`] if the loaded `libvideostream.so`
+    /// predates 2.5 and does not export the colorimetry accessors.
+    pub fn colorimetry(&self) -> Result<Colorimetry, Error> {
         let lib = ffi::init()?;
+        if lib.vsl_camera_color_space.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_space"));
+        }
+        if lib.vsl_camera_color_transfer.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_transfer"));
+        }
+        if lib.vsl_camera_color_encoding.is_err() {
+            return Err(Error::SymbolNotFound("vsl_camera_color_encoding"));
+        }
         if lib.vsl_camera_color_range.is_err() {
             return Err(Error::SymbolNotFound("vsl_camera_color_range"));
         }
-        Ok(ColorRange::from_v4l2(unsafe {
-            lib.vsl_camera_color_range(self.ptr)
-        }))
+        // SAFETY: `self.ptr` is the live camera context owned by this
+        // reader, and each symbol was checked as present above.
+        let (space, xfer, enc, quant) = unsafe {
+            (
+                lib.vsl_camera_color_space(self.ptr),
+                lib.vsl_camera_color_transfer(self.ptr),
+                lib.vsl_camera_color_encoding(self.ptr),
+                lib.vsl_camera_color_range(self.ptr),
+            )
+        };
+        Ok(Colorimetry::from_v4l2(space, xfer, enc, quant))
     }
 
     pub fn read(&self) -> Result<CameraBuffer<'_>, Error> {

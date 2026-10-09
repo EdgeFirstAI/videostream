@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`colorimetry::Colorimetry` and `CameraReader::colorimetry()`** (Rust) — all four colorimetry axes of the negotiated format, derived from the V4L2 fields by `Colorimetry::from_v4l2()`. ([EDGEAI-2199])
+
+### Changed
+
+- **`CameraReader::color_encoding()` and `CameraReader::color_range()` resolve V4L2 `DEFAULT` from the colorspace** (Rust), following the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT` / `V4L2_MAP_QUANTIZATION_DEFAULT` rules as the EdgeFirst HAL does. A `V4L2_COLORSPACE_JPEG` stream now reports `bt601` / `full` instead of `None`, so VideoStream and the HAL publish the same `color_*` strings for the same driver. The C accessors still return the raw V4L2 values. ([EDGEAI-2199])
+- The Rust colorimetry enums are documented as a mirror of `edgefirst_tensor::colorimetry`, and a test compares both for every V4L2 colorspace, xfer_func, ycbcr_enc and quantization combination. ([EDGEAI-2199])
+
+[EDGEAI-2199]: https://au-zone.atlassian.net/browse/EDGEAI-2199
+
 ## [2.6.1] - 2026-10-06
 
 Patch release fixing H.264/HEVC encoder configuration on the V4L2 backend with the i.MX 8M Plus Hantro driver (`vsi_v4l2enc`). No API or ABI changes.
