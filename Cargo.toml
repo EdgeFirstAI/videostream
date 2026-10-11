@@ -23,6 +23,7 @@ bindgen = "0.73.2"
 # Dev dependencies
 rand = "0.10"
 serial_test = "4.0"
+edgefirst-tensor = { version = "0.34.1", default-features = false, features = ["static"] }
 
 # CLI-specific dependencies
 clap = { version = "4.5", features = ["derive", "cargo", "wrap_help"] }
