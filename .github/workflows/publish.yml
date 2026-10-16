@@ -65,7 +65,9 @@ jobs:
         uses: EdgeFirstAI/.github/.github/actions/stage-pypi@9e296f92996b38683c684b9091ed59cb27562770  # v2.3.0
         with:
           distribution: videostream
-          version: ${{ needs.publish.outputs.version }}
+          # artifact-version, not version: a release candidate whose manifests
+          # still carry the base version built files with that version.
+          version: ${{ needs.publish.outputs.artifact-version }}
 
       # Directly in the job: the action resolves its container image from the
       # repository it is called from.
