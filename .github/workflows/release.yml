@@ -110,7 +110,7 @@ jobs:
           mkdir -p dist
           cp doc/_build/latex/VideoStream.pdf "dist/videostream-${REF_NAME#release/}-documentation.pdf"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: documentation
           path: dist/*.pdf
@@ -168,7 +168,7 @@ jobs:
             "dist/videostream-${REF_NAME#release/}-linux-${{ matrix.arch }}.zip"
           unzip -l dist/*.zip
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: archive-${{ matrix.arch }}
           path: dist/*.zip
@@ -222,7 +222,7 @@ jobs:
             dpkg -c "$deb"
           done
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: debian-${{ matrix.arch }}
           path: dist/*.deb
@@ -243,7 +243,7 @@ jobs:
           .venv/bin/pip install --upgrade pip build twine
           .venv/bin/python -m build --outdir dist
           .venv/bin/twine check dist/*
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: python
           path: dist/*
