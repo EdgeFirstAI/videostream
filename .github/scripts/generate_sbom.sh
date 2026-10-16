@@ -60,7 +60,7 @@ echo "[1/6] Generating source code SBOM with scancode..."
 if [ ! -f "venv/bin/scancode" ]; then
     echo "Error: scancode not found. Please install:"
     echo "  python3 -m venv venv"
-    echo "  venv/bin/pip install scancode-toolkit"
+    echo "  venv/bin/pip install scancode-toolkit pluggy==1.6.0"
     exit 1
 fi
 
