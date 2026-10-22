@@ -306,9 +306,9 @@ dependencies = [
 
 [[package]]
 name = "edgefirst-tensor"
-version = "0.34.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c2b92fd988651c5e0cd163884ef77d15acb7b57a4964a7adb9d1cfa9abb7660"
+checksum = "e754f24cc13a57f1d7d0ac23b6b06ce4cde6b87da89953af6dfd9a7170a025c9"
 dependencies = [
  "dma-heap",
  "edgefirst-tensor-abi",
@@ -326,9 +326,9 @@ dependencies = [
 
 [[package]]
 name = "edgefirst-tensor-abi"
-version = "0.34.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49b3ee0f7b7eff1a0b8f1a9d76d8ae18ed3865f5eb66e50b631a673d6cf76f72"
+checksum = "143f778ccbfc2c91227040bbf2c5508533dfbd8962f51651dd1131069654cedc"
 
 [[package]]
 name = "env_filter"
