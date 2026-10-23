@@ -138,7 +138,7 @@ jobs:
             --cov=videostream --cov-report=xml:build/coverage_python.xml \
             --junitxml=build/pytest_results.xml
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9e296f92996b38683c684b9091ed59cb27562770  # v2.3.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@c7876194b9fe9f7f72daf0efadaf32d7dff1b257  # v2.3.1
         with:
           components: llvm-tools-preview
           tools: cargo-llvm-cov,cargo-nextest
@@ -347,7 +347,7 @@ jobs:
           path: board-coverage
           merge-multiple: true
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9e296f92996b38683c684b9091ed59cb27562770  # v2.3.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@c7876194b9fe9f7f72daf0efadaf32d7dff1b257  # v2.3.1
         with:
           components: llvm-tools-preview
           cache-key: board-coverage
