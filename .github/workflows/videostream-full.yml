@@ -115,7 +115,7 @@ jobs:
 
       - name: Install build-wrapper
         if: env.SONAR_WRAP == 'true'
-        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v8.3.0
+        uses: SonarSource/sonarqube-scan-action/install-build-wrapper@e805d875275f728fac1885b413934be6d7c63f65  # v8.4.1
 
       - name: Build the C library with coverage
         env:
@@ -138,7 +138,7 @@ jobs:
             --cov=videostream --cov-report=xml:build/coverage_python.xml \
             --junitxml=build/pytest_results.xml
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9e296f92996b38683c684b9091ed59cb27562770  # v2.3.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@0cbb8f91f0d3e7d15726329f3fa651450bfdbbf0  # v5.1.0
         with:
           components: llvm-tools-preview
           tools: cargo-llvm-cov,cargo-nextest
@@ -206,7 +206,7 @@ jobs:
 
       - name: Publish test results
         if: always() && needs.plan.outputs.trusted == 'true'
-        uses: EnricoMi/publish-unit-test-result-action@7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d  # v2.25.0
+        uses: EnricoMi/publish-unit-test-result-action@da5b7be67623cd59bbbd1a0ce4f022050a55605f  # v2.26.0
         with:
           files: |
             build/pytest_results.xml
@@ -313,7 +313,7 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: EnricoMi/publish-unit-test-result-action/linux@7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d  # v2.25.0
+        uses: EnricoMi/publish-unit-test-result-action/linux@da5b7be67623cd59bbbd1a0ce4f022050a55605f  # v2.26.0
         with:
           files: |
             build/pytest_results.xml
@@ -347,7 +347,7 @@ jobs:
           path: board-coverage
           merge-multiple: true
 
-      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@9e296f92996b38683c684b9091ed59cb27562770  # v2.3.0
+      - uses: EdgeFirstAI/.github/.github/actions/setup-rust@0cbb8f91f0d3e7d15726329f3fa651450bfdbbf0  # v5.1.0
         with:
           components: llvm-tools-preview
           cache-key: board-coverage
@@ -429,7 +429,7 @@ jobs:
             echo "C_COVERAGE_PATHS=$(join 'coverage_c*_sonar.xml')"
           } | tee -a "$GITHUB_ENV"
 
-      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v8.3.0
+      - uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65  # v8.4.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
