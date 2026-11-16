@@ -235,11 +235,11 @@ vsl_frame_errno(enum vsl_frame_error err)
 static void
 timer_handler(union sigval sv)
 {
-    VSLClient* client = sv.sival_ptr;
-
-    if (client->is_reconnecting) { return; }
-
-    close_client_socket(client);
+    // Does nothing (TOP2-948). It used to close client->sock from this timer
+    // thread without client->lock, racing the reconnects in vsl_frame_wait(),
+    // vsl_frame_trylock() and vsl_frame_unlock() and leaking socket pairs.
+    // poll() in wait_for_socket_data() already bounds the receive.
+    (void) sv;
 }
 
 static void
