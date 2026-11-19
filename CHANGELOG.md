@@ -19,7 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`CameraReader::color_encoding()` and `CameraReader::color_range()` resolve V4L2 `DEFAULT`** (Rust), following the kernel's `V4L2_MAP_YCBCR_ENC_DEFAULT` / `V4L2_MAP_QUANTIZATION_DEFAULT` rules as the EdgeFirst HAL does. The encoding follows the colorspace. The range is `full` for RGB, Bayer and HSV pixel formats whatever the colorspace, and follows the colorspace for YUV formats (`full` for `V4L2_COLORSPACE_JPEG`, `limited` for the other recognised colorspaces). A YUV `V4L2_COLORSPACE_JPEG` stream now reports `bt601` / `full` and an RGB stream reports `full` instead of `None`. The C accessors still return the raw V4L2 values. ([EDGEAI-2199])
 - The Rust colorimetry enums are documented as a mirror of `edgefirst_tensor::colorimetry`, and a test compares both for every V4L2 colorspace, xfer_func, ycbcr_enc and quantization combination of a YUV format, and checks RGB formats against the kernel rule. ([EDGEAI-2199])
 
+### Fixed
+
+- **Clients no longer leak socket pairs after short timeouts** (`lib/client.c`). The client watchdog's timer handler closed `client->sock` from its own `SIGEV_THREAD` thread without taking the client lock, racing the reconnects in `vsl_frame_wait`, `vsl_frame_trylock` and `vsl_frame_unlock`. Each lost race left a connection open on both the client and the host, or closed a descriptor number another thread had just reused (`Bad file descriptor`). Since 2.5.3 armed the watchdog for sub-second timeouts, a client with `vsl_client_set_timeout(0.1)` leaked 4 to 17 connections an hour on i.MX 8M Plus and hit its 1024 descriptor limit after 2.5 to 6 days. The handler no longer closes the socket; `poll()` in `wait_for_socket_data` already bounds the receive. A timed-out `vsl_frame_wait` now keeps its connection. ([TOP2-948])
+
 [EDGEAI-2199]: https://au-zone.atlassian.net/browse/EDGEAI-2199
+[TOP2-948]: https://au-zone.atlassian.net/browse/TOP2-948
 
 ## [2.6.1] - 2026-10-06
 

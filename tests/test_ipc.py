@@ -1,5 +1,9 @@
+import os
+import sys
+import time
 import pytest
 from videostream import Client, Host, Frame
+from videostream.library import lib
 from pathlib import Path
 
 
@@ -53,3 +57,45 @@ def test_post():
     assert f2.width == 640
     assert f2.height == 480
     assert f1_handle != f2.handle
+
+
+def _socket_inodes():
+    """Socket inodes of the descriptors this process has open."""
+    inodes = set()
+    for fd in os.listdir('/proc/self/fd'):
+        try:
+            target = os.readlink('/proc/self/fd/%s' % fd)
+        except OSError:
+            continue
+        if target.startswith('socket:'):
+            inodes.add(target)
+    return inodes
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'),
+                    reason='reads /proc/self/fd')
+def test_wait_timeout_keeps_connection():
+    """
+    A frame_wait that times out must leave the client's connection alone.
+    The client watchdog used to close the socket when a short timeout expired,
+    without the client lock, so the next wait reconnected.  On clients that
+    wait and unlock from several threads that close raced the reconnect and
+    leaked a socket pair on the client and the host each time.
+    """
+    h = Host('/tmp/test_wait_timeout.vsl')
+    c = Client(h.path)
+    h.process()
+    assert h.clients_count == 1
+
+    lib.vsl_client_set_timeout(c._ptr, 0.05)
+    before = _socket_inodes()
+
+    for _ in range(20):
+        with pytest.raises(RuntimeError):
+            c.frame_wait()
+        time.sleep(0.02)
+        h.process()
+
+    assert h.clients_count == 1
+    assert _socket_inodes() == before
+
